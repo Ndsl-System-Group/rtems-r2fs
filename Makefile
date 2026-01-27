@@ -8,7 +8,7 @@
 #   make clean      - 清理构建文件
 
 # 默认配置
-RTEMS_ROOT ?= $(HOME)/quick-start/rtems/6
+RTEMS_ROOT ?= /home/rtems/rtems_arm
 BSP ?= arm/realview_pbx_a9_qemu
 
 # 项目配置
