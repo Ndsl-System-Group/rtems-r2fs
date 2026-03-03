@@ -17,4 +17,28 @@ void sitNatCacheEntryInit(SitNatCacheEntry *this, uint32_t lpa);
 void sitNatCacheEntryDestroy(SitNatCacheEntry *this);
 
 
+struct SitNatCache;
+
+typedef struct
+{
+    struct SitNatCache *cache;
+    SitNatCacheEntry *entry;
+} SitNatCacheEntryHandle;
+
+void sitNatCacheEntryHandleInit(SitNatCacheEntryHandle *this, struct SitNatCache *cache, SitNatCacheEntry *entry);
+
+void sitNatCacheEntryHandleDestroy(SitNatCacheEntryHandle *this);
+
+void sitNatCacheEntryHandleCopy(SitNatCacheEntryHandle *this, const SitNatCacheEntryHandle *other);
+
+void sitNatCacheEntryHandleAddHostVersion(SitNatCacheEntryHandle *this);
+
+void sitNatCacheEntryHandleAddSsdVersion(SitNatCacheEntryHandle *this);
+
+
+typedef struct SitNatCache
+{
+};
+
+
 #endif

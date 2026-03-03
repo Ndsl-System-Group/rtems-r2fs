@@ -2,7 +2,7 @@
 #define _TYPES_H_
 
 #include <sys/endian.h>
-
+#include <stddef.h>
 
 typedef uint32_t u32;
 typedef uint64_t u64;
