@@ -15,8 +15,8 @@ void genericCacheManagerDestroy(GenericCacheManager *this)
 {
     assert(this);
 
-    cacheLruReplacerDestroy(&this->replacer);
     cacheIndexManagerDestroy(&this->index);
+    cacheLruReplacerDestroy(&this->replacer);
 }
 
 void genericCacheManagerAdd(GenericCacheManager *this, uint32_t key, void *entry)
