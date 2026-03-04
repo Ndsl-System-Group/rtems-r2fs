@@ -5,6 +5,27 @@
 #include <assert.h>
 
 
+/* 私有静态函数声明 */
+static void sitNatCacheEntryHandleDoAddRef(SitNatCacheEntryHandle *this);
+
+static void sitNatCacheEntryHandleDoSubRef(SitNatCacheEntryHandle *this);
+
+static SitNatCacheEntry *sitNatCacheGetCacheEntryInner(SitNatCache *this, uint32_t lpa, bool isAccess);
+
+static void sitNatCacheAddRefcount(SitNatCache *this, SitNatCacheEntry *entry);
+
+static void sitNatCacheSubRefcount(SitNatCache *this, SitNatCacheEntry *entry);
+
+static void sitNatCacheDoReplace(SitNatCache *this);
+
+static void sitNatCacheReadLpa(SitNatCache *this, SitNatCacheEntry *entry);
+
+static void sitNatCacheAddHostVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry);
+
+static void sitNatCacheAddSsdVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry);
+
+
+/* 公共函数实现 */
 void sitNatCacheEntryInit(SitNatCacheEntry *this, uint32_t lpa)
 {
     this->lpa = lpa;
@@ -25,15 +46,6 @@ void sitNatCacheEntryDestroy(SitNatCacheEntry *this)
         blockBufferDestroy(&this->cache);
     }
 }
-
-
-static void sitNatCacheEntryHandleDoAddRef(SitNatCacheEntryHandle *this);
-
-static void sitNatCacheEntryHandleDoSubRef(SitNatCacheEntryHandle *this);
-
-static void sitNatCacheAddHostVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry);
-
-static void sitNatCacheAddSsdVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry);
 
 void sitNatCacheEntryHandleInit(SitNatCacheEntryHandle *this, struct SitNatCache *cache, SitNatCacheEntry *entry)
 {
@@ -73,27 +85,6 @@ void sitNatCacheEntryHandleAddSsdVersion(SitNatCacheEntryHandle *this)
     if (this->entry) sitNatCacheAddSsdVersionForHandle(this->cache, this->entry);
 }
 
-void sitNatCacheEntryHandleDoAddRef(SitNatCacheEntryHandle *this)
-{
-    if (this->entry) sitNatCacheAddRefcount(this->cache, this->entry);
-}
-
-void sitNatCacheEntryHandleDoSubRef(SitNatCacheEntryHandle *this)
-{
-    if (this->entry) sitNatCacheSubRefcount(this->cache, this->entry);
-}
-
-
-static SitNatCacheEntry *sitNatCacheGetCacheEntryInner(SitNatCache *this, uint32_t lpa, bool isAccess);
-
-static void sitNatCacheAddRefcount(SitNatCache *this, SitNatCacheEntry *entry);
-
-static void sitNatCacheSubRefcount(SitNatCache *this, SitNatCacheEntry *entry);
-
-static void sitNatCacheDoReplace(SitNatCache *this);
-
-static void sitNatCacheReadLpa(SitNatCache *this, SitNatCacheEntry *entry);
-
 void sitNatCacheInit(SitNatCache *this, struct comm_dev *device, size_t expectCacheSize)
 {
     genericCacheManagerInit(&this->cacheManager);
@@ -132,6 +123,18 @@ void sitNatCacheAddSsdVersion(SitNatCache *this, uint32_t lpa)
     SitNatCacheEntry *entry = sitNatCacheGetCacheEntryInner(this, lpa, false);
 
     sitNatCacheSubRefcount(this, entry);
+}
+
+
+/* 私有静态函数实现 */
+void sitNatCacheEntryHandleDoAddRef(SitNatCacheEntryHandle *this)
+{
+    if (this->entry) sitNatCacheAddRefcount(this->cache, this->entry);
+}
+
+void sitNatCacheEntryHandleDoSubRef(SitNatCacheEntryHandle *this)
+{
+    if (this->entry) sitNatCacheSubRefcount(this->cache, this->entry);
 }
 
 // 通过 lpa 在 cache_manager 中查找缓存项，找不到则从 SSD 读取。不增加缓存项的 refCount。
