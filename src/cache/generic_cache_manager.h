@@ -52,5 +52,15 @@ void *genericCacheManagerReplaceOne(GenericCacheManager *this);
  */
 void *genericCacheManagerRemove(GenericCacheManager *this, uint32_t key);
 
+/**
+ * @brief pin 住缓存项，标识其不能被置换。
+ */
+void genericCacheManagerPin(GenericCacheManager *this, uint32_t key);
+
+/**
+ * @brief unpin 缓存项，使其可以被置换。
+ */
+void genericCacheManagerUnpin(GenericCacheManager *this, uint32_t key);
+
 
 #endif

@@ -60,3 +60,18 @@ void *genericCacheManagerRemove(GenericCacheManager *this, uint32_t key)
 
     return cacheIndexManagerRemove(&this->index, key);
 }
+
+void genericCacheManagerPin(GenericCacheManager *this, uint32_t key)
+{
+    assert(this);
+
+    cacheLruReplacerPin(&this->replacer, key);
+}
+
+void genericCacheManagerUnpin(GenericCacheManager *this, uint32_t key)
+{
+
+    assert(this);
+
+    cacheLruReplacerUnpin(&this->replacer, key);
+}

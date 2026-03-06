@@ -164,20 +164,19 @@ void sitNatCacheAddRefcount(SitNatCache *this, SitNatCacheEntry *entry)
 {
     ++entry->refCount;
 
-    // TODO
-    // if (1 == entry->refCount) this->cacheManager.pin(entry->lpa_);
+    if (1 == entry->refCount) genericCacheManagerPin(&this->cacheManager, entry->lpa);
 }
 
 void sitNatCacheSubRefcount(SitNatCache *this, SitNatCacheEntry *entry)
 {
     --entry->refCount;
 
-    // TODO
-    // if (0 == entry->refCount)
-    // {
-    //     cache_manager.unpin(entry->lpa_);
-    //     do_replace();
-    // }
+    if (0 == entry->refCount)
+    {
+        genericCacheManagerUnpin(&this->cacheManager, entry->lpa);
+
+        sitNatCacheDoReplace(this);
+    }
 }
 
 void sitNatCacheDoReplace(SitNatCache *this)

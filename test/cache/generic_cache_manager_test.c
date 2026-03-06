@@ -174,3 +174,38 @@ RTFS_TEST(GCMRemoveTest)
 
     genericCacheManagerDestroy(&gcm);
 }
+
+RTFS_TEST(GCMPinTest)
+{
+    GenericCacheManager gcm;
+    uint32_t k1 = 1, k2 = 2, k3 = 3;
+
+    genericCacheManagerInit(&gcm);
+
+
+    genericCacheManagerAdd(&gcm, k2, newTestEntry(2));
+    genericCacheManagerAdd(&gcm, k1, newTestEntry(1));
+    genericCacheManagerAdd(&gcm, k3, newTestEntry(3));
+
+    // pin 住 k1。
+    genericCacheManagerPin(&gcm, k1);
+
+    GcmTestEntry *e = (GcmTestEntry *)genericCacheManagerReplaceOne(&gcm);
+    TEST_ASSERT_EQUAL_INT(e->value, 2);
+    free(e);
+
+    e = (GcmTestEntry *)genericCacheManagerReplaceOne(&gcm);
+    TEST_ASSERT_EQUAL_INT(e->value, 3);
+    free(e);
+
+    TEST_ASSERT_EQUAL(genericCacheManagerReplaceOne(&gcm), NULL);
+
+    // unpin 住 k1。
+    genericCacheManagerUnpin(&gcm, k1);
+    e = (GcmTestEntry *)genericCacheManagerReplaceOne(&gcm);
+    TEST_ASSERT_EQUAL_INT(e->value, 1);
+    free(e);
+
+
+    genericCacheManagerDestroy(&gcm);
+}

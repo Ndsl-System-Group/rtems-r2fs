@@ -99,7 +99,7 @@ RTFS_TEST(SNCGetSameLpa)
     sitNatCacheDestroy(&cache);
 }
 
-// 该部分逻辑等 replacer 的 pin 功能加上以后一起测试。
+// TODO 该部分逻辑等 replacer 的 pin 功能加上以后一起测试。
 // RTFS_TEST(SNCReplace)
 // {
 //     SitNatCache cache;
