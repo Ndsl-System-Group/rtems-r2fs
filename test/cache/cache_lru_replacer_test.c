@@ -180,3 +180,34 @@ RTFS_TEST(CLRCanReplaceTest)
 
     cacheLruReplacerDestroy(&lru);
 }
+
+RTFS_TEST(CLRPinTest)
+{
+    CacheLruReplacer lru;
+    uint32_t k1 = 1, k2 = 2;
+
+    cacheLruReplacerInit(&lru);
+
+
+    cacheLruReplacerAdd(&lru, k1);
+    cacheLruReplacerAdd(&lru, k2);
+
+    TEST_ASSERT_TRUE(cacheLruReplacerCanReplace(&lru));
+
+    // pin 掉 k1，现在只有 k2 能被替换。
+    cacheLruReplacerPin(&lru, k1);
+    TEST_ASSERT_TRUE(cacheLruReplacerCanReplace(&lru));
+
+    cacheLruReplacerPop(&lru);
+    TEST_ASSERT_FALSE(cacheLruReplacerCanReplace(&lru));
+
+    // unpin 掉 k1，现在 k1 就能被替换了。
+    cacheLruReplacerUnpin(&lru, k1);
+    TEST_ASSERT_TRUE(cacheLruReplacerCanReplace(&lru));
+
+    cacheLruReplacerPop(&lru);
+    TEST_ASSERT_FALSE(cacheLruReplacerCanReplace(&lru));
+
+
+    cacheLruReplacerDestroy(&lru);
+}
