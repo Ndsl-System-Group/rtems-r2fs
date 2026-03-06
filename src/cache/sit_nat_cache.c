@@ -165,7 +165,7 @@ void sitNatCacheAddRefcount(SitNatCache *this, SitNatCacheEntry *entry)
     ++entry->refCount;
 
     // TODO
-    //  if (1 == entry->refCount) this->cacheManager.pin(entry->lpa_);
+    // if (1 == entry->refCount) this->cacheManager.pin(entry->lpa_);
 }
 
 void sitNatCacheSubRefcount(SitNatCache *this, SitNatCacheEntry *entry)
