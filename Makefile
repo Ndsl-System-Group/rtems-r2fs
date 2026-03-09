@@ -15,6 +15,11 @@ BSP ?= arm/realview_pbx_a9_qemu
 PROJECT_NAME = main
 TARGET = $(PROJECT_NAME).exe
 
+# QEMU 配置
+QEMU ?= qemu-system-arm
+QEMU_OPTS ?= -no-reboot -nographic -M realview-pbx-a9 -m 256M
+QEMU_KERNEL ?= ./build/arm-rtems6-realview_pbx_a9_qemu/$(TARGET)
+
 # 默认目标
 all: build
 
