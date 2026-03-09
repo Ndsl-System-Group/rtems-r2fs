@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "uthash/uthash.h"
-
 #include "rtfs_test.h"
+
+#include "uthash/uthash.h"
 
 
 typedef struct example_user_t
@@ -14,7 +14,7 @@ typedef struct example_user_t
 } example_user_t;
 
 
-RTFS_TEST(UthashTest)
+RTFS_TEST(UtHashTest)
 {
     int i;
     example_user_t *user, *users = NULL;
