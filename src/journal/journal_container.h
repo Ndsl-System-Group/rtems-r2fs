@@ -24,7 +24,7 @@ void journalContainerInit(JournalContainer *this);
 
 void journalContainerDestroy(JournalContainer *this);
 
-void journalContainerAppendSuperBlockJournalEntry(JournalContainer *this, SuperBlockJournalEntry *spje);
+void journalContainerAppendSuperBlockJournalEntry(JournalContainer *this, SuperBlockJournalEntry *sbje);
 
 void journalContainerAppendNatJournalEntry(JournalContainer *this, NatJournalEntry *nje);
 
@@ -34,11 +34,11 @@ uint64_t journalContainerGetTxId(JournalContainer *this);
 
 void journalContainerSetTxId(JournalContainer *this, uint64_t id);
 
-UT_array journalContainerGetSuperBlockJournal(JournalContainer *this);
+UT_array *journalContainerGetSuperBlockJournal(JournalContainer *this);
 
-UT_array journalContainerGetNatJournal(JournalContainer *this);
+UT_array *journalContainerGetNatJournal(JournalContainer *this);
 
-UT_array journalContainerGetSitJournal(JournalContainer *this);
+UT_array *journalContainerGetSitJournal(JournalContainer *this);
 
 bool journalContainerIsEmpty(JournalContainer *this);
 
