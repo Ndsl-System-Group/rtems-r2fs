@@ -37,37 +37,37 @@ void tearDown(void);
 #define RTFS_COLOR_RESET "\033[0m"
 
 
-typedef void (*testFunc)(void);
+typedef void (*rtfsTestFunc)(void);
 
-struct TestEntry
+struct RtfsTestEntry
 {
     const char *name;
-    testFunc func;
+    rtfsTestFunc func;
 };
 
-extern struct TestEntry testArray[RTFS_MAX_TESTS];
-extern int testCount;
+extern struct RtfsTestEntry rtfsTestArray[RTFS_MAX_TESTS];
+extern int rtfsTestCount;
 
 
-#define RTFS_TEST(test_name)                                                  \
-    void test_name(void);                                                     \
-    static void __attribute__((unused)) register_##test_name(void)            \
-    {                                                                         \
-        if (testCount < RTFS_MAX_TESTS)                                       \
-        {                                                                     \
-            testArray[testCount].name = #test_name;                           \
-            testArray[testCount].func = test_name;                            \
-            ++testCount;                                                      \
-        }                                                                     \
-    }                                                                         \
-    static void __attribute__((constructor)) _call_register_##test_name(void) \
-    {                                                                         \
-        register_##test_name();                                               \
-    }                                                                         \
-    void test_name(void)
+#define RTFS_TEST(rtfsTestName)                                                  \
+    void rtfsTestName(void);                                                     \
+    static void __attribute__((unused)) register_##rtfsTestName(void)            \
+    {                                                                            \
+        if (rtfsTestCount < RTFS_MAX_TESTS)                                      \
+        {                                                                        \
+            rtfsTestArray[rtfsTestCount].name = #rtfsTestName;                   \
+            rtfsTestArray[rtfsTestCount].func = rtfsTestName;                    \
+            ++rtfsTestCount;                                                     \
+        }                                                                        \
+    }                                                                            \
+    static void __attribute__((constructor)) _call_register_##rtfsTestName(void) \
+    {                                                                            \
+        register_##rtfsTestName();                                               \
+    }                                                                            \
+    void rtfsTestName(void)
 
 
-void runAllTests(void);
+void rtfsRunAllTests(void);
 
 
 #endif

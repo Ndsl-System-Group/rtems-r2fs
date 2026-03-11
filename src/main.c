@@ -14,7 +14,7 @@
 rtems_task Init(rtems_task_argument ignored)
 {
 #ifdef ENABLE_UNIT_TEST
-    runAllTests();
+    rtfsRunAllTests();
 #endif
 
 
