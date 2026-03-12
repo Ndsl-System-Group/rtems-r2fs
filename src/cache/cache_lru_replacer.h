@@ -24,18 +24,17 @@ typedef struct LruNode
  */
 typedef struct CacheLruReplacer
 {
-    // 正常的 LRU 链表。
-    LruNode *head; // 最久未访问。
-    LruNode *tail; // 最近访问。
+    // 正常的 LRU 链表。头部代表的是最久未访问，尾部代表的是最近访问。
+    LruNode *lruHead;
 
     // pin 住的链表。
     LruNode *pinHead;
-    LruNode *pinTail;
 
     // 因为需要 O(1) 的时间复杂度从 key 定位到链表节点，所以需要额外开辟一个哈希表存储 key 到 LRU 链表的映射关系。
     LruNode *table;
 
-    size_t size; // 当前可置换数量。（在无 pin 版本的时候和链表的长度完全一致。）
+    // 当前可置换数量。
+    size_t size;
 } CacheLruReplacer;
 
 
