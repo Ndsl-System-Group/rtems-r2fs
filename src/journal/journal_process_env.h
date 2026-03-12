@@ -37,6 +37,8 @@ typedef struct JournalProcessEnv
 
 JournalProcessEnv *journalProcessEnvGetInstance();
 
+void journalProcessEnvDestroy(JournalProcessEnv *this);
+
 uint64_t journalProcessEnvAllocTxId(JournalProcessEnv *this);
 
 void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *journal);
