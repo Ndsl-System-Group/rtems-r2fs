@@ -59,6 +59,7 @@ void journalProcessEnvDestroy(JournalProcessEnv *this)
     pthread_cond_destroy(&this->cond);
 }
 
+// 同时超过 UNIT64_MAX 个事务运行则会分配重复 txId，暂不考虑这种情况。
 uint64_t journalProcessEnvAllocTxId(JournalProcessEnv *this)
 {
     return atomic_fetch_add_explicit(&this->txIdToAlloc, 1, memory_order_relaxed);
