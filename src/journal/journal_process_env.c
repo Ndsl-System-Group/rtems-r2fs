@@ -19,7 +19,6 @@ typedef struct JournalProcessThreadArgs
     uint64_t start;
     uint64_t end;
     uint64_t fifo;
-
 } JournalProcessThreadArgs;
 
 // 日志处理线程入口包装函数。Posix 的接口规定，所以需要包装一下。
