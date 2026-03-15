@@ -1,4 +1,4 @@
-#include "r2fs_log.h"
+#include "rtfs_log.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -12,7 +12,7 @@ const char *logLevelStr[] = {"DEBUG", "INFO", "WARING", "ERROR"};
     vfprintf(stderr, fmt, ##__VA_ARGS__)
 
 
-void r2fsLogPrint(R2fsLogLevel log_level, const char *funcname, unsigned int lineno, const char *fmt, ...)
+void rtfsLogPrint(RtfsLogLevel log_level, const char *funcname, unsigned int lineno, const char *fmt, ...)
 {
     fprintf(stderr, "[%s:%u, %s]: ", funcname, lineno, logLevelStr[log_level]);
 
@@ -23,11 +23,11 @@ void r2fsLogPrint(R2fsLogLevel log_level, const char *funcname, unsigned int lin
     va_end(args);
 }
 
-void r2fsLogErrno(R2fsLogLevel log_level, const char *funcname, unsigned int lineno, int err, const char *fmt, ...)
+void rtfsLogErrno(RtfsLogLevel log_level, const char *funcname, unsigned int lineno, int err, const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    r2fsLogPrint(log_level, funcname, lineno, fmt, args);
+    rtfsLogPrint(log_level, funcname, lineno, fmt, args);
     va_end(args);
 
     char errno_msg[ERRNO_MSG_LEN];

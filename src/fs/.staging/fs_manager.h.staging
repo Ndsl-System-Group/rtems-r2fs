@@ -5,7 +5,7 @@
 #include <mutex>
 
 #include "cache/dentry_cache.h"
-#include "utils/r2fs_multithread.h"
+#include "utils/rtfs_multithread.h"
 
 
 struct comm_dev;

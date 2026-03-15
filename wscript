@@ -39,7 +39,7 @@ def configure(conf):
     else:
         conf.msg('Checking for Unit Test', 'Disabled')
 
-    conf.write_config_header('r2fs_config.h')
+    conf.write_config_header('rtfs_config.h')
 
 def build(bld):
     rtems.build(bld)
@@ -47,7 +47,7 @@ def build(bld):
     all_sources = bld.path.ant_glob('src/**/*.c', excl='**/test_*.c **/*_test.c') + bld.path.ant_glob('third_party/**/*.c')
 
     # 这个做法太丑陋了，但是目前没找到合适的解法。conf 级别的配置和变量无法同步到 build 级别，我不知道为什么。
-    with open('build/r2fs_config.h') as f:
+    with open('build/rtfs_config.h') as f:
         text = f.read()
     if '#define ENABLE_UNIT_TEST 1' in text:
         all_sources += bld.path.ant_glob('test/**/*.c')

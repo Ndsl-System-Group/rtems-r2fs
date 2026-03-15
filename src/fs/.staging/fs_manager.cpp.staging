@@ -14,7 +14,7 @@
 #include "fs/write_back_helper.h"
 #include "fs/replace_protect.h"
 #include "journal/journal_container.h"
-#include "utils/r2fs_exceptions.h"
+#include "utils/rtfs_exceptions.h"
 #include "utils/lock_guards.h"
 #include <system_error>
 
@@ -35,7 +35,7 @@ file_system_manager::~file_system_manager()
 {
     int ret = rwlock_destroy(&fs_freeze_lock);
     if (ret != 0)
-        R2FS_LOG(R2FS_LOG_WARNING, "file system manager: destruct fs freeze lock failed.");
+        RTFS_LOG(RTFS_LOG_WARNING, "file system manager: destruct fs freeze lock failed.");
 }
 
 void file_system_manager::init(comm_dev *device)
@@ -87,7 +87,7 @@ void file_system_manager::fini()
 
     /* 析构fs_manager */
     g_fs_manager = nullptr;
-    R2FS_LOG(R2FS_LOG_INFO, "destructed all file system cache.");
+    RTFS_LOG(RTFS_LOG_INFO, "destructed all file system cache.");
 }
 
 void file_system_manager::write_back_all_dirty_sync()

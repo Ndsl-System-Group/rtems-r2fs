@@ -3,11 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "r2fs_config.h"
+#include "rtfs_config.h"
 
 
 #ifdef ENABLE_UNIT_TEST
-#include "r2fs_test.h"
+#include "rtfs_test.h"
 #endif
 
 

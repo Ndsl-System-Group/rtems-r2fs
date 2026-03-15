@@ -9,7 +9,7 @@
  * @param[in] _loc is a pointer to the path location.
  * @return file_system_manager*
  */
-#define R2FS_GET_FSMANAGER_STRUCTURE(_loc) ((file_system_manager *)((_loc)->mt_entry->fs_info))
+#define RTFS_GET_FSMANAGER_STRUCTURE(_loc) ((file_system_manager *)((_loc)->mt_entry->fs_info))
 
 /**
  * Get the ino from the I/O pointer.
@@ -17,11 +17,11 @@
  * @param[in] _iop is the I/O pointer.
  * @return ino
  */
-#define R2FS_GET_IOP_INO(_iop) ((intptr_t)(_iop)->pathinfo.node_access)
+#define RTFS_GET_IOP_INO(_iop) ((intptr_t)(_iop)->pathinfo.node_access)
 
 
 // The inode number or ino.
-typedef uint64_t r2fs_ino;
+typedef uint64_t rtfs_ino;
 
 
 #endif

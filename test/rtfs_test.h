@@ -1,5 +1,5 @@
-#ifndef _R2FS_TEST_H_
-#define _R2FS_TEST_H_
+#ifndef _RTFS_TEST_H_
+#define _RTFS_TEST_H_
 
 #include "unity/unity.h"
 
@@ -28,13 +28,13 @@ void tearDown(void);
 当然，问题在于有测试函数数量的上限，这个其实问题不大。
 ========================================================================
 */
-#define R2FS_MAX_TESTS 1000
+#define RTFS_MAX_TESTS 1000
 
-#define R2FS_COLOR_RED "\033[31m"
-#define R2FS_COLOR_GREEN "\033[32m"
-#define R2FS_COLOR_YELLOW "\033[33m"
-#define R2FS_COLOR_BLUE "\033[34m"
-#define R2FS_COLOR_RESET "\033[0m"
+#define RTFS_COLOR_RED "\033[31m"
+#define RTFS_COLOR_GREEN "\033[32m"
+#define RTFS_COLOR_YELLOW "\033[33m"
+#define RTFS_COLOR_BLUE "\033[34m"
+#define RTFS_COLOR_RESET "\033[0m"
 
 
 typedef void (*testFunc)(void);
@@ -45,15 +45,15 @@ struct TestEntry
     testFunc func;
 };
 
-extern struct TestEntry testArray[R2FS_MAX_TESTS];
+extern struct TestEntry testArray[RTFS_MAX_TESTS];
 extern int testCount;
 
 
-#define R2FS_TEST(test_name)                                                  \
+#define RTFS_TEST(test_name)                                                  \
     void test_name(void);                                                     \
     static void __attribute__((unused)) register_##test_name(void)            \
     {                                                                         \
-        if (testCount < R2FS_MAX_TESTS)                                       \
+        if (testCount < RTFS_MAX_TESTS)                                       \
         {                                                                     \
             testArray[testCount].name = #test_name;                           \
             testArray[testCount].func = test_name;                            \

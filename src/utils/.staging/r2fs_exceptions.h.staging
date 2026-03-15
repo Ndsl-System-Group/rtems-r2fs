@@ -1,5 +1,5 @@
-#ifndef _R2FS_EXCEPTIONS_H_
-#define _R2FS_EXCEPTIONS_H_
+#ifndef _RTFS_EXCEPTIONS_H_
+#define _RTFS_EXCEPTIONS_H_
 
 
 #include <stdexcept>

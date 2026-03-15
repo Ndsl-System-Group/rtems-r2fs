@@ -4,8 +4,8 @@
 #include <typeindex>
 
 #include "utils/exception_handler.h"
-#include "utils/r2fs_exceptions.h"
-#include "utils/r2fs_log.h"
+#include "utils/rtfs_exceptions.h"
+#include "utils/rtfs_log.h"
 #include "fs/fs_manager.h"
 
 
@@ -18,7 +18,7 @@ std::unordered_map<std::type_index, int> exception_handler::recoverable_exceptio
 
 int exception_handler::convert_to_errno(bool set_unrecoverable)
 {
-    R2FS_LOG(R2FS_LOG_WARNING, "exception occurred: %s", e.what());
+    RTFS_LOG(RTFS_LOG_WARNING, "exception occurred: %s", e.what());
     int ret = ENOTRECOVERABLE;
     type_index type(typeid(e));
     if (recoverable_exceptions_errno.count(type) != 0)
