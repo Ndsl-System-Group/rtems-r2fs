@@ -3,19 +3,25 @@
 
 #include <stdint.h>
 #include <time.h>
+#include <semaphore.h>
+
+#include <rtems.h>
 
 
 typedef struct RtfsTimer
 {
-    int timerFd;
+    rtems_id timerId;
     struct timespec expirationTime;
     uint8_t isPeriod;
     uint8_t isBlockCheck; // rtfsTimerCheckExpire 时是否阻塞直到到期。
+
+    sem_t expireSem;
+    volatile uint64_t pendingExpirations;
+    uint8_t isCreated;
 } RtfsTimer;
 
-/* 定时器操作接口。 */
 
-/* isBlockCheck：定时器是阻塞还是非阻塞。 */
+// isBlockCheck：定时器是阻塞还是非阻塞。
 int rtfsTimerConstructor(RtfsTimer *this, uint8_t isBlockCheck);
 void rtfsTimerDestructor(RtfsTimer *this);
 void rtfsTimerSet(RtfsTimer *this, struct timespec *expirationTime, uint8_t isPeriod);

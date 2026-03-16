@@ -6,8 +6,6 @@
 #include <unistd.h>
 #include <assert.h>
 
-#include <rtems/timer.h>
-
 
 int rtfsTimerConstructor(RtfsTimer *this, uint8_t isBlockCheck)
 {
@@ -26,5 +24,9 @@ int rtfsTimerStart(RtfsTimer *this)
 }
 
 int rtfsTimerStop(RtfsTimer *this)
+{
+}
+
+int rtfsTimerCheckExpire(RtfsTimer *this, uint64_t *overflowTimes)
 {
 }
