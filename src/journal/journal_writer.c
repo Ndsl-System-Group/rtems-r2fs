@@ -1,7 +1,7 @@
 #include "journal_writer.h"
 
 
-typedef enum
+typedef enum JournalOutputState
 {
     JOURNAL_OUTPUT_OK,
     JOURNAL_OUTPUT_NO_ENOUGH_BUFFER,

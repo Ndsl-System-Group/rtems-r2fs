@@ -1,0 +1,46 @@
+#include "rtfs_timer.h"
+#include "rtfs_log.h"
+
+#include <stdlib.h>
+#include <errno.h>
+#include <unistd.h>
+#include <assert.h>
+
+
+int rtfsTimerConstructor(RtfsTimer *this, uint8_t isBlockCheck)
+{
+    int flags = 0;
+    if (!isBlockCheck) flags |= TFD_NONBLOCK;
+
+    int fd = timerfd_create(CLOCK_MONOTONIC, flags);
+    if (fd == -1)
+    {
+        int err = errno;
+        RTFS_ERRNO_LOG(RTFS_LOG_ERROR, err, "timerfd create failed.");
+
+
+        return -1;
+    }
+
+    this->timerFd = fd;
+    this->isBlockCheck = isBlockCheck;
+
+
+    return 0;
+}
+
+void rtfsTimerDestructor(RtfsTimer *this)
+{
+}
+
+void rtfsTimerSet(RtfsTimer *this, struct timespec *expirationTime, uint8_t isPeriod)
+{
+}
+
+int rtfsTimerStart(RtfsTimer *this)
+{
+}
+
+int rtfsTimerStop(RtfsTimer *this)
+{
+}
