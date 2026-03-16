@@ -22,7 +22,7 @@ typedef struct JournalWriter
 } JournalWriter;
 
 
-void journalWriterInit(JournalWriter *this, struct comm_dev *device, uint64_t journalAreaStartLpa, uint64_t journalAreaEndLpa);
+void journalWriterInit(JournalWriter *this, struct comm_dev *dev, uint64_t journalAreaStartLpa, uint64_t journalAreaEndLpa);
 
 /**
  * @brief 设置将要处理的日志。

@@ -9,14 +9,14 @@ typedef enum JournalOutputState
 } JournalOutputState;
 
 
-void journalWriterInit(JournalWriter *this, struct comm_dev *device, uint64_t journalAreaStartLpa, uint64_t journalAreaEndLpa)
+void journalWriterInit(JournalWriter *this, struct comm_dev *dev, uint64_t journalAreaStartLpa, uint64_t journalAreaEndLpa)
 {
     this->startLpa = journalAreaStartLpa;
     this->endLpa = journalAreaEndLpa;
     this->curJournal = NULL;
     this->bufferTailIdx = 0;
     this->bufferTailOff = 0;
-    this->dev = device;
+    this->dev = dev;
 }
 
 void journalWriterSetPendingJournal(JournalWriter *this, JournalContainer *journal)
