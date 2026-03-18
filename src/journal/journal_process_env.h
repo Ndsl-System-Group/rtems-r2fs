@@ -1,7 +1,9 @@
 #ifndef _JOURNAL_PROCESS_ENV_H_
 #define _JOURNAL_PROCESS_ENV_H_
 
-#include "journal_container.h"
+#include "journal/journal_container.h"
+
+#include "utils/declare_utils.h"
 
 #include <pthread.h>
 #include <stdatomic.h>
@@ -13,13 +15,10 @@ struct comm_dev;
 /**
  * @brief 提交队列节点。由于 JournalContainer 结构本身不能侵入式添加链表指针，因此通过该 wrapper 节点将其加入 UTList 双向链表。
  */
-typedef struct JournalCommitNode
-{
-    JournalContainer *journal; // 指向提交的日志容器。
-
-    struct JournalCommitNode *prev;
-    struct JournalCommitNode *next;
-} JournalCommitNode;
+DEFINE_UTLIST_NODE(
+    JournalCommitNode,
+    JournalContainer *journal // 指向提交的日志容器。
+)
 
 
 /**

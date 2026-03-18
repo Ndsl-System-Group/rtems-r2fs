@@ -5,6 +5,7 @@
 
 #include "uthash/utlist.h"
 #include "utils/rtfs_log.h"
+#include "utils/declare_utils.h"
 
 
 /**
@@ -13,13 +14,14 @@
  * CDL_* → 需要 prev + next（循环双链表）。
  * 所有的数据结构必须自己定义，utlist.h 不会提供结构体。
  */
-typedef struct UtListTestNode
-{
-    int val;
+// typedef struct UtListTestNode
+// {
+//     int val;
 
-    struct UtListTestNode *prev;
-    struct UtListTestNode *next;
-} UtListTestNode;
+//     struct UtListTestNode *prev;
+//     struct UtListTestNode *next;
+// } UtListTestNode;
+DEFINE_UTLIST_NODE(UtListTestNode, int val)
 
 
 static UtListTestNode *createNode(int v)

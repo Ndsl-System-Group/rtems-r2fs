@@ -1,6 +1,7 @@
 #include "journal_processor.h"
 
 #include "utils/rtfs_log.h"
+#include "uthash/utlist.h"
 
 
 // 日志处理线程入口。
@@ -58,6 +59,7 @@ bool transactionJournalRecordIsApplied(TransactionJournalRecord *this, uint64_t 
 
 
 // 判断日志处理线程是否空闲。
+// 当可用 lpa 等于整个日志区域时，说明所有已提交的日志均已应用完，不需要再轮询。当 journalList 和 curJournal 都为空时，从 journal commit queue 中取出的日志均已处理完毕。以上两个条件都满足，则日志处理线程空闲。
 static bool journalProcessorIsWorking(JournalProcessor *this);
 
 // 当日志处理线程空闲时，睡眠等待新的日志，否则尝试获取新的日志。当日志处理线程空闲、没有新日志可取，并且外部请求它退出时，就结束线程主循环，并且返回 true。
@@ -149,6 +151,7 @@ void journalProcessorProcessJournal(JournalProcessor *this)
 
 bool journalProcessorIsWorking(JournalProcessor *this)
 {
+    return !(this->curAvailLpa == this->totalAvailLpa && NULL == this->pendingJournalListHead && NULL == this->curJournal);
 }
 
 bool journalProcessorFetchNewJournal(JournalProcessor *this)

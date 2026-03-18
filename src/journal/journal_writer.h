@@ -1,7 +1,7 @@
 #ifndef _JOURNAL_WRITER_H_
 #define _JOURNAL_WRITER_H_
 
-#include "journal_container.h"
+#include "journal/journal_container.h"
 
 #include "uthash/utarray.h"
 

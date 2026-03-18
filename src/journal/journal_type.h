@@ -1,7 +1,6 @@
 #ifndef _JOURNAL_TYPE_H_
 #define _JOURNAL_TYPE_H_
 
-
 #include "fs/fs.h"
 
 

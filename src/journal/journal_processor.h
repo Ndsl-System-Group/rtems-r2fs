@@ -1,9 +1,9 @@
 #ifndef _JOURNAL_PROCESSOR_H_
 #define _JOURNAL_PROCESSOR_H_
 
-#include "journal_container.h"
-#include "journal_process_env.h"
-#include "journal_writer.h"
+#include "journal/journal_container.h"
+#include "journal/journal_process_env.h"
+#include "journal/journal_writer.h"
 
 #include "utils/types.h"
 #include "utils/rtfs_timer.h"

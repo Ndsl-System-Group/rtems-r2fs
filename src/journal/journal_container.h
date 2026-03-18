@@ -1,7 +1,7 @@
 #ifndef _JOURNAL_CONTAINER_H_
 #define _JOURNAL_CONTAINER_H_
 
-#include "journal_type.h"
+#include "journal/journal_type.h"
 
 #include "uthash/utarray.h"
 #include "utils/types.h"
