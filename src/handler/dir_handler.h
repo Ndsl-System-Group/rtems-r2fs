@@ -2,9 +2,7 @@
 #define _DIR_HANDLER_H_
 
 #include <rtems/fs.h>
-
 #include <utf8proc/utf8proc.h>
-
 #include <sys/stat.h>
 
 
