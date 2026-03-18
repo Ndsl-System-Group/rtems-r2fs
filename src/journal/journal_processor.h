@@ -7,6 +7,7 @@
 
 #include "utils/types.h"
 #include "utils/rtfs_timer.h"
+#include "utils/declare_utils.h"
 
 
 struct comm_dev;
@@ -47,6 +48,11 @@ typedef enum JournalProcessState
 } JournalProcessState;
 
 /**
+ * @brief 事务记录表。确定首事务日志已经应用完毕后，移除它并通知淘汰保护模块。表中事务按提交顺序排列，提交时按顺序写入 SSD 的 Journal FIFO，所以也一定按顺序被应用。
+ */
+DEFINE_UTLIST_NODE(TxRecordNode, TransactionJournalRecord record)
+
+/**
  * @brief 日志处理线程与其工作环境。系统确保此环境构造时，已完成故障恢复，因此可用日志资源为整个 SSD 日志区域。日志处理线程中，写日志、写日志尾指针、查询 SSD 日志位置，都使用同步阻塞式 I/O。
  */
 typedef struct JournalProcessor
@@ -60,8 +66,7 @@ typedef struct JournalProcessor
 
     JournalCommitNode *pendingJournalListHead; // 日志提交列表，从 JournalProcessEnv 中取到此处。
 
-    // TODO 事务记录表。确定首事务日志已经应用完毕后，移除它并通知淘汰保护模块。表中事务按提交顺序排列，提交时按顺序写入 SSD 的 Journal FIFO，所以也一定按顺序被应用。
-    // std::list<transaction_journal_record> tx_record;
+    TxRecordNode *txRecordHead;
 
     JournalWriter journalWriter;
 

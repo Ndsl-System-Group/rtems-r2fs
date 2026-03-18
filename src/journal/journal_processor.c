@@ -154,6 +154,7 @@ bool journalProcessorIsWorking(JournalProcessor *this)
     return !(this->curAvailLpa == this->totalAvailLpa && NULL == this->pendingJournalListHead && NULL == this->curJournal);
 }
 
+// TODO
 bool journalProcessorFetchNewJournal(JournalProcessor *this)
 {
 }
@@ -164,6 +165,10 @@ void journalProcessorProcessPendingJournal(JournalProcessor *this)
 
 void journalProcessorWriteJournalToBuffer(JournalProcessor *this)
 {
+    journalWriterSetPendingJournal(&this->journalWriter, this->curJournal);
+
+    this->curJournalBlockNum = journalWriterCollectPendingJournalToWriteBuffer(&this->journalWriter);
+    this->curProcState = JOURNAL_PROCESS_WRITTEN_IN_BUFFER;
 }
 
 bool journalProcessorWriteJournalToSsd(JournalProcessor *this)
@@ -172,26 +177,92 @@ bool journalProcessorWriteJournalToSsd(JournalProcessor *this)
 
 void journalProcessorGenerateTxRecord(JournalProcessor *this)
 {
+    TxRecordNode *node = (struct TxRecordNode *)malloc(sizeof(struct TxRecordNode));
+    if (!node)
+    {
+        RTFS_LOG(RTFS_LOG_ERROR, "journal processor generate txRecord: error when allocating TxRecordNode");
+
+
+        exit(EXIT_FAILURE);
+    }
+
+    transactionJournalRecordInit(&node->record, journalContainerGetTxId(this->curJournal), this->curJournalStartLpa, this->curJournalEndLpa);
+
+    node->prev = node->next = NULL;
+
+    DL_APPEND(this->txRecordHead, node);
 }
 
 void journalProcessorProcessCpltJournal(JournalProcessor *this)
 {
+    if (this->curAvailLpa == this->totalAvailLpa)
+    {
+        journalProcessorDisablePollTimer(this);
+
+
+        return;
+    }
+    journalProcessorEnablePollTimer(this);
+    journalProcessorWaitPollTimer(this);
+
+    // 如果 SSD 应用了一部分日志，则确认哪些事务日志已经应用完，并做相应处理。
+    if (journalProcessorSyncWithSsdJournalPos(this)) journalProcessorProcessTxRecord(this);
 }
 
 void journalProcessorEnablePollTimer(JournalProcessor *this)
 {
+    if (this->isPollTimerEnabled) return;
+
+    if (0 != rtfsTimerStart(&this->journalPollTimer))
+    {
+        RTFS_LOG(RTFS_LOG_ERROR, "journal processor: enable timer failed.");
+
+
+        exit(EXIT_FAILURE);
+    }
+
+    this->isPollTimerEnabled = true;
 }
 
 void journalProcessorDisablePollTimer(JournalProcessor *this)
 {
+    if (!this->isPollTimerEnabled) return;
+
+    if (0 != rtfsTimerStop(&this->journalPollTimer))
+    {
+        RTFS_LOG(RTFS_LOG_ERROR, "journal processor: disable timer failed.");
+
+
+        exit(EXIT_FAILURE);
+    }
+
+    this->isPollTimerEnabled = false;
 }
 
 void journalProcessorWaitPollTimer(JournalProcessor *this)
 {
+    if (0 != rtfsTimerCheckExpire(&this->journalPollTimer, NULL))
+    {
+        RTFS_LOG(RTFS_LOG_ERROR, "journal processor: wait timer failed.");
+
+
+        exit(EXIT_FAILURE);
+    }
 }
 
 bool journalProcessorSyncWithSsdJournalPos(JournalProcessor *this)
 {
+    // TODO
+    // if (comm_submit_sync_get_metajournal_head_request(dev, journal_pos_dma_buffer) != 0) throw io_error("journal processor: submit get journal pos failed.");
+
+    uint64_t newHeadLpa = this->journalPosDmaBuffer[0];
+    uint64_t newAvailLpa = newHeadLpa >= this->headLpa ? newHeadLpa - this->headLpa : newHeadLpa + this->endLpa - this->startLpa - this->headLpa;
+
+    this->headLpa = newHeadLpa;
+    this->curAvailLpa += newAvailLpa;
+
+
+    return newAvailLpa;
 }
 
 void journalProcessorProcessTxRecord(JournalProcessor *this)
