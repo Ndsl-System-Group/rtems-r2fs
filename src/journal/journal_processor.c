@@ -3,6 +3,8 @@
 #include "utils/rtfs_log.h"
 #include "uthash/utlist.h"
 
+#include <pthread.h>
+
 
 // 日志处理线程入口。
 void rtfsJournalProcessThread(struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos)
@@ -154,13 +156,97 @@ bool journalProcessorIsWorking(JournalProcessor *this)
     return !(this->curAvailLpa == this->totalAvailLpa && NULL == this->pendingJournalListHead && NULL == this->curJournal);
 }
 
-// TODO
 bool journalProcessorFetchNewJournal(JournalProcessor *this)
 {
+    JournalProcessEnv *processEnv = journalProcessEnvGetInstance();
+
+#define CHECK_IF_INTERRUPTED()                      \
+    do                                              \
+    {                                               \
+        if (processEnv->exitReq)                    \
+        {                                           \
+            processEnv->exitReq = 0;                \
+            pthread_mutex_unlock(&processEnv->mtx); \
+            return -1;                              \
+        }                                           \
+    } while (0)
+
+
+    pthread_mutex_lock(&processEnv->mtx);
+
+    if (journalProcessorIsWorking(this))
+    {
+        if (NULL == processEnv->commitQueueHead)
+        {
+            pthread_mutex_unlock(&processEnv->mtx);
+
+
+            return -1;
+        }
+    }
+    else
+    {
+        while (NULL == processEnv->commitQueueHead)
+        {
+            // 若系统需要让日志处理线程退出，则不会再继续写日志。所以该线程在处理完 commitQueue 和自身正在处理的全部日志后，即此处，再检查是否退出。
+            CHECK_IF_INTERRUPTED();
+
+            pthread_cond_wait(&processEnv->cond, &processEnv->mtx);
+        }
+    }
+
+    // 将 commitQueue 中所有日志按顺序移动到日志处理线程的 journalList 尾部。
+    if (NULL != processEnv->commitQueueHead)
+    {
+        DL_CONCAT(this->pendingJournalListHead, processEnv->commitQueueHead);
+
+        // 清空 commitQueue。
+        processEnv->commitQueueHead = NULL;
+    }
+
+    pthread_mutex_unlock(&processEnv->mtx);
+
+
+#undef CHECK_IF_INTERRUPTED
+
+
+    return 0;
 }
 
 void journalProcessorProcessPendingJournal(JournalProcessor *this)
 {
+    if (NULL == this->curJournal)
+    {
+        if (NULL != this->pendingJournalListHead)
+        {
+            // 弹出头部并赋值给 curJournal。
+            JournalCommitNode *node = this->pendingJournalListHead;
+            this->curJournal = node->journal;
+            DL_DELETE(this->pendingJournalListHead, node);
+
+            this->curProcState = JOURNAL_PROCESS_NEWLY_FETCHED;
+        }
+        else
+        {
+            return;
+        }
+    }
+
+    switch (this->curProcState)
+    {
+        case JOURNAL_PROCESS_NEWLY_FETCHED:
+            journalProcessorWriteJournalToBuffer(this);
+            // 此处无 break，写到缓存后可直接尝试写入 SSD，不用等到下一轮 loop。
+
+        case JOURNAL_PROCESS_WRITTEN_IN_BUFFER:
+            if (true == journalProcessorWriteJournalToSsd(this))
+            {
+                journalProcessorGenerateTxRecord(this);
+
+                this->curJournal = NULL;
+            }
+            break;
+    }
 }
 
 void journalProcessorWriteJournalToBuffer(JournalProcessor *this)
@@ -173,6 +259,31 @@ void journalProcessorWriteJournalToBuffer(JournalProcessor *this)
 
 bool journalProcessorWriteJournalToSsd(JournalProcessor *this)
 {
+    if (this->curJournalBlockNum <= this->curAvailLpa)
+    {
+        journalWriterWriteToSsd(&this->journalWriter, this->tailLpa);
+
+        // TODO
+        // int res = comm_submit_sync_update_metajournal_tail_request(dev, tail_lpa, cur_journal_block_num);
+        // if (res != 0) throw io_error("journal processor: update SSD journal tail failed.");
+
+        this->curJournalStartLpa = this->tailLpa;
+        this->tailLpa += this->curJournalBlockNum;
+        if (this->tailLpa >= this->endLpa) this->tailLpa = this->tailLpa - this->endLpa + this->startLpa;
+        this->curJournalEndLpa = this->tailLpa;
+        this->curAvailLpa -= this->curJournalBlockNum;
+
+
+        return true;
+    }
+    else
+    {
+        RTFS_LOG(RTFS_LOG_DEBUG, "wait for SSD to have available journal space.\n");
+        RTFS_LOG(RTFS_LOG_DEBUG, "current available LPA num: %lu, current journal need LPA num: %lu\n", this->curAvailLpa, this->curJournalBlockNum);
+
+
+        return false;
+    }
 }
 
 void journalProcessorGenerateTxRecord(JournalProcessor *this)
@@ -267,4 +378,23 @@ bool journalProcessorSyncWithSsdJournalPos(JournalProcessor *this)
 
 void journalProcessorProcessTxRecord(JournalProcessor *this)
 {
+    while (true)
+    {
+        if (NULL == this->txRecordHead) break;
+
+        TxRecordNode *txRc = this->txRecordHead;
+        if (transactionJournalRecordIsApplied(&txRc->record, this->headLpa, this->tailLpa))
+        {
+            RTFS_LOG(RTFS_LOG_DEBUG, "transaction %lu completed, which applied journal area: start lpa = %lu, end lpa = %lu\n", transactionJournalRecordGetTxId(&txRc->record), transactionJournalRecordGetStartLpa(&txRc->record), transactionJournalRecordGetEndLpa(&txRc->record));
+
+            // TODO
+            // file_system_manager::get_instance()->get_replace_protect_manager()->notify_cplt_tx(tx_rc.get_tx_id());
+
+            DL_DELETE(this->txRecordHead, txRc);
+        }
+        else
+        {
+            break;
+        }
+    }
 }
