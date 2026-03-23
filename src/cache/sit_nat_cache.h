@@ -143,7 +143,7 @@ typedef struct SitNatCache
  * @param device SSD 设备
  * @param expectCacheSize 期望缓存项数量
  */
-void sitNatCacheInit(SitNatCache *this, struct comm_dev *device, size_t expectCacheSize);
+void sitNatCacheInit(SitNatCache *this, struct comm_dev *dev, size_t expectCacheSize);
 
 
 /**

@@ -14,7 +14,7 @@ struct comm_dev;
  * @struct BlockBuffer
  * @brief 表示一个固定大小（4KB）的块级 DMA 缓冲区，用于与块设备进行读写。
  **/
-typedef struct
+typedef struct BlockBuffer
 {
     char *buffer;
 } BlockBuffer;
