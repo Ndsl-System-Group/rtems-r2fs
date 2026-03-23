@@ -128,58 +128,67 @@ RTFS_TEST(KbtreeEmptyTest)
     kb_destroy(ktte, tree);
 }
 
-// RTFS_TEST(KbtreeRangeEraseTest)
-// {
-//     kbtree_t(ktte) *tree = kb_init(ktte, KB_DEFAULT_SIZE);
+RTFS_TEST(KbtreeRangeEraseTest)
+{
+    kbtree_t(ktte) *tree = kb_init(ktte, KB_DEFAULT_SIZE);
 
-//     KbTreeTestEntry t;
 
-//     /* 插入 0~9 */
-//     for (int i = 0; i < 10; ++i)
-//     {
-//         t.key = i;
-//         t.value = i;
-//         kb_put(ktte, tree, t);
-//     }
+    KbTreeTestEntry t;
 
-//     int start = 3;
-//     int end = 7;
+    // 插入 0~9。
+    for (int i = 9; i >= 0; --i)
+    {
+        t.key = i;
+        t.value = i;
+        kb_put(ktte, tree, t);
+    }
 
-//     KbTreeTestEntry query;
-//     KbTreeTestEntry *lower = NULL;
-//     KbTreeTestEntry *upper = NULL;
+    // 删除 [3, 7) 范围内的数。
+    int start = 3;
+    int end = 7;
 
-//     /* 找 >= start 的第一个（用 upper） */
-//     query.key = start;
-//     kb_interval(ktte, tree, query, &lower, &upper);
+    KbTreeTestEntry query;
+    KbTreeTestEntry *lower = NULL;
+    KbTreeTestEntry *upper = NULL;
 
-//     KbTreeTestEntry *cur = upper;
+    // 找 >= start 的第一个。
+    query.key = start;
+    kb_interval(ktte, tree, query, &lower, &upper);
 
-//     while (cur && cur->key < end)
-//     {
-//         int k = cur->key;
+    KbTreeTestEntry *cur = upper;
 
-//         /* 先找下一个 */
-//         query.key = k + 1;
-//         kb_interval(ktte, tree, query, &lower, &upper);
+    while (cur && cur->key < end)
+    {
+        int k = cur->key;
 
-//         /* 删除当前 */
-//         kb_del(ktte, tree, (KbTreeTestEntry){.key = k});
+        // 删除当前。
+        kb_del(ktte, tree, (KbTreeTestEntry){.key = k});
 
-//         cur = upper;
-//     }
+        // 查找后继（严格大于 k）。
+        query.key = k;
+        kb_interval(ktte, tree, query, &lower, &upper);
 
-//     /* 验证 */
-//     for (int i = 0; i < 10; ++i)
-//     {
-//         t.key = i;
-//         KbTreeTestEntry *p = kb_getp(ktte, tree, &t);
+        cur = upper;
+    }
 
-//         if (i >= start && i < end)
-//             TEST_ASSERT(p == NULL);
-//         else
-//             TEST_ASSERT(p != NULL);
-//     }
+    // 验证。
+    for (int i = 0; i < 10; ++i)
+    {
+        t.key = i;
+        KbTreeTestEntry *p = kb_getp(ktte, tree, &t);
 
-//     kb_destroy(ktte, tree);
-// }
+        if (i >= start && i < end)
+        {
+            TEST_ASSERT_NULL(p);
+        }
+        else
+        {
+            TEST_ASSERT_NOT_NULL(p);
+
+            RTFS_LOG(RTFS_LOG_INFO, "key = %d, value = %d", p->key, p->value);
+        }
+    }
+
+
+    kb_destroy(ktte, tree);
+}
