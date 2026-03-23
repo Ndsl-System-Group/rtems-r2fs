@@ -17,13 +17,13 @@ void pageEntryInit(PageEntry *this, uint32_t blkoff)
     atomic_store(&this->refCount, 0);
     atomic_store(&this->isDirty, false);
 
-    mutex_init(&this->pageLock);
+    rtfsMutexInit(&this->pageLock);
     blockBufferInit(&this->page);
 }
 
 void pageEntryDestroy(PageEntry *this)
 {
-    mutex_destroy(&this->pageLock);
+    rtfsMutexDestroy(&this->pageLock);
     blockBufferDestroy(&this->page);
 
     if (0 != this->refCount) RTFS_LOG(RTFS_LOG_WARNING, "page cache entry(blkoff = %u): refcount = %u while destructed.", this->blkoff, atomic_load(&this->refCount));
