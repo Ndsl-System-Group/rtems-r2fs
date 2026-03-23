@@ -5,64 +5,68 @@
 
 void cacheIndexManagerInit(CacheIndexManager *this)
 {
-    this->index = NULL;
+    this->index = kh_init(khcim);
 }
 
 void cacheIndexManagerDestroy(CacheIndexManager *this)
 {
-    CacheEntry *entry, *tmp;
-    HASH_ITER(hh, this->index, entry, tmp)
+    if (!this->index) return;
+
+    khiter_t k;
+
+    for (k = kh_begin(this->index); k != kh_end(this->index); ++k)
     {
-        HASH_DEL(this->index, entry);
-        free(entry->value); // 释放 value
-        free(entry);        // 释放条目
+        if (!kh_exist(this->index, k)) continue;
+
+        free(kh_value(this->index, k)); // 释放 value。
     }
+
+    kh_destroy(khcim, this->index);
     this->index = NULL;
 }
 
 void cacheIndexManagerAdd(CacheIndexManager *this, uint32_t key, void *value)
 {
-    assert(cacheIndexManagerGet(this, key) == NULL); // key 不能重复
+    int res;
+    khiter_t k = kh_put(khcim, this->index, key, &res);
 
-    CacheEntry *entry = (CacheEntry *)malloc(sizeof(CacheEntry));
-    entry->key = key;
-    entry->value = value;
+    // key 不能重复。
+    assert(res != 0);
 
-    HASH_ADD_INT(this->index, key, entry);
+    kh_value(this->index, k) = value;
 }
 
 void *cacheIndexManagerGet(CacheIndexManager *this, uint32_t key)
 {
-    CacheEntry *entry;
+    khiter_t k = kh_get(khcim, this->index, key);
 
-    HASH_FIND_INT(this->index, &key, entry);
+    if (k == kh_end(this->index)) return NULL;
 
 
-    return entry ? entry->value : NULL;
+    return kh_value(this->index, k);
 }
 
 void *cacheIndexManagerRemove(CacheIndexManager *this, uint32_t key)
 {
-    CacheEntry *entry;
+    khiter_t k = kh_get(khcim, this->index, key);
 
-    HASH_FIND_INT(this->index, &key, entry);
-    if (!entry) return NULL;
+    if (k == kh_end(this->index)) return NULL;
 
-    void *value = entry->value;
-    HASH_DEL(this->index, entry);
+    void *value = kh_value(this->index, k);
 
-    free(entry);
+    kh_del(khcim, this->index, k);
 
 
+    // 不释放。
     return value;
 }
 
-void cacheIndexManagerErase(CacheIndexManager *this, CacheEntry *cacheEntry)
+void cacheIndexManagerErase(CacheIndexManager *this, uint32_t key)
 {
-    if (!cacheEntry) return;
+    khiter_t k = kh_get(khcim, this->index, key);
 
-    HASH_DEL(this->index, cacheEntry);
+    if (k == kh_end(this->index)) return;
 
-    free(cacheEntry->value);
-    free(cacheEntry);
+    free(kh_value(this->index, k));
+    kh_del(khcim, this->index, k);
 }
