@@ -17,7 +17,7 @@ typedef struct KbTreeTestEntry
 KBTREE_INIT(ktte, KbTreeTestEntry, KBTREE_TEST_ENTRY_CMP)
 
 
-RTFS_TEST(KbtreeInsertFindTest)
+RTFS_TEST(KbtreeInsertTest)
 {
     kbtree_t(ktte) *tree = kb_init(ktte, KB_DEFAULT_SIZE);
 
