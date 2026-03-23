@@ -9,6 +9,9 @@
 #include <stdatomic.h>
 
 
+struct PageCache;
+
+
 typedef enum PageState
 {
     PAGE_INVALID,
@@ -66,6 +69,23 @@ uint32_t pageEntryGetBlkoff(const PageEntry *this);
 uint32_t pageEntryGetLpaRef(PageEntry *this);
 
 void pageEntrySetLpa(PageEntry *this, uint32_t lpa);
+
+
+typedef struct PageEntryHandle
+{
+    struct PageCache *cache;
+    PageEntry *entry;
+} PageEntryHandle;
+
+
+void pageEntryHandleInit(PageEntryHandle *this, struct PageCache *cache, PageEntry *entry);
+
+void pageEntryHandleDestroy(PageEntryHandle *this);
+
+/**
+ * @brief 尝试将 page entry 的 dirty 置位。如果是由本线程将 dirty 置位，则加入 page cache 的 dirty pages 集合。
+ */
+void pageEntryHandleMakeDirty(PageEntryHandle *this);
 
 
 #endif

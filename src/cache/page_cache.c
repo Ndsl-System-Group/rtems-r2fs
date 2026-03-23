@@ -67,6 +67,22 @@ void pageEntrySetLpa(PageEntry *this, uint32_t lpa)
 }
 
 
+void pageEntryHandleInit(PageEntryHandle *this, struct PageCache *cache, PageEntry *entry)
+{
+    this->cache = cache;
+    this->entry = entry;
+}
+
+// TODO
+void pageEntryHandleDestroy(PageEntryHandle *this)
+{
+}
+
+void pageEntryHandleMakeDirty(PageEntryHandle *this)
+{
+}
+
+
 bool pageEntryMarkDirty(PageEntry *this)
 {
     bool expect = false;
