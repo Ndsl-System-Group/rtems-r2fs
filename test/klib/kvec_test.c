@@ -20,7 +20,7 @@ RTFS_TEST(KvecPushTest)
 
     for (int i = 0; i < 10; ++i)
     {
-        TEST_ASSERT_EQUAL(kv_A(v, i), i * i);
+        TEST_ASSERT_EQUAL(kv_a(int, v, i), i * i);
     }
 
 
@@ -42,7 +42,7 @@ RTFS_TEST(KvecPushpTest)
 
     TEST_ASSERT_EQUAL(kv_size(v), 10);
 
-    for (int i = 0; i < 10; ++i) TEST_ASSERT_EQUAL(kv_A(v, i), i * 2);
+    for (int i = 0; i < 10; ++i) TEST_ASSERT_EQUAL(kv_a(int, v, i), i * 2);
 
 
     kv_destroy(v);
@@ -77,89 +77,92 @@ RTFS_TEST(KvecSizeCapTest)
     {
         kv_push(int, v, i *i);
 
-        RTFS_LOG(RTFS_LOG_INFO, "vector size: %d, capicity: %d", kv_size(v), kv_max(v));
+        RTFS_LOG(RTFS_LOG_INFO, "vector size: %d, capicity: %d", kv_size(v), kv_cap(v));
 
-        // kv_size() 返回的是 vec 的大小 size，kv_max() 返回的是容量 capicity。
-        TEST_ASSERT_GREATER_OR_EQUAL(kv_max(v), kv_size(v));
+        // kv_size() 返回的是 vec 的大小 size，kv_cap() 返回的是容量 capicity。
+        // TEST_ASSERT_GREATER_OR_EQUAL(a, b) 检测的是 b 大于等于 a，跟常规认知反过来了。
+        TEST_ASSERT_GREATER_OR_EQUAL(kv_size(v), kv_cap(v));
     }
 
 
     kv_destroy(v);
 }
 
-// RTFS_TEST(KvecSparseAssignTest)
-// {
-//     kvec_t(int) v;
-//     kv_init(v);
-
-//     kv_a(int, v, 5) = 50;
-//     kv_a(int, v, 20) = 200;
-
-//     TEST_ASSERT_EQUAL(kv_size(v), 21);
-
-//     TEST_ASSERT_EQUAL(kv_A(v, 5), 50);
-//     TEST_ASSERT_EQUAL(kv_A(v, 20), 200);
-
-//     kv_destroy(v);
-// }
+RTFS_TEST(KvecSizeCapTest2)
+{
+    kvec_t(int) v;
+    kv_init(v);
 
 
-// RTFS_TEST(KvecCopyTest)
-// {
-//     kvec_t(int) v1, v2;
+    kv_resize(int, v, 14);
 
-//     kv_init(v1);
-//     kv_init(v2);
+    RTFS_LOG(RTFS_LOG_INFO, "vector size: %d, capicity: %d", kv_size(v), kv_cap(v)); // 14, 16
+    TEST_ASSERT_EQUAL(kv_size(v), 14);
+    TEST_ASSERT_EQUAL(kv_cap(v), 16);
 
-//     for (int i = 0; i < 10; ++i)
-//     {
-//         kv_push(int, v1, i);
-//     }
+    kv_a(int, v, 5) = 50;
+    kv_a(int, v, 20) = 200;
 
-//     kv_copy(int, v2, v1);
+    TEST_ASSERT_EQUAL(kv_a(int, v, 5), 50);
+    TEST_ASSERT_EQUAL(kv_a(int, v, 20), 200);
 
-//     TEST_ASSERT_EQUAL(kv_size(v2), kv_size(v1));
-
-//     for (int i = 0; i < 10; ++i)
-//     {
-//         TEST_ASSERT_EQUAL(kv_A(v2, i), kv_A(v1, i));
-//     }
-
-//     kv_destroy(v1);
-//     kv_destroy(v2);
-// }
+    RTFS_LOG(RTFS_LOG_INFO, "vector size: %d, capicity: %d", kv_size(v), kv_cap(v)); // 21, 32
+    TEST_ASSERT_EQUAL(kv_size(v), 21);
+    TEST_ASSERT_EQUAL(kv_cap(v), 32);
 
 
-// RTFS_TEST(KvecEmptyTest)
-// {
-//     kvec_t(int) v;
-//     kv_init(v);
+    kv_destroy(v);
+}
 
-//     TEST_ASSERT_EQUAL(kv_size(v), 0);
-//     TEST_ASSERT_EQUAL(kv_max(v), 0);
+RTFS_TEST(KvecCopyTest)
+{
+    kvec_t(int) v1, v2;
 
-//     kv_destroy(v);
-// }
+    kv_init(v1);
+    kv_init(v2);
 
 
-// RTFS_TEST(KvecStressTest)
-// {
-//     kvec_t(int) v;
-//     kv_init(v);
+    for (int i = 0; i < 10; ++i) kv_push(int, v1, i);
 
-//     const int N = 100000;
+    kv_copy(int, v2, v1);
 
-//     for (int i = 0; i < N; ++i)
-//     {
-//         kv_push(int, v, i);
-//     }
+    TEST_ASSERT_EQUAL(kv_size(v2), kv_size(v1));
+    TEST_ASSERT_EQUAL(kv_cap(v2), kv_cap(v1));
 
-//     TEST_ASSERT_EQUAL(kv_size(v), N);
+    for (int i = 0; i < 10; ++i) TEST_ASSERT_EQUAL(kv_a(int, v2, i), kv_a(int, v1, i));
 
-//     for (int i = 0; i < N; ++i)
-//     {
-//         TEST_ASSERT_EQUAL(kv_A(v, i), i);
-//     }
 
-//     kv_destroy(v);
-// }
+    kv_destroy(v2);
+    kv_destroy(v1);
+}
+
+RTFS_TEST(KvecEmptyTest)
+{
+    kvec_t(int) v;
+    kv_init(v);
+
+
+    TEST_ASSERT_EQUAL(kv_size(v), 0);
+    TEST_ASSERT_EQUAL(kv_cap(v), 0);
+
+
+    kv_destroy(v);
+}
+
+RTFS_TEST(KvecStressTest)
+{
+    kvec_t(int) v;
+    kv_init(v);
+
+
+    const int N = 100000;
+
+    for (int i = 0; i < N; ++i) kv_push(int, v, i);
+
+    TEST_ASSERT_EQUAL(kv_size(v), N);
+
+    for (int i = 0; i < N; ++i) TEST_ASSERT_EQUAL(kv_a(int, v, i), i);
+
+
+    kv_destroy(v);
+}
