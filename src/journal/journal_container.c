@@ -1,59 +1,37 @@
 #include "journal_container.h"
 
 
-static const UT_icd superBlockJournalIcd = {
-    sizeof(struct SuperBlockJournalEntry),
-    NULL,
-    NULL,
-    NULL,
-};
-
-static const UT_icd natJournalIcd = {
-    sizeof(struct NatJournalEntry),
-    NULL,
-    NULL,
-    NULL,
-};
-
-static const UT_icd sitJournalIcd = {
-    sizeof(struct SitJournalEntry),
-    NULL,
-    NULL,
-    NULL,
-};
-
-
 void journalContainerInit(JournalContainer *this)
 {
-    utarray_init(&this->superBlockJournal, &superBlockJournalIcd);
-    utarray_init(&this->natJournal, &natJournalIcd);
-    utarray_init(&this->sitJournal, &sitJournalIcd);
+    kv_init(this->superBlockJournal);
+    kv_init(this->natJournal);
+    kv_init(this->sitJournal);
 
     this->txId = 0;
 }
 
 void journalContainerDestroy(JournalContainer *this)
 {
-    utarray_done(&this->superBlockJournal);
-    utarray_done(&this->natJournal);
-    utarray_done(&this->sitJournal);
+    kv_destroy(this->sitJournal);
+    kv_destroy(this->natJournal);
+    kv_destroy(this->superBlockJournal);
 
     this->txId = 0;
 }
 
 void journalContainerAppendSuperBlockJournalEntry(JournalContainer *this, SuperBlockJournalEntry *sbje)
 {
-    utarray_push_back(&this->superBlockJournal, sbje);
+    kv_push(SuperBlockJournalEntry, this->superBlockJournal, *sbje);
 }
 
 void journalContainerAppendNatJournalEntry(JournalContainer *this, NatJournalEntry *nje)
 {
-    utarray_push_back(&this->natJournal, nje);
+    kv_push(NatJournalEntry, this->natJournal, *nje);
 }
 
 void journalContainerAppendSitJournalEntry(JournalContainer *this, SitJournalEntry *sje)
 {
-    utarray_push_back(&this->sitJournal, sje);
+    kv_push(SitJournalEntry, this->sitJournal, *sje);
 }
 
 uint64_t journalContainerGetTxId(JournalContainer *this)
@@ -66,22 +44,22 @@ void journalContainerSetTxId(JournalContainer *this, uint64_t id)
     this->txId = id;
 }
 
-UT_array *journalContainerGetSuperBlockJournal(JournalContainer *this)
+SuperBlockJournalVector *journalContainerGetSuperBlockJournal(JournalContainer *this)
 {
     return &this->superBlockJournal;
 }
 
-UT_array *journalContainerGetNatJournal(JournalContainer *this)
+NatJournalVector *journalContainerGetNatJournal(JournalContainer *this)
 {
     return &this->natJournal;
 }
 
-UT_array *journalContainerGetSitJournal(JournalContainer *this)
+SitJournalVector *journalContainerGetSitJournal(JournalContainer *this)
 {
     return &this->sitJournal;
 }
 
 bool journalContainerIsEmpty(JournalContainer *this)
 {
-    return (0 == utarray_len(&this->superBlockJournal)) && (0 == utarray_len(&this->natJournal)) && (0 == utarray_len(&this->sitJournal));
+    return (0 == kv_size(this->superBlockJournal)) && (0 == kv_size(this->natJournal)) && (0 == kv_size(this->sitJournal));
 }

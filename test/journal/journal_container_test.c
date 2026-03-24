@@ -40,10 +40,10 @@ RTFS_TEST(JournalContainerAppendSuperBlockTest)
     journalContainerAppendSuperBlockJournalEntry(&jc, &sbje);
     TEST_ASSERT_FALSE(journalContainerIsEmpty(&jc));
 
-    UT_array *arr = journalContainerGetSuperBlockJournal(&jc);
-    TEST_ASSERT_EQUAL(utarray_len(arr), 1);
+    SuperBlockJournalVector *arr = journalContainerGetSuperBlockJournal(&jc);
+    TEST_ASSERT_EQUAL(kv_size(*arr), 1);
 
-    SuperBlockJournalEntry *p = utarray_eltptr(arr, 0);
+    SuperBlockJournalEntry *p = &kv_a(SuperBlockJournalEntry, *arr, 0);
     TEST_ASSERT_NOT_NULL(p);
 
 
@@ -61,10 +61,10 @@ RTFS_TEST(JournalContainerAppendNatTest)
     journalContainerAppendNatJournalEntry(&jc, &nje);
     TEST_ASSERT_FALSE(journalContainerIsEmpty(&jc));
 
-    UT_array *arr = journalContainerGetNatJournal(&jc);
-    TEST_ASSERT_EQUAL(utarray_len(arr), 1);
+    NatJournalVector *arr = journalContainerGetNatJournal(&jc);
+    TEST_ASSERT_EQUAL(kv_size(*arr), 1);
 
-    NatJournalEntry *p = utarray_eltptr(arr, 0);
+    NatJournalEntry *p = &kv_a(NatJournalEntry, *arr, 0);
     TEST_ASSERT_NOT_NULL(p);
 
 
@@ -82,10 +82,10 @@ RTFS_TEST(JournalContainerAppendSitTest)
     journalContainerAppendSitJournalEntry(&jc, &sje);
     TEST_ASSERT_FALSE(journalContainerIsEmpty(&jc));
 
-    UT_array *arr = journalContainerGetSitJournal(&jc);
-    TEST_ASSERT_EQUAL(utarray_len(arr), 1);
+    SitJournalVector *arr = journalContainerGetSitJournal(&jc);
+    TEST_ASSERT_EQUAL(kv_size(*arr), 1);
 
-    SitJournalEntry *p = utarray_eltptr(arr, 0);
+    SitJournalEntry *p = &kv_a(SitJournalEntry, *arr, 0);
     TEST_ASSERT_NOT_NULL(p);
 
 
@@ -101,8 +101,8 @@ RTFS_TEST(JournalContainerMultiAppendTest)
     NatJournalEntry nje = {0};
     for (int i = 0; i < 10; ++i) journalContainerAppendNatJournalEntry(&jc, &nje);
 
-    UT_array *arr = journalContainerGetNatJournal(&jc);
-    TEST_ASSERT_EQUAL(utarray_len(arr), 10);
+    NatJournalVector *arr = journalContainerGetNatJournal(&jc);
+    TEST_ASSERT_EQUAL(kv_size(*arr), 10);
 
 
     journalContainerDestroy(&jc);

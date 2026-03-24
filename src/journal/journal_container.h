@@ -3,9 +3,14 @@
 
 #include "journal/journal_type.h"
 
-#include "uthash/utarray.h"
+#include "klib/kvec.h"
 #include "utils/types.h"
 
+
+// 直接使用 kvec_t() 创建出来的是匿名结构体，没办法获得类型，因此需要显式声明一下。
+typedef kvec_t(SuperBlockJournalEntry) SuperBlockJournalVector;
+typedef kvec_t(NatJournalEntry) NatJournalVector;
+typedef kvec_t(SitJournalEntry) SitJournalVector;
 
 /**
  * @brief 日志容器，用于存储一个事务（transaction）产生的所有日志项。
@@ -19,9 +24,9 @@
  */
 typedef struct JournalContainer
 {
-    UT_array superBlockJournal; // SuperBlock 类型日志数组。
-    UT_array natJournal;        // NAT 类型日志数组。
-    UT_array sitJournal;        // SIT 类型日志数组。
+    SuperBlockJournalVector superBlockJournal; // SuperBlock 类型日志数组。
+    NatJournalVector natJournal;               // NAT 类型日志数组。
+    SitJournalVector sitJournal;               // SIT 类型日志数组。
 
     uint64_t txId; // 事务号。
 } JournalContainer;
@@ -65,17 +70,17 @@ void journalContainerSetTxId(JournalContainer *this, uint64_t id);
 /**
  * @brief 获取 SuperBlock 日志数组。
  */
-UT_array *journalContainerGetSuperBlockJournal(JournalContainer *this);
+SuperBlockJournalVector *journalContainerGetSuperBlockJournal(JournalContainer *this);
 
 /**
  * @brief 获取 Nat 日志数组。
  */
-UT_array *journalContainerGetNatJournal(JournalContainer *this);
+NatJournalVector *journalContainerGetNatJournal(JournalContainer *this);
 
 /**
  * @brief 获取 Sit 日志数组。
  */
-UT_array *journalContainerGetSitJournal(JournalContainer *this);
+SitJournalVector *journalContainerGetSitJournal(JournalContainer *this);
 
 /**
  * @brief 判断容器是否为空。如果三种日志数组均为空，则返回 true。
