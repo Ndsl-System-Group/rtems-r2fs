@@ -1,7 +1,7 @@
 #ifndef _CACHE_LRU_REPLACER_H_
 #define _CACHE_LRU_REPLACER_H_
 
-#include "uthash/uthash.h"
+#include "klib/khash.h"
 #include "utils/types.h"
 
 
@@ -16,8 +16,9 @@ typedef struct LruNode
     struct LruNode *prev;
     struct LruNode *next;
 
-    UT_hash_handle hh;
 } LruNode;
+
+KHASH_MAP_INIT_INT(lru, struct LruNode *)
 
 /**
  * @brief LRU 置换器。
@@ -31,7 +32,7 @@ typedef struct CacheLruReplacer
     LruNode *pinHead;
 
     // 因为需要 O(1) 的时间复杂度从 key 定位到链表节点，所以需要额外开辟一个哈希表存储 key 到 LRU 链表的映射关系。
-    LruNode *table;
+    khash_t(lru) * table;
 
     // 当前可置换数量。
     size_t size;
