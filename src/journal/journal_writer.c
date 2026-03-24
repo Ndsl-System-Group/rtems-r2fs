@@ -17,6 +17,8 @@ void journalWriterInit(JournalWriter *this, struct comm_dev *dev, uint64_t journ
     this->bufferTailIdx = 0;
     this->bufferTailOff = 0;
     this->dev = dev;
+
+    kv_init(this->journalBuffer);
 }
 
 void journalWriterSetPendingJournal(JournalWriter *this, JournalContainer *journal)

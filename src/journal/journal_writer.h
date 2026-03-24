@@ -3,7 +3,9 @@
 
 #include "journal/journal_container.h"
 
-#include "uthash/utarray.h"
+#include "cache/block_buffer.h"
+
+#include "klib/kvec.h"
 
 
 struct comm_dev;
@@ -15,7 +17,7 @@ typedef struct JournalWriter
 
     uint64_t startLpa, endLpa; // SSD 上日志区域的起止位置。[startLpa, endLpa)
 
-    UT_array journalBuffer;              // 4 KB 缓存块的列表，按需增长。
+    kvec_t(BlockBuffer) journalBuffer;   // 4 KB 缓存块的列表，按需增长。
     size_t bufferTailIdx, bufferTailOff; // 当前缓存块列表中，使用到的最后一个缓存块下标和块中偏移。
 
     struct comm_dev *dev;
