@@ -12,7 +12,7 @@ void cacheLruReplacerInit(CacheLruReplacer *this)
 
     this->lruHead = NULL;
     this->pinHead = NULL;
-    this->table = kh_init(lru);
+    this->table = kh_init(khclr);
 
     this->size = 0;
 }
@@ -28,7 +28,7 @@ void cacheLruReplacerDestroy(CacheLruReplacer *this)
         if (kh_exist(this->table, k)) free(kh_value(this->table, k));
     }
 
-    kh_destroy(lru, this->table);
+    kh_destroy(khclr, this->table);
 
     this->lruHead = NULL;
     this->pinHead = NULL;
@@ -41,7 +41,7 @@ void cacheLruReplacerAdd(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    khiter_t k = kh_get(lru, this->table, key);
+    khiter_t k = kh_get(khclr, this->table, key);
     assert(kh_end(this->table) == k);
 
     LruNode *node = malloc(sizeof(LruNode));
@@ -53,7 +53,7 @@ void cacheLruReplacerAdd(CacheLruReplacer *this, uint32_t key)
     DL_APPEND(this->lruHead, node);
 
     int res;
-    k = kh_put(lru, this->table, key, &res);
+    k = kh_put(khclr, this->table, key, &res);
     kh_value(this->table, k) = node;
 
     ++this->size;
@@ -63,7 +63,7 @@ void cacheLruReplacerAccess(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    khiter_t k = kh_get(lru, this->table, key);
+    khiter_t k = kh_get(khclr, this->table, key);
     assert(kh_end(this->table) != k);
 
     LruNode *node = kh_value(this->table, k);
@@ -102,8 +102,8 @@ uint32_t cacheLruReplacerPop(CacheLruReplacer *this)
 
     DL_DELETE(this->lruHead, node);
 
-    khiter_t k = kh_get(lru, this->table, key);
-    kh_del(lru, this->table, k);
+    khiter_t k = kh_get(khclr, this->table, key);
+    kh_del(khclr, this->table, k);
 
     free(node);
 
@@ -117,7 +117,7 @@ void cacheLruReplacerRemove(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    khiter_t k = kh_get(lru, this->table, key);
+    khiter_t k = kh_get(khclr, this->table, key);
     assert(kh_end(this->table) != k);
 
     LruNode *node = kh_value(this->table, k);
@@ -133,7 +133,7 @@ void cacheLruReplacerRemove(CacheLruReplacer *this, uint32_t key)
         --this->size;
     }
 
-    kh_del(lru, this->table, k);
+    kh_del(khclr, this->table, k);
 
     free(node);
 }
@@ -142,7 +142,7 @@ void cacheLruReplacerPin(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    khiter_t k = kh_get(lru, this->table, key);
+    khiter_t k = kh_get(khclr, this->table, key);
     if (kh_end(this->table) == k) return;
 
     LruNode *node = kh_value(this->table, k);
@@ -162,7 +162,7 @@ void cacheLruReplacerUnpin(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    khiter_t k = kh_get(lru, this->table, key);
+    khiter_t k = kh_get(khclr, this->table, key);
     if (kh_end(this->table) == k) return;
 
     LruNode *node = kh_value(this->table, k);

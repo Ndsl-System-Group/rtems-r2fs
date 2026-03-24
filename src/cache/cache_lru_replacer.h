@@ -18,7 +18,7 @@ typedef struct LruNode
 
 } LruNode;
 
-KHASH_MAP_INIT_INT(lru, struct LruNode *)
+KHASH_MAP_INIT_INT(khclr, struct LruNode *)
 
 /**
  * @brief LRU 置换器。
@@ -32,7 +32,7 @@ typedef struct CacheLruReplacer
     LruNode *pinHead;
 
     // 因为需要 O(1) 的时间复杂度从 key 定位到链表节点，所以需要额外开辟一个哈希表存储 key 到 LRU 链表的映射关系。
-    khash_t(lru) * table;
+    khash_t(khclr) * table;
 
     // 当前可置换数量。
     size_t size;
