@@ -2,9 +2,12 @@
 #define _PAGE_CACHE_H_
 
 #include "cache/block_buffer.h"
+#include "cache/generic_cache_manager.h"
 
 #include "utils/types.h"
 #include "utils/rtfs_multithread.h"
+
+#include "klib/kbtree.h"
 
 #include <stdatomic.h>
 
@@ -88,6 +91,62 @@ void pageEntryHandleCopy(PageEntryHandle *this, const PageEntryHandle *other);
  * @brief 尝试将 page entry 的 dirty 置位。如果是由本线程将 dirty 置位，则加入 page cache 的 dirty pages 集合。
  */
 void pageEntryHandleMakeDirty(PageEntryHandle *this);
+
+
+typedef struct DirtyPagesNode
+{
+    uint32_t blkoff;        // key。
+    PageEntryHandle handle; // data。
+} DirtyPagesNode;
+
+
+#define DIRTY_PAGES_NODE_CMP(a, b) ((a).blkoff < (b).blkoff ? -1 : ((a).blkoff > (b).blkoff ? 1 : 0))
+
+KBTREE_INIT(ktdpn, DirtyPagesNode, DIRTY_PAGES_NODE_CMP)
+
+
+/**
+ * @brief 文件页缓存。PageCache 只作为 page 的缓存索引和置换管理器，不关心文件的实际大小。
+ */
+typedef struct PageCache
+{
+    GenericCacheManager cacheManager;
+
+    // 保护 cacheManager。
+    spinlock_t cacheLock;
+
+    // 由于 dirtyPages 有范围 remove 需求，所以用类似 C++ 中的 map<blkoff, PageEntryHandle> 维护。
+    kbtree_t(ktdpn) * dirtyPages;
+
+    spinlock_t dirtyPagesLock;
+
+    size_t expectSize, curSize;
+} PageCache;
+
+
+void pageCacheInit(PageCache *this, size_t expectSize);
+
+void pageCacheDestroy(PageCache *this);
+
+/**
+ * @brief 获取 blkoff 对应的 pageEntry。若不存在，则构造一个 pageEntry，返回其 handle。此时返回的 pageEntry中，反向映射和 4 KB 缓存是无效值。
+ */
+PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff);
+
+/**
+ * @brief 截断文件后调用，将 page cache 内块偏移严格大于 maxBlkoff 的缓存 page 的 dirty 位清除，置位 invalid 状态，但不将它们删除，因为也许之后又会访问。调用者必须持有对应文件的 fileOpLock 独占锁（此时仅有一个线程能操作文件的 page cache）。
+ */
+void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff);
+
+/**
+ * @brief 获取 dirty pages 集合。调用者如果需要操作 dirty pages，必须持有对应文件的 fileOpLock 独占锁。
+ */
+kbtree_t(ktdpn) * pageCacheGetDirtyPages(PageCache *this);
+
+/**
+ * @brief 将 dirty pages 中所有 page 的 dirty 位清除。
+ */
+void pageCacheClearDirtyPages(PageCache *this);
 
 
 #endif

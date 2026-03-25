@@ -8,11 +8,11 @@
 typedef struct KbTreeTestEntry
 {
     int key;
-    int value;
+    int data;
 } KbTreeTestEntry;
 
 
-#define KBTREE_TEST_ENTRY_CMP(a, b) ((a).key < (b).key ? -1 : ((a).key > (b).key))
+#define KBTREE_TEST_ENTRY_CMP(a, b) ((a).key < (b).key ? -1 : ((a).key > (b).key ? 1 : 0))
 
 KBTREE_INIT(ktte, KbTreeTestEntry, KBTREE_TEST_ENTRY_CMP)
 
@@ -27,7 +27,7 @@ RTFS_TEST(KbtreeInsertTest)
     for (int i = 0; i < 10; ++i)
     {
         t.key = i;
-        t.value = i * 10;
+        t.data = i * 10;
         kb_put(ktte, tree, t);
     }
 
@@ -37,7 +37,7 @@ RTFS_TEST(KbtreeInsertTest)
         KbTreeTestEntry *p = kb_getp(ktte, tree, &t);
 
         TEST_ASSERT_NOT_NULL(p);
-        TEST_ASSERT_EQUAL(p->value, i * 10);
+        TEST_ASSERT_EQUAL(p->data, i * 10);
     }
 
 
@@ -55,19 +55,18 @@ RTFS_TEST(KbtreeOrderedIterTest)
     for (int i = 0; i < 5; ++i)
     {
         t.key = keys[i];
-        t.value = keys[i];
+        t.data = keys[i];
         kb_put(ktte, tree, t);
     }
 
     kbitr_t itr;
-    kb_itr_first(ktte, tree, &itr);
     int key = -INT_MAX;
 
-    for (; kb_itr_valid(&itr); kb_itr_next(ktte, tree, &itr))
+    for (kb_itr_first(ktte, tree, &itr); kb_itr_valid(&itr); kb_itr_next(ktte, tree, &itr))
     {
         KbTreeTestEntry *p = &kb_itr_key(KbTreeTestEntry, &itr);
 
-        RTFS_LOG(RTFS_LOG_INFO, "key = %d, value = %d", p->key, p->value);
+        RTFS_LOG(RTFS_LOG_INFO, "key = %d, data = %d", p->key, p->data);
 
         TEST_ASSERT_TRUE(p->key > key);
         key = p->key;
@@ -88,7 +87,7 @@ RTFS_TEST(KbtreeIntervalTest)
     for (int i = 0; i < 10; i += 2)
     {
         t.key = i;
-        t.value = i;
+        t.data = i;
         kb_put(ktte, tree, t);
     }
 
@@ -139,7 +138,7 @@ RTFS_TEST(KbtreeRangeEraseTest)
     for (int i = 9; i >= 0; --i)
     {
         t.key = i;
-        t.value = i;
+        t.data = i;
         kb_put(ktte, tree, t);
     }
 
@@ -185,7 +184,7 @@ RTFS_TEST(KbtreeRangeEraseTest)
         {
             TEST_ASSERT_NOT_NULL(p);
 
-            RTFS_LOG(RTFS_LOG_INFO, "key = %d, value = %d", p->key, p->value);
+            RTFS_LOG(RTFS_LOG_INFO, "key = %d, data = %d", p->key, p->data);
         }
     }
 

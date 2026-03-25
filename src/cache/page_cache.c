@@ -2,9 +2,8 @@
 
 #include "fs/fs.h"
 #include "utils/rtfs_log.h"
+#include "utils/rtfs_exception.h"
 
-
-/* 私有静态函数声明 */
 
 // 对 isDirty 进行 CAS 操作(由 false 更改为 true)，成功返回 true。
 static bool pageEntryMarkDirty(PageEntry *this);
@@ -89,19 +88,93 @@ void pageEntryHandleDestroy(PageEntryHandle *this)
     //     }
     //     catch(const std::exception &e)
     //     {
-    //         HSCFS_LOG(HSCFS_LOG_WARNING, "exception during sub_refcount of page cache entry: %s", e.what());
+    //         RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of page cache entry: %s", e.what());
     //     }
     // }
 }
 
 void pageEntryHandleCopy(PageEntryHandle *this, const PageEntryHandle *other)
 {
+    this->cache = other->cache;
+    this->entry = other->entry;
+
+    // handle 拷贝，能保证 refCount 不为 0。
+    pageEntryHandleDoAddRef(this);
 }
 
 void pageEntryHandleMakeDirty(PageEntryHandle *this)
 {
     // 若返回 true，说明是由本线程将 dirty 置位，因此本线程负责将其加入 cache 的 dirty page set。
     // if (entry->mark_dirty()) cache->add_to_dirty_pages(*this);
+}
+
+
+void pageCacheInit(PageCache *this, size_t expectSize)
+{
+    int res = rtfsSpinInit(&this->cacheLock);
+    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "page cache: init cache spin failed.");
+
+    // 任意对锁初始化失败的异常均为 panic，上层应该捕获异常并终止程序，故此处不再释放成功初始化的锁。
+    res = rtfsSpinInit(&this->dirtyPagesLock);
+    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "page cache: init dirty page set spin failed.");
+
+    genericCacheManagerInit(&this->cacheManager);
+
+    this->dirtyPages = kb_init(ktdpn, KB_DEFAULT_SIZE);
+    if (NULL == this->dirtyPages) THROW_FATAL_MESSAGE(EXIT_FAILURE, "page cache: init dirty pages tree failed.");
+
+    this->expectSize = expectSize;
+    this->curSize = 0;
+}
+
+void pageCacheDestroy(PageCache *this)
+{
+    // page cache 析构内不会并发访问，不加锁。
+    if (0 != kb_size(this->dirtyPages)) RTFS_LOG(RTFS_LOG_WARNING, "Page cache still has dirty page while destructed. If delete a file which written but not synchronized, this will be OK.");
+
+    this->curSize = 0;
+    this->expectSize = 0;
+
+    kb_destroy(ktdpn, this->dirtyPages);
+    this->dirtyPages = NULL;
+
+    genericCacheManagerDestroy(&this->cacheManager);
+
+    rtfsSpinDestroy(&this->dirtyPagesLock);
+    rtfsSpinDestroy(&this->cacheLock);
+}
+
+// TODO
+PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
+{
+}
+
+void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff)
+{
+}
+
+kbtree_t(ktdpn) * pageCacheGetDirtyPages(PageCache *this)
+{
+    return this->dirtyPages;
+}
+
+void pageCacheClearDirtyPages(PageCache *this)
+{
+    rtfsSpinLock(&this->dirtyPagesLock);
+
+    kbitr_t itr;
+    for (kb_itr_first(ktdpn, this->dirtyPages, &itr); kb_itr_valid(&itr); kb_itr_next(ktdpn, this->dirtyPages, &itr))
+    {
+        DirtyPagesNode *node = &kb_itr_key(DirtyPagesNode, &itr);
+
+        node->handle.entry->isDirty = false;
+    }
+
+    // kbtree 未提供 clear 接口。用过销毁加重建模拟。
+    kb_destroy(ktdpn, this->dirtyPages);
+    this->dirtyPages = kb_init(ktdpn, KB_DEFAULT_SIZE);
+
+    rtfsSpinUnlock(&this->dirtyPagesLock);
 }
 
 
