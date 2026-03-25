@@ -1,8 +1,7 @@
 #include "super_cache.h"
 
 #include "utils/rtfs_log.h"
-
-#include "cexception/cexception.h"
+#include "utils/rtfs_exception.h"
 
 #include <stdlib.h>
 
@@ -30,9 +29,7 @@ void superCacheReadSuperBlock(SuperCache *this)
     }
     Catch(e)
     {
-        RTFS_LOG(RTFS_LOG_ERROR, "super cache: read super block error.");
-
-        Throw(EXIT_FAILURE);
+        THROW_FATAL_MESSAGE(e, "super cache: read super block error.");
     }
 }
 

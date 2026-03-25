@@ -1,13 +1,10 @@
 #include "journal_processor.h"
 
 #include "utils/rtfs_log.h"
+#include "utils/rtfs_exception.h"
 #include "uthash/utlist.h"
-#include "cexception/cexception.h"
 
 #include <pthread.h>
-
-
-#define THREAD_INTERRUPTED 1001
 
 
 // 日志处理线程入口。
@@ -101,22 +98,10 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
 {
     // TODO
     // this->journalPosDmaBuffer = static_cast<uint64_t *>(comm_alloc_dma_mem(16));
-    if (NULL == this->journalPosDmaBuffer)
-    {
-        RTFS_LOG(RTFS_LOG_ERROR, "journal processor: not enough DMA buffer.");
-
-
-        Throw(EXIT_FAILURE);
-    }
+    if (NULL == this->journalPosDmaBuffer) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: not enough DMA buffer.");
 
     // 将日志位置查询任务的定时器设置为阻塞式，到达轮询周期后，日志处理线程被唤醒并进行查询任务
-    if (0 != rtfsTimerConstructor(&this->journalPollTimer, 1))
-    {
-        RTFS_LOG(RTFS_LOG_ERROR, "journal processor: init timer failed.");
-
-
-        Throw(EXIT_FAILURE);
-    }
+    if (0 != rtfsTimerConstructor(&this->journalPollTimer, 1)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: init timer failed.");
 
     // 日志位置查询任务，周期 100 us。
     struct timespec journalPollTime = {.tv_sec = 0, .tv_nsec = 100 * 1000};
@@ -194,7 +179,7 @@ void journalProcessorFetchNewJournal(JournalProcessor *this)
             {
                 processEnv->exitReq = 0;
                 pthread_mutex_unlock(&processEnv->mtx);
-                Throw(THREAD_INTERRUPTED);
+                Throw(THREAD_INTERRUPTED_ID);
             }
 
             pthread_cond_wait(&processEnv->cond, &processEnv->mtx);
@@ -289,13 +274,7 @@ bool journalProcessorWriteJournalToSsd(JournalProcessor *this)
 void journalProcessorGenerateTxRecord(JournalProcessor *this)
 {
     TxRecordNode *node = (struct TxRecordNode *)malloc(sizeof(struct TxRecordNode));
-    if (!node)
-    {
-        RTFS_LOG(RTFS_LOG_ERROR, "journal processor generate txRecord: error when allocating TxRecordNode");
-
-
-        Throw(EXIT_FAILURE);
-    }
+    if (!node) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor generate txRecord: error when allocating TxRecordNode");
 
     transactionJournalRecordInit(&node->record, journalContainerGetTxId(this->curJournal), this->curJournalStartLpa, this->curJournalEndLpa);
 
@@ -324,13 +303,7 @@ void journalProcessorEnablePollTimer(JournalProcessor *this)
 {
     if (this->isPollTimerEnabled) return;
 
-    if (0 != rtfsTimerStart(&this->journalPollTimer))
-    {
-        RTFS_LOG(RTFS_LOG_ERROR, "journal processor: enable timer failed.");
-
-
-        Throw(EXIT_FAILURE);
-    }
+    if (0 != rtfsTimerStart(&this->journalPollTimer)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: enable timer failed.");
 
     this->isPollTimerEnabled = true;
 }
@@ -339,26 +312,14 @@ void journalProcessorDisablePollTimer(JournalProcessor *this)
 {
     if (!this->isPollTimerEnabled) return;
 
-    if (0 != rtfsTimerStop(&this->journalPollTimer))
-    {
-        RTFS_LOG(RTFS_LOG_ERROR, "journal processor: disable timer failed.");
-
-
-        Throw(EXIT_FAILURE);
-    }
+    if (0 != rtfsTimerStop(&this->journalPollTimer)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: disable timer failed.");
 
     this->isPollTimerEnabled = false;
 }
 
 void journalProcessorWaitPollTimer(JournalProcessor *this)
 {
-    if (0 != rtfsTimerCheckExpire(&this->journalPollTimer, NULL))
-    {
-        RTFS_LOG(RTFS_LOG_ERROR, "journal processor: wait timer failed.");
-
-
-        Throw(EXIT_FAILURE);
-    }
+    if (0 != rtfsTimerCheckExpire(&this->journalPollTimer, NULL)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: wait timer failed.");
 }
 
 bool journalProcessorSyncWithSsdJournalPos(JournalProcessor *this)
