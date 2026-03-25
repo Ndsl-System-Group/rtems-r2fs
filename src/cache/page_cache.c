@@ -4,6 +4,8 @@
 #include "utils/rtfs_log.h"
 #include "utils/rtfs_exception.h"
 
+#include <assert.h>
+
 
 // 对 isDirty 进行 CAS 操作(由 false 更改为 true)，成功返回 true。
 static bool pageEntryMarkDirty(PageEntry *this);
@@ -156,13 +158,103 @@ void pageCacheDestroy(PageCache *this)
     rtfsSpinDestroy(&this->cacheLock);
 }
 
-// TODO
 PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
 {
+    rtfsSpinLock(&this->cacheLock);
+
+    PageEntry *entry = (PageEntry *)genericCacheManagerGet(&this->cacheManager, blkoff, true);
+
+    // 缓存项不存在，则需要新建一个。
+    if (NULL == entry)
+    {
+        // 如果当前缓存数量已达到阈值，则尝试置换一个，直接把置换出的 pageEntry 资源移动给新缓存项。如果无法置换，再新建。防止多次分配和释放 4 KB block。
+        if (this->curSize >= this->expectSize)
+        {
+            PageEntry *victim = (PageEntry *)genericCacheManagerReplaceOne(&this->cacheManager);
+            if (NULL != victim)
+            {
+                assert(0 == victim->refCount && false == atomic_load(&victim->isDirty));
+
+                RTFS_LOG(RTFS_LOG_INFO, "replace page cache entry, blkoff = %u", victim->blkoff);
+
+                victim->blkoff = blkoff;
+                victim->contentState = PAGE_INVALID;
+
+                entry = victim;
+
+                genericCacheManagerAdd(&this->cacheManager, blkoff, victim);
+                pageCacheAddRefCount(this, entry);
+
+                // 尝试将先前无法淘汰的缓存项淘汰掉，否则 pageCache 中缓存项数量单调不减。
+                pageCacheDoReplace(this);
+            }
+        }
+
+        // 到此处，说明要么缓存容量充足，要么找不到能置换的缓存项，则直接增加一项。
+        if (NULL == entry)
+        {
+            PageEntry *newEntry = (PageEntry *)malloc(sizeof(PageEntry));
+            assert(NULL != newEntry);
+
+            pageEntryInit(newEntry, blkoff);
+            entry = newEntry;
+
+            genericCacheManagerAdd(&this->cacheManager, blkoff, entry);
+            pageCacheAddRefCount(this, entry);
+            ++this->curSize;
+        }
+    }
+    // 缓存项存在，添加引用计数即可。
+    else
+    {
+        pageCacheAddRefCount(this, entry);
+    }
+
+    rtfsSpinUnlock(&this->cacheLock);
+
+    PageEntryHandle res = {.cache = this, .entry = entry};
+
+
+    return res;
 }
 
 void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff)
 {
+    // 由于调用者已经加了 fileOpLock，内部不用加任何锁了。
+    // 找到大于等于 maxBlkoff 的第一个元素。
+    DirtyPagesNode query = {.blkoff = maxBlkoff};
+    DirtyPagesNode *lower = NULL;
+    DirtyPagesNode *upper = NULL;
+
+    kb_interval(ktdpn, this->dirtyPages, query, &lower, &upper);
+    if (!upper) return;
+
+    kbitr_t itr;
+    kb_itr_get(ktdpn, this->dirtyPages, upper, &itr);
+
+    // 如果 upper == maxBlkoff，要跳到下一个，即是 upper_bound。
+    if (upper->blkoff <= maxBlkoff) kb_itr_next(ktdpn, this->dirtyPages, &itr);
+
+    // TODO kbtree_test KbtreeRangeEraseTest 中有另一种算法，抉择一下哪种好一点。
+    while (kb_itr_valid(&itr))
+    {
+        DirtyPagesNode node = kb_itr_key(DirtyPagesNode, &itr);
+
+        // 为了删除 itr 到 end 之间所有的节点，先保存 next。
+        kbitr_t next = itr;
+        if (!kb_itr_next(ktdpn, this->dirtyPages, &next)) next.p = next.stack - 1;
+
+        // 将范围外的所有 page 的 dirty 标记清除，标记为 invalid。
+        node.handle.entry->isDirty = false;
+        node.handle.entry->contentState = PAGE_INVALID;
+
+        // 范围外的 page 将被移除，所以递减 curSize。
+        --this->curSize;
+
+        // 从 dirty pages 集合中移除范围外的所有 page。
+        kb_del(ktdpn, this->dirtyPages, node);
+        itr = next;
+    }
 }
 
 kbtree_t(ktdpn) * pageCacheGetDirtyPages(PageCache *this)
@@ -210,16 +302,69 @@ void pageEntryHandleDoSubRef(PageEntryHandle *this)
 
 void pageCacheAddRefCount(PageCache *this, PageEntry *entry)
 {
+    if (0 == atomic_fetch_add(&entry->refCount, 1))
+    {
+        // 先前引用计数为 0，不可能是 dirty 状态。此时 refCount 由 0 增至 1，且加了 cacheLock，assert 访问 entry 是安全的（此时只可能在此处访问）。
+        assert(false == atomic_load(&entry->isDirty));
+
+        // 可能出现 refCount 减到0，但减少 refCount 的线程还没来得及 unpin 的情况（见 subRefcount）。由于 GenericCacheManager 使用的 lruReplacer 允许重复调用 pin，所以不会造成影响。
+        genericCacheManagerPin(&this->cacheManager, entry->blkoff);
+    }
 }
 
 void pageCacheSubRefCount(PageCache *this, PageEntry *entry)
 {
+    // 由调用者线程将引用计数减为 0，此时应当考虑 unpin。
+    if (1 == atomic_fetch_sub(&entry->refCount, 1))
+    {
+        // 加 cacheLock，再次检查引用计数。成功获取锁后，如果 refCount 仍为 0，则不可能有其它线程能够修改 refCount，因为 refCount 从 0 增加到 1，一定是通过调用 PageCache 的 get 方法，而该方法在加 refCount 前需要加 cacheLock。此时将其 unpin，然后解锁。
+        rtfsSpinLock(&this->cacheLock);
+
+        if (0 == atomic_load(&entry->refCount))
+        {
+            // 若引用计数减为 0，不可能是 dirty 状态。此时 refCount 由 1 减至 0，且加了 cacheLock，访问 entry 是安全的。
+            assert(false == atomic_load(&entry->isDirty));
+
+            genericCacheManagerUnpin(&this->cacheManager, entry->blkoff);
+        }
+
+        // 如果 refCount 此时不为 0，说明加锁前有其它线程再次通过 get 获取引用计数，所以放弃 unpin。
+
+        rtfsSpinUnlock(&this->cacheLock);
+    }
 }
 
 void pageCacheDoReplace(PageCache *this)
 {
+    if (this->curSize > this->expectSize)
+    {
+        while (true)
+        {
+            PageEntry *entry = (PageEntry *)genericCacheManagerReplaceOne(&this->cacheManager);
+
+            if (NULL != entry)
+            {
+                assert(0 == entry->refCount && false == atomic_load(&entry->isDirty));
+
+                --this->curSize;
+
+                RTFS_LOG(RTFS_LOG_INFO, "replace page cache entry, blkoff = %u", entry->blkoff);
+            }
+
+            if (NULL == entry || this->curSize <= this->expectSize) break;
+        }
+    }
 }
 
 void pageCacheAddToDirtyPages(PageCache *this, PageEntryHandle *page)
 {
+    rtfsSpinLock(&this->dirtyPagesLock);
+
+    assert(atomic_load(&page->entry->refCount) >= 1);
+
+    DirtyPagesNode node = {.blkoff = page->entry->blkoff, .handle = *page};
+
+    kb_put(ktdpn, this->dirtyPages, node);
+
+    rtfsSpinUnlock(&this->dirtyPagesLock);
 }
