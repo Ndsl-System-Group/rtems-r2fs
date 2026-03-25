@@ -82,6 +82,8 @@ void pageEntryHandleInit(PageEntryHandle *this, struct PageCache *cache, PageEnt
 
 void pageEntryHandleDestroy(PageEntryHandle *this);
 
+void pageEntryHandleCopy(PageEntryHandle *this, const PageEntryHandle *other);
+
 /**
  * @brief 尝试将 page entry 的 dirty 置位。如果是由本线程将 dirty 置位，则加入 page cache 的 dirty pages 集合。
  */
