@@ -2,8 +2,12 @@
 
 #include "utils/rtfs_log.h"
 #include "uthash/utlist.h"
+#include "cexception/cexception.h"
 
 #include <pthread.h>
+
+
+#define THREAD_INTERRUPTED 1001
 
 
 // 日志处理线程入口。
@@ -64,8 +68,8 @@ bool transactionJournalRecordIsApplied(TransactionJournalRecord *this, uint64_t 
 // 当可用 lpa 等于整个日志区域时，说明所有已提交的日志均已应用完，不需要再轮询。当 journalList 和 curJournal 都为空时，从 journal commit queue 中取出的日志均已处理完毕。以上两个条件都满足，则日志处理线程空闲。
 static bool journalProcessorIsWorking(JournalProcessor *this);
 
-// 当日志处理线程空闲时，睡眠等待新的日志，否则尝试获取新的日志。当日志处理线程空闲、没有新日志可取，并且外部请求它退出时，就结束线程主循环，并且返回 true。
-static bool journalProcessorFetchNewJournal(JournalProcessor *this);
+// 当日志处理线程空闲时，睡眠等待新的日志，否则尝试获取新的日志。当日志处理线程空闲、没有新日志可取，并且外部请求它退出时，就结束线程主循环。
+static void journalProcessorFetchNewJournal(JournalProcessor *this);
 
 // 处理位于提交队列首部的日志。
 static void journalProcessorProcessPendingJournal(JournalProcessor *this);
@@ -102,7 +106,7 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
         RTFS_LOG(RTFS_LOG_ERROR, "journal processor: not enough DMA buffer.");
 
 
-        exit(EXIT_FAILURE);
+        Throw(EXIT_FAILURE);
     }
 
     // 将日志位置查询任务的定时器设置为阻塞式，到达轮询周期后，日志处理线程被唤醒并进行查询任务
@@ -111,7 +115,7 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
         RTFS_LOG(RTFS_LOG_ERROR, "journal processor: init timer failed.");
 
 
-        exit(EXIT_FAILURE);
+        Throw(EXIT_FAILURE);
     }
 
     // 日志位置查询任务，周期 100 us。
@@ -141,9 +145,18 @@ void journalProcessorDestroy(JournalProcessor *this)
 
 void journalProcessorProcessJournal(JournalProcessor *this)
 {
+    CEXCEPTION_T e;
+
     while (true)
     {
-        if (journalProcessorFetchNewJournal(this)) break;
+        Try
+        {
+            journalProcessorFetchNewJournal(this);
+        }
+        Catch(e)
+        {
+            break;
+        }
 
         journalProcessorProcessPendingJournal(this);
         journalProcessorProcessCpltJournal(this);
@@ -156,21 +169,9 @@ bool journalProcessorIsWorking(JournalProcessor *this)
     return !(this->curAvailLpa == this->totalAvailLpa && NULL == this->pendingJournalListHead && NULL == this->curJournal);
 }
 
-bool journalProcessorFetchNewJournal(JournalProcessor *this)
+void journalProcessorFetchNewJournal(JournalProcessor *this)
 {
     JournalProcessEnv *processEnv = journalProcessEnvGetInstance();
-
-#define CHECK_IF_INTERRUPTED()                      \
-    do                                              \
-    {                                               \
-        if (processEnv->exitReq)                    \
-        {                                           \
-            processEnv->exitReq = 0;                \
-            pthread_mutex_unlock(&processEnv->mtx); \
-            return -1;                              \
-        }                                           \
-    } while (0)
-
 
     pthread_mutex_lock(&processEnv->mtx);
 
@@ -181,7 +182,7 @@ bool journalProcessorFetchNewJournal(JournalProcessor *this)
             pthread_mutex_unlock(&processEnv->mtx);
 
 
-            return -1;
+            return;
         }
     }
     else
@@ -189,7 +190,12 @@ bool journalProcessorFetchNewJournal(JournalProcessor *this)
         while (NULL == processEnv->commitQueueHead)
         {
             // 若系统需要让日志处理线程退出，则不会再继续写日志。所以该线程在处理完 commitQueue 和自身正在处理的全部日志后，即此处，再检查是否退出。
-            CHECK_IF_INTERRUPTED();
+            if (processEnv->exitReq)
+            {
+                processEnv->exitReq = 0;
+                pthread_mutex_unlock(&processEnv->mtx);
+                Throw(THREAD_INTERRUPTED);
+            }
 
             pthread_cond_wait(&processEnv->cond, &processEnv->mtx);
         }
@@ -205,12 +211,6 @@ bool journalProcessorFetchNewJournal(JournalProcessor *this)
     }
 
     pthread_mutex_unlock(&processEnv->mtx);
-
-
-#undef CHECK_IF_INTERRUPTED
-
-
-    return 0;
 }
 
 void journalProcessorProcessPendingJournal(JournalProcessor *this)
@@ -294,7 +294,7 @@ void journalProcessorGenerateTxRecord(JournalProcessor *this)
         RTFS_LOG(RTFS_LOG_ERROR, "journal processor generate txRecord: error when allocating TxRecordNode");
 
 
-        exit(EXIT_FAILURE);
+        Throw(EXIT_FAILURE);
     }
 
     transactionJournalRecordInit(&node->record, journalContainerGetTxId(this->curJournal), this->curJournalStartLpa, this->curJournalEndLpa);
@@ -329,7 +329,7 @@ void journalProcessorEnablePollTimer(JournalProcessor *this)
         RTFS_LOG(RTFS_LOG_ERROR, "journal processor: enable timer failed.");
 
 
-        exit(EXIT_FAILURE);
+        Throw(EXIT_FAILURE);
     }
 
     this->isPollTimerEnabled = true;
@@ -344,7 +344,7 @@ void journalProcessorDisablePollTimer(JournalProcessor *this)
         RTFS_LOG(RTFS_LOG_ERROR, "journal processor: disable timer failed.");
 
 
-        exit(EXIT_FAILURE);
+        Throw(EXIT_FAILURE);
     }
 
     this->isPollTimerEnabled = false;
@@ -357,7 +357,7 @@ void journalProcessorWaitPollTimer(JournalProcessor *this)
         RTFS_LOG(RTFS_LOG_ERROR, "journal processor: wait timer failed.");
 
 
-        exit(EXIT_FAILURE);
+        Throw(EXIT_FAILURE);
     }
 }
 

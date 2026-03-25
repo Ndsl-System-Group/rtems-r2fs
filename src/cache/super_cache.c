@@ -2,6 +2,8 @@
 
 #include "utils/rtfs_log.h"
 
+#include "cexception/cexception.h"
+
 #include <stdlib.h>
 
 
@@ -18,20 +20,20 @@ void superCacheDestroy(SuperCache *this)
     blockBufferDestroy(&this->superBlock);
 }
 
-int superCacheReadSuperBlock(SuperCache *this)
+void superCacheReadSuperBlock(SuperCache *this)
 {
-    // 返回 0 成功，非 0 失败。
-    int res = blockBufferReadFromLpa(&this->superBlock, this->dev, this->sbLpa);
-    if (0 != res)
+    CEXCEPTION_T e;
+
+    Try
+    {
+        blockBufferReadFromLpa(&this->superBlock, this->dev, this->sbLpa);
+    }
+    Catch(e)
     {
         RTFS_LOG(RTFS_LOG_ERROR, "super cache: read super block error.");
 
-
-        exit(EXIT_FAILURE);
+        Throw(EXIT_FAILURE);
     }
-
-
-    return res;
 }
 
 struct RtfsSuperBlock *superCacheGet(SuperCache *this)

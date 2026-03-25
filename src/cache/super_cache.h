@@ -34,9 +34,8 @@ void superCacheDestroy(SuperCache *this);
 
 /**
  * @brief 从设备读取超级块到缓存。
- * @return 成功返回 0，失败返回非 0。
  */
-int superCacheReadSuperBlock(SuperCache *this);
+void superCacheReadSuperBlock(SuperCache *this);
 
 /**
  * @brief 获取超级块指针。
