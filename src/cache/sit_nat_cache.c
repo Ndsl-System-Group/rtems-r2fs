@@ -2,6 +2,7 @@
 
 #include "utils/rtfs_log.h"
 #include "utils/io_utils.h"
+#include "utils/rtfs_exception.h"
 
 #include <assert.h>
 
@@ -63,10 +64,18 @@ void sitNatCacheEntryHandleInit(SitNatCacheEntryHandle *this, struct SitNatCache
 
 void sitNatCacheEntryHandleDestroy(SitNatCacheEntryHandle *this)
 {
+    CEXCEPTION_T e;
+
     if (this->entry)
     {
-        // TODO
-        // if (sitNatCachePutCacheEntry(this->cache, this->entry)) RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of SitNatCacheEntry");
+        Try
+        {
+            sitNatCachePutCacheEntry(this->cache, this->entry);
+        }
+        Catch(e)
+        {
+            RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of SitNatCacheEntry: %d", e);
+        }
 
         this->entry = NULL;
         this->cache = NULL;
