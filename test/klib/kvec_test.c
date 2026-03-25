@@ -72,7 +72,6 @@ RTFS_TEST(KvecSizeCapTest)
     kv_init(v);
 
 
-    // TODO
     for (int i = 0; i < 10; ++i)
     {
         kv_push(int, v, i *i);

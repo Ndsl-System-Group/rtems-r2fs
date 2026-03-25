@@ -12,6 +12,16 @@ static void pageEntryHandleDoAddRef(PageEntryHandle *this);
 
 static void pageEntryHandleDoSubRef(PageEntryHandle *this);
 
+// 调用者需要加 cacheLock，除非能够保证调用时 refCount 不会为 0。
+static void pageCacheAddRefCount(PageCache *this, PageEntry *entry);
+
+static void pageCacheSubRefCount(PageCache *this, PageEntry *entry);
+
+static void pageCacheDoReplace(PageCache *this);
+
+// 由 PageEntryHandle 的 markDirty 方法调用。调用时能保证 refCount 不为 0，因为发起调用的 PageEntryHandle 仍有效，所以内部不加 cacheLock 锁。
+static void pageCacheAddToDirtyPages(PageCache *this, PageEntryHandle *page);
+
 
 void pageEntryInit(PageEntry *this, uint32_t blkoff)
 {
@@ -80,17 +90,19 @@ void pageEntryHandleInit(PageEntryHandle *this, struct PageCache *cache, PageEnt
 
 void pageEntryHandleDestroy(PageEntryHandle *this)
 {
-    // if (entry != nullptr)
-    // {
-    //     try
-    //     {
-    //         cache->sub_refcount(entry);
-    //     }
-    //     catch(const std::exception &e)
-    //     {
-    //         RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of page cache entry: %s", e.what());
-    //     }
-    // }
+    CEXCEPTION_T e;
+
+    if (NULL != this->entry)
+    {
+        Try
+        {
+            pageCacheSubRefCount(this->cache, this->entry);
+        }
+        Catch(e)
+        {
+            RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of page cache entry: %d", e);
+        }
+    }
 }
 
 void pageEntryHandleCopy(PageEntryHandle *this, const PageEntryHandle *other)
@@ -105,7 +117,7 @@ void pageEntryHandleCopy(PageEntryHandle *this, const PageEntryHandle *other)
 void pageEntryHandleMakeDirty(PageEntryHandle *this)
 {
     // 若返回 true，说明是由本线程将 dirty 置位，因此本线程负责将其加入 cache 的 dirty page set。
-    // if (entry->mark_dirty()) cache->add_to_dirty_pages(*this);
+    if (pageEntryMarkDirty(this->entry)) pageCacheAddToDirtyPages(this->cache, this);
 }
 
 
@@ -170,7 +182,7 @@ void pageCacheClearDirtyPages(PageCache *this)
         node->handle.entry->isDirty = false;
     }
 
-    // kbtree 未提供 clear 接口。用过销毁加重建模拟。
+    // kbtree 未提供 clear 接口。用销毁加重建模拟。
     kb_destroy(ktdpn, this->dirtyPages);
     this->dirtyPages = kb_init(ktdpn, KB_DEFAULT_SIZE);
 
@@ -188,10 +200,26 @@ bool pageEntryMarkDirty(PageEntry *this)
 
 void pageEntryHandleDoAddRef(PageEntryHandle *this)
 {
-    // if (entry != nullptr) cache->add_refcount(entry);
+    if (NULL != this->entry) pageCacheAddRefCount(this->cache, this->entry);
 }
 
 void pageEntryHandleDoSubRef(PageEntryHandle *this)
 {
-    // if (entry != nullptr) cache->sub_refcount(entry);
+    if (NULL != this->entry) pageCacheSubRefCount(this->cache, this->entry);
+}
+
+void pageCacheAddRefCount(PageCache *this, PageEntry *entry)
+{
+}
+
+void pageCacheSubRefCount(PageCache *this, PageEntry *entry)
+{
+}
+
+void pageCacheDoReplace(PageCache *this)
+{
+}
+
+void pageCacheAddToDirtyPages(PageCache *this, PageEntryHandle *page)
+{
 }
