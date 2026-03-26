@@ -226,23 +226,23 @@ void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff)
     DirtyPagesNode *lower = NULL;
     DirtyPagesNode *upper = NULL;
 
+    // kbtree 插入的数据不允许 key 重复，若重复插入相同的 key 数据，后续的数据会被丢弃。
+    // lower 找到的是最后一个 <= query 的元素。upper 找到的是第一个 >= query 的元素。如果存在等于 query 的 key，lower 会直接指向该元素，同理 upper。
     kb_interval(ktdpn, this->dirtyPages, query, &lower, &upper);
     if (!upper) return;
 
-    kbitr_t itr;
-    kb_itr_get(ktdpn, this->dirtyPages, upper, &itr);
-
-    // 如果 upper == maxBlkoff，要跳到下一个，即是 upper_bound。
-    if (upper->blkoff <= maxBlkoff) kb_itr_next(ktdpn, this->dirtyPages, &itr);
-
-    // TODO kbtree_test KbtreeRangeEraseTest 中有另一种算法，抉择一下哪种好一点。
-    while (kb_itr_valid(&itr))
+    // 如果命中等于 maxBlkoff，需要跳到下一个（即 > maxBlkoff）
+    if (upper->blkoff <= maxBlkoff)
     {
-        DirtyPagesNode node = kb_itr_key(DirtyPagesNode, &itr);
+        query.blkoff = 1 + maxBlkoff;
+        kb_interval(ktdpn, this->dirtyPages, query, &lower, &upper);
+    }
 
-        // 为了删除 itr 到 end 之间所有的节点，先保存 next。
-        kbitr_t next = itr;
-        if (!kb_itr_next(ktdpn, this->dirtyPages, &next)) next.p = next.stack - 1;
+    // 和 kbtree_test KbtreeRangeEraseTest 的算法相同，因为树的结构会发生改变，不能依赖原来树的指针。
+    while (upper)
+    {
+        DirtyPagesNode node = *upper;
+        uint32_t k = node.blkoff;
 
         // 将范围外的所有 page 的 dirty 标记清除，标记为 invalid。
         node.handle.entry->isDirty = false;
@@ -253,7 +253,10 @@ void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff)
 
         // 从 dirty pages 集合中移除范围外的所有 page。
         kb_del(ktdpn, this->dirtyPages, node);
-        itr = next;
+
+        // 查找后继（严格大于 k）。
+        query.blkoff = k;
+        kb_interval(ktdpn, this->dirtyPages, query, &lower, &upper);
     }
 }
 

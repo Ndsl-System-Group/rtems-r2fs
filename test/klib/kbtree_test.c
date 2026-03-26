@@ -44,6 +44,38 @@ RTFS_TEST(KbtreeInsertTest)
     kb_destroy(ktte, tree);
 }
 
+RTFS_TEST(KbtreeInsertDupTest)
+{
+    kbtree_t(ktte) *tree = kb_init(ktte, KB_DEFAULT_SIZE);
+
+
+    KbTreeTestEntry t = {0};
+
+    for (int i = 0; i < 10; ++i)
+    {
+        t.key = i;
+        t.data = i * 10;
+        kb_put(ktte, tree, t);
+    }
+
+    // 刻意插入一条 key 重复的数据。插入 key = 0 的 data 数据，因为 key 重复，该条数据插入会被废弃。
+    t.key = 0;
+    t.data = 100;
+    kb_put(ktte, tree, t);
+
+    for (int i = 9; i >= 0; --i)
+    {
+        t.key = i;
+        KbTreeTestEntry *p = kb_getp(ktte, tree, &t);
+
+        TEST_ASSERT_NOT_NULL(p);
+        TEST_ASSERT_EQUAL(p->data, i * 10);
+    }
+
+
+    kb_destroy(ktte, tree);
+}
+
 RTFS_TEST(KbtreeOrderedIterTest)
 {
     kbtree_t(ktte) *tree = kb_init(ktte, KB_DEFAULT_SIZE);
@@ -77,6 +109,40 @@ RTFS_TEST(KbtreeOrderedIterTest)
 }
 
 RTFS_TEST(KbtreeIntervalTest)
+{
+    kbtree_t(ktte) *tree = kb_init(ktte, KB_DEFAULT_SIZE);
+
+
+    KbTreeTestEntry t;
+
+    // 插入 0~9。
+    for (int i = 0; i < 10; ++i)
+    {
+        t.key = i;
+        t.data = i;
+        kb_put(ktte, tree, t);
+    }
+
+    // 查找 5 的区间。
+    KbTreeTestEntry query = {.key = 5};
+    KbTreeTestEntry *lower = NULL;
+    KbTreeTestEntry *upper = NULL;
+
+    // lower 找到的是最后一个 <= query 的元素。upper 找到的是第一个 >= query 的元素。如果存在等于 query 的 key，lower 会直接指向该元素，同理 upper。
+    kb_interval(ktte, tree, query, &lower, &upper);
+
+    // lower = 5, upper = 5。
+    TEST_ASSERT_NOT_NULL(lower);
+    TEST_ASSERT_NOT_NULL(upper);
+
+    TEST_ASSERT_EQUAL(lower->key, 5);
+    TEST_ASSERT_EQUAL(upper->key, 5);
+
+
+    kb_destroy(ktte, tree);
+}
+
+RTFS_TEST(KbtreeIntervalTest2)
 {
     kbtree_t(ktte) *tree = kb_init(ktte, KB_DEFAULT_SIZE);
 
