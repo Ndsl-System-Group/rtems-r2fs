@@ -99,12 +99,6 @@ typedef struct DirtyPagesNode
     PageEntryHandle handle; // data。
 } DirtyPagesNode;
 
-
-#define DIRTY_PAGES_NODE_CMP(a, b) ((a).blkoff < (b).blkoff ? -1 : ((a).blkoff > (b).blkoff ? 1 : 0))
-
-KBTREE_INIT(ktdpn, DirtyPagesNode, DIRTY_PAGES_NODE_CMP)
-
-
 /**
  * @brief 文件页缓存。PageCache 只作为 page 的缓存索引和置换管理器，不关心文件的实际大小。
  */
@@ -116,7 +110,8 @@ typedef struct PageCache
     spinlock_t cacheLock;
 
     // 由于 dirtyPages 有范围 remove 需求，所以用类似 C++ 中的 map<blkoff, PageEntryHandle> 维护。
-    kbtree_t(ktdpn) * dirtyPages;
+    // kbtree_t(ktdpn) * 类型不能定义在头文件中，因此这里用 void * 代替。
+    void *dirtyPages;
 
     spinlock_t dirtyPagesLock;
 
@@ -141,7 +136,7 @@ void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff);
 /**
  * @brief 获取 dirty pages 集合。调用者如果需要操作 dirty pages，必须持有对应文件的 fileOpLock 独占锁。
  */
-kbtree_t(ktdpn) * pageCacheGetDirtyPages(PageCache *this);
+void *pageCacheGetDirtyPages(PageCache *this);
 
 /**
  * @brief 将 dirty pages 中所有 page 的 dirty 位清除。

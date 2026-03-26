@@ -10,7 +10,7 @@ typedef struct
 } CimTestEntry;
 
 
-RTFS_TEST(CIMInitTest)
+RTFS_TEST(CimInitTest)
 {
     CacheIndexManager cim;
 
@@ -19,7 +19,7 @@ RTFS_TEST(CIMInitTest)
     cacheIndexManagerDestroy(&cim);
 }
 
-RTFS_TEST(CIMAddGetTest)
+RTFS_TEST(CimAddGetTest)
 {
     CacheIndexManager cim;
 
@@ -46,7 +46,7 @@ RTFS_TEST(CIMAddGetTest)
     cacheIndexManagerDestroy(&cim);
 }
 
-RTFS_TEST(CIMRemoveTest)
+RTFS_TEST(CimRemoveTest)
 {
     CacheIndexManager cim;
 
@@ -71,7 +71,7 @@ RTFS_TEST(CIMRemoveTest)
     cacheIndexManagerDestroy(&cim);
 }
 
-RTFS_TEST(CIMAddDupKeyTest)
+RTFS_TEST(CimAddDupKeyTest)
 {
     CacheIndexManager cim;
 

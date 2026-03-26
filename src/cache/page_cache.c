@@ -7,6 +7,13 @@
 #include <assert.h>
 
 
+#define DIRTY_PAGES_NODE_CMP(a, b) ((a).blkoff < (b).blkoff ? -1 : ((a).blkoff > (b).blkoff ? 1 : 0))
+
+KBTREE_INIT(ktdpn, DirtyPagesNode, DIRTY_PAGES_NODE_CMP)
+
+static kbtree_t(ktdpn) * getDirtyPagesTree(PageCache *this);
+
+
 // 对 isDirty 进行 CAS 操作(由 false 更改为 true)，成功返回 true。
 static bool pageEntryMarkDirty(PageEntry *this);
 
@@ -144,12 +151,12 @@ void pageCacheInit(PageCache *this, size_t expectSize)
 void pageCacheDestroy(PageCache *this)
 {
     // page cache 析构内不会并发访问，不加锁。
-    if (0 != kb_size(this->dirtyPages)) RTFS_LOG(RTFS_LOG_WARNING, "Page cache still has dirty page while destructed. If delete a file which written but not synchronized, this will be OK.");
+    if (0 != kb_size(getDirtyPagesTree(this))) RTFS_LOG(RTFS_LOG_WARNING, "Page cache still has dirty page while destructed. If delete a file which written but not synchronized, this will be OK.");
 
     this->curSize = 0;
     this->expectSize = 0;
 
-    kb_destroy(ktdpn, this->dirtyPages);
+    kb_destroy(ktdpn, getDirtyPagesTree(this));
     this->dirtyPages = NULL;
 
     genericCacheManagerDestroy(&this->cacheManager);
@@ -228,14 +235,14 @@ void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff)
 
     // kbtree 插入的数据不允许 key 重复，若重复插入相同的 key 数据，后续的数据会被丢弃。
     // lower 找到的是最后一个 <= query 的元素。upper 找到的是第一个 >= query 的元素。如果存在等于 query 的 key，lower 会直接指向该元素，同理 upper。
-    kb_interval(ktdpn, this->dirtyPages, query, &lower, &upper);
+    kb_interval(ktdpn, getDirtyPagesTree(this), query, &lower, &upper);
     if (!upper) return;
 
     // 如果命中等于 maxBlkoff，需要跳到下一个（即 > maxBlkoff）
     if (upper->blkoff <= maxBlkoff)
     {
         query.blkoff = 1 + maxBlkoff;
-        kb_interval(ktdpn, this->dirtyPages, query, &lower, &upper);
+        kb_interval(ktdpn, getDirtyPagesTree(this), query, &lower, &upper);
     }
 
     // 和 kbtree_test KbtreeRangeEraseTest 的算法相同，因为树的结构会发生改变，不能依赖原来树的指针。
@@ -252,15 +259,15 @@ void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff)
         --this->curSize;
 
         // 从 dirty pages 集合中移除范围外的所有 page。
-        kb_del(ktdpn, this->dirtyPages, node);
+        kb_del(ktdpn, getDirtyPagesTree(this), node);
 
         // 查找后继（严格大于 k）。
         query.blkoff = k;
-        kb_interval(ktdpn, this->dirtyPages, query, &lower, &upper);
+        kb_interval(ktdpn, getDirtyPagesTree(this), query, &lower, &upper);
     }
 }
 
-kbtree_t(ktdpn) * pageCacheGetDirtyPages(PageCache *this)
+void *pageCacheGetDirtyPages(PageCache *this)
 {
     return this->dirtyPages;
 }
@@ -270,7 +277,7 @@ void pageCacheClearDirtyPages(PageCache *this)
     rtfsSpinLock(&this->dirtyPagesLock);
 
     kbitr_t itr;
-    for (kb_itr_first(ktdpn, this->dirtyPages, &itr); kb_itr_valid(&itr); kb_itr_next(ktdpn, this->dirtyPages, &itr))
+    for (kb_itr_first(ktdpn, getDirtyPagesTree(this), &itr); kb_itr_valid(&itr); kb_itr_next(ktdpn, getDirtyPagesTree(this), &itr))
     {
         DirtyPagesNode *node = &kb_itr_key(DirtyPagesNode, &itr);
 
@@ -278,12 +285,17 @@ void pageCacheClearDirtyPages(PageCache *this)
     }
 
     // kbtree 未提供 clear 接口。用销毁加重建模拟。
-    kb_destroy(ktdpn, this->dirtyPages);
+    kb_destroy(ktdpn, getDirtyPagesTree(this));
     this->dirtyPages = kb_init(ktdpn, KB_DEFAULT_SIZE);
 
     rtfsSpinUnlock(&this->dirtyPagesLock);
 }
 
+
+kbtree_t(ktdpn) * getDirtyPagesTree(PageCache *this)
+{
+    return (kbtree_t(ktdpn) *)this->dirtyPages;
+}
 
 bool pageEntryMarkDirty(PageEntry *this)
 {
@@ -367,7 +379,7 @@ void pageCacheAddToDirtyPages(PageCache *this, PageEntryHandle *page)
 
     DirtyPagesNode node = {.blkoff = page->entry->blkoff, .handle = *page};
 
-    kb_put(ktdpn, this->dirtyPages, node);
+    kb_put(ktdpn, getDirtyPagesTree(this), node);
 
     rtfsSpinUnlock(&this->dirtyPagesLock);
 }

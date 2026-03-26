@@ -3,7 +3,7 @@
 #include "cache/cache_lru_replacer.h"
 
 
-RTFS_TEST(CLRInitTest)
+RTFS_TEST(ClrInitTest)
 {
     CacheLruReplacer lru;
 
@@ -16,7 +16,7 @@ RTFS_TEST(CLRInitTest)
     cacheLruReplacerDestroy(&lru);
 }
 
-RTFS_TEST(CLRAddPopTest1)
+RTFS_TEST(ClrAddPopTest1)
 {
     CacheLruReplacer lru;
     uint32_t k1 = 1;
@@ -34,7 +34,7 @@ RTFS_TEST(CLRAddPopTest1)
     cacheLruReplacerDestroy(&lru);
 }
 
-RTFS_TEST(CLRAddPopTest2)
+RTFS_TEST(ClrAddPopTest2)
 {
     CacheLruReplacer lru;
     uint32_t k1 = 1, k2 = 2, k3 = 3;
@@ -54,7 +54,7 @@ RTFS_TEST(CLRAddPopTest2)
     cacheLruReplacerDestroy(&lru);
 }
 
-RTFS_TEST(CLRAddPopRefreshTest1)
+RTFS_TEST(ClrAddPopRefreshTest1)
 {
     CacheLruReplacer lru;
     uint32_t k1 = 1, k2 = 2, k3 = 3;
@@ -76,7 +76,7 @@ RTFS_TEST(CLRAddPopRefreshTest1)
     cacheLruReplacerDestroy(&lru);
 }
 
-RTFS_TEST(CLRAddPopRefreshTest2)
+RTFS_TEST(ClrAddPopRefreshTest2)
 {
     CacheLruReplacer lru;
     uint32_t k1 = 1, k2 = 2, k3 = 3;
@@ -99,7 +99,7 @@ RTFS_TEST(CLRAddPopRefreshTest2)
     cacheLruReplacerDestroy(&lru);
 }
 
-RTFS_TEST(CLRRemoveTest1)
+RTFS_TEST(ClrRemoveTest1)
 {
     CacheLruReplacer lru;
     uint32_t k1 = 1, k2 = 2, k3 = 3;
@@ -120,7 +120,7 @@ RTFS_TEST(CLRRemoveTest1)
     cacheLruReplacerDestroy(&lru);
 }
 
-RTFS_TEST(CLRRemoveTest2)
+RTFS_TEST(ClrRemoveTest2)
 {
     CacheLruReplacer lru;
     uint32_t k1 = 1, k2 = 2;
@@ -139,7 +139,7 @@ RTFS_TEST(CLRRemoveTest2)
     cacheLruReplacerDestroy(&lru);
 }
 
-RTFS_TEST(CLRRemoveTest3)
+RTFS_TEST(ClrRemoveTest3)
 {
     CacheLruReplacer lru;
     uint32_t k1 = 1, k2 = 2;
@@ -158,7 +158,7 @@ RTFS_TEST(CLRRemoveTest3)
     cacheLruReplacerDestroy(&lru);
 }
 
-RTFS_TEST(CLRCanReplaceTest)
+RTFS_TEST(ClrCanReplaceTest)
 {
     CacheLruReplacer lru;
     uint32_t k1 = 1, k2 = 2;
@@ -181,7 +181,7 @@ RTFS_TEST(CLRCanReplaceTest)
     cacheLruReplacerDestroy(&lru);
 }
 
-RTFS_TEST(CLRPinTest)
+RTFS_TEST(ClrPinTest)
 {
     CacheLruReplacer lru;
     uint32_t k1 = 1, k2 = 2;

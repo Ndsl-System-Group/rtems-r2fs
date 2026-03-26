@@ -4,7 +4,7 @@
 #include "utils/rtfs_log.h"
 
 
-RTFS_TEST(JournalContainerInitTest)
+RTFS_TEST(JcInitTest)
 {
     JournalContainer jc;
     journalContainerInit(&jc);
@@ -16,7 +16,7 @@ RTFS_TEST(JournalContainerInitTest)
     journalContainerDestroy(&jc);
 }
 
-RTFS_TEST(JournalContainerTxIdTest)
+RTFS_TEST(JcTxIdTest)
 {
     JournalContainer jc;
     journalContainerInit(&jc);
@@ -29,7 +29,7 @@ RTFS_TEST(JournalContainerTxIdTest)
     journalContainerDestroy(&jc);
 }
 
-RTFS_TEST(JournalContainerAppendSuperBlockTest)
+RTFS_TEST(JcAppendSuperBlockTest)
 {
     JournalContainer jc;
     journalContainerInit(&jc);
@@ -50,7 +50,7 @@ RTFS_TEST(JournalContainerAppendSuperBlockTest)
     journalContainerDestroy(&jc);
 }
 
-RTFS_TEST(JournalContainerAppendNatTest)
+RTFS_TEST(JcAppendNatTest)
 {
     JournalContainer jc;
     journalContainerInit(&jc);
@@ -71,7 +71,7 @@ RTFS_TEST(JournalContainerAppendNatTest)
     journalContainerDestroy(&jc);
 }
 
-RTFS_TEST(JournalContainerAppendSitTest)
+RTFS_TEST(JcAppendSitTest)
 {
     JournalContainer jc;
     journalContainerInit(&jc);
@@ -92,7 +92,7 @@ RTFS_TEST(JournalContainerAppendSitTest)
     journalContainerDestroy(&jc);
 }
 
-RTFS_TEST(JournalContainerMultiAppendTest)
+RTFS_TEST(JcMultiAppendTest)
 {
     JournalContainer jc;
     journalContainerInit(&jc);
@@ -108,7 +108,7 @@ RTFS_TEST(JournalContainerMultiAppendTest)
     journalContainerDestroy(&jc);
 }
 
-RTFS_TEST(JournalContainerIsEmptyTest)
+RTFS_TEST(JcIsEmptyTest)
 {
     JournalContainer jc;
     journalContainerInit(&jc);

@@ -18,7 +18,7 @@ static GcmTestEntry *newTestEntry(int v)
 }
 
 
-RTFS_TEST(GCMInitTest)
+RTFS_TEST(GcmInitTest)
 {
     GenericCacheManager gcm;
 
@@ -32,7 +32,7 @@ RTFS_TEST(GCMInitTest)
     genericCacheManagerDestroy(&gcm);
 }
 
-RTFS_TEST(GCMAddGetTest)
+RTFS_TEST(GcmAddGetTest)
 {
     GenericCacheManager gcm;
     uint32_t k1 = 1;
@@ -51,7 +51,7 @@ RTFS_TEST(GCMAddGetTest)
     genericCacheManagerDestroy(&gcm);
 }
 
-RTFS_TEST(GCMReplaceOrderTest1)
+RTFS_TEST(GcmReplaceOrderTest1)
 {
     GenericCacheManager gcm;
     uint32_t k1 = 1, k2 = 2, k3 = 3;
@@ -81,7 +81,7 @@ RTFS_TEST(GCMReplaceOrderTest1)
     genericCacheManagerDestroy(&gcm);
 }
 
-RTFS_TEST(GCMAccessRefreshTest)
+RTFS_TEST(GcmAccessRefreshTest)
 {
     GenericCacheManager gcm;
     uint32_t k1 = 1, k2 = 2, k3 = 3;
@@ -114,7 +114,7 @@ RTFS_TEST(GCMAccessRefreshTest)
     genericCacheManagerDestroy(&gcm);
 }
 
-RTFS_TEST(GCMNoAccessRefreshTest)
+RTFS_TEST(GcmNoAccessRefreshTest)
 {
     GenericCacheManager gcm;
     uint32_t k1 = 1, k2 = 2, k3 = 3;
@@ -147,7 +147,7 @@ RTFS_TEST(GCMNoAccessRefreshTest)
     genericCacheManagerDestroy(&gcm);
 }
 
-RTFS_TEST(GCMRemoveTest)
+RTFS_TEST(GcmRemoveTest)
 {
     GenericCacheManager gcm;
     uint32_t k1 = 1, k2 = 2, k3 = 3;
@@ -175,7 +175,7 @@ RTFS_TEST(GCMRemoveTest)
     genericCacheManagerDestroy(&gcm);
 }
 
-RTFS_TEST(GCMPinTest)
+RTFS_TEST(GcmPinTest)
 {
     GenericCacheManager gcm;
     uint32_t k1 = 1, k2 = 2, k3 = 3;
