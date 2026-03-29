@@ -25,8 +25,8 @@ static BlockBuffer *srmapUtilsGetSrmapBlk(SrmapUtils *this, uint32_t lpa);
 void srmapUtilsInit(SrmapUtils *this, struct file_system_manager *fsManager)
 {
     this->fsManager = fsManager;
-    this->srmapCache = NULL;
-    this->dirtyBlks = NULL;
+    this->srmapCache = kh_init(khsc);
+    this->dirtyBlks = kh_init(khdb);
     // TODO 该部分依赖 file_system_manager 的接口。
     // this->srmapStartLpa = fsManager->fileSystemManagerGetSuperCache()->srmap_blkaddr;
 }
@@ -47,13 +47,11 @@ void srmapUtilsWriteSrmapOfData(SrmapUtils *this, uint32_t dataLpa, uint32_t ino
 
     RTFS_LOG(RTFS_LOG_INFO, "set srmap of data lpa %u: ino=%u, blkoff=%u", dataLpa, ino, blkoff);
 
-    DirtyBlkEntry *dentry = NULL;
-    HASH_FIND(hh, this->dirtyBlks, &pos.srmapBlkLpa, sizeof(uint32_t), dentry);
-    if (!dentry)
+    khiter_t k = kh_get(khdb, this->dirtyBlks, pos.srmapBlkLpa);
+    if (kh_end(this->dirtyBlks) == k)
     {
-        dentry = (DirtyBlkEntry *)malloc(sizeof(DirtyBlkEntry));
-        dentry->lpa = pos.srmapBlkLpa;
-        HASH_ADD(hh, this->dirtyBlks, lpa, sizeof(uint32_t), dentry);
+        int res;
+        kh_put(khdb, this->dirtyBlks, pos.srmapBlkLpa, &res);
     }
 }
 
@@ -62,18 +60,15 @@ void srmapUtilsWriteSrmapOfNode(SrmapUtils *this, uint32_t nodeLpa, uint32_t nid
     SrmapPos pos = srmapUtilsGetSrmapPosOfLpa(this, nodeLpa);
     BlockBuffer *blk = srmapUtilsGetSrmapBlk(this, pos.srmapBlkLpa);
     struct RtfsSummaryBlock *srmapBlk = (struct RtfsSummaryBlock *)blockBufferGetPtr(blk);
-
     srmapBlk->entries[pos.idx].nid = nid;
 
     RTFS_LOG(RTFS_LOG_INFO, "set srmap of node lpa %u: nid=%u", nodeLpa, nid);
 
-    DirtyBlkEntry *dentry = NULL;
-    HASH_FIND(hh, this->dirtyBlks, &pos.srmapBlkLpa, sizeof(uint32_t), dentry);
-    if (!dentry)
+    khiter_t k = kh_get(khdb, this->dirtyBlks, pos.srmapBlkLpa);
+    if (kh_end(this->dirtyBlks) == k)
     {
-        dentry = (DirtyBlkEntry *)malloc(sizeof(DirtyBlkEntry));
-        dentry->lpa = pos.srmapBlkLpa;
-        HASH_ADD(hh, this->dirtyBlks, lpa, sizeof(uint32_t), dentry);
+        int res;
+        kh_put(khdb, this->dirtyBlks, pos.srmapBlkLpa, &res);
     }
 }
 
@@ -84,20 +79,19 @@ void srmapUtilsWriteDirtySrmapSync(SrmapUtils *this)
 
 void srmapUtilsClearCache(SrmapUtils *this)
 {
-    SrmapCacheEntry *entry, *tmp;
-    HASH_ITER(hh, this->srmapCache, entry, tmp)
+    khiter_t k;
+    for (k = kh_begin(this->srmapCache); k != kh_end(this->srmapCache); ++k)
     {
-        HASH_DEL(this->srmapCache, entry);
-        blockBufferDestroy(&entry->blk);
-        free(entry);
+        if (!kh_exist(this->srmapCache, k)) continue;
+
+        blockBufferDestroy(&kh_value(this->srmapCache, k));
     }
 
-    DirtyBlkEntry *dentry, *dtmp;
-    HASH_ITER(hh, this->dirtyBlks, dentry, dtmp)
-    {
-        HASH_DEL(this->dirtyBlks, dentry);
-        free(dentry);
-    }
+    kh_destroy(khsc, this->srmapCache);
+    kh_destroy(khdb, this->dirtyBlks);
+
+    this->srmapCache = NULL;
+    this->dirtyBlks = NULL;
 }
 
 
@@ -115,15 +109,14 @@ SrmapPos srmapUtilsGetSrmapPosOfLpa(SrmapUtils *this, uint32_t lpa)
 
 BlockBuffer *srmapUtilsGetSrmapBlk(SrmapUtils *this, uint32_t lpa)
 {
-    SrmapCacheEntry *entry = NULL;
-    HASH_FIND(hh, this->srmapCache, &lpa, sizeof(uint32_t), entry);
-    if (entry) return &entry->blk;
+    khiter_t k = kh_get(khsc, this->srmapCache, lpa);
+    if (kh_end(this->srmapCache) != k) return &kh_value(this->srmapCache, k); // 找到直接返回 BlockBuffer。
 
-    entry = (SrmapCacheEntry *)malloc(sizeof(SrmapCacheEntry));
-    entry->lpa = lpa;
-    blockBufferInit(&entry->blk);
-    HASH_ADD(hh, this->srmapCache, lpa, sizeof(uint32_t), entry);
+    int res;
+    k = kh_put(khsc, this->srmapCache, lpa, &res);
+    BlockBuffer *blk = &kh_value(this->srmapCache, k);
+    blockBufferInit(blk);
 
 
-    return &entry->blk;
+    return blk;
 }

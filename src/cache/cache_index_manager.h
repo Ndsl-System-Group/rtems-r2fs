@@ -1,11 +1,16 @@
 #ifndef _CACHE_INDEX_MANAGER_H_
 #define _CACHE_INDEX_MANAGER_H_
 
-#include "uthash/uthash.h"
+#include "utils/types.h"
 
+#include "klib/khash.h"
+
+
+// 这个宏的含义代表 int(uint32_t) 类型是 key，data 是 void * 类型。
+KHASH_MAP_INIT_INT(khcim, void *)
 
 /**
- * @brief 缓存条目。
+ * @brief 缓存索引管理器。
  * @details CacheEntry 的 key 设计。
  * 当前实现：
  *  - key 类型为 uint32_t，按“值”存储在哈希表中，而非指针或对象引用。
@@ -37,19 +42,9 @@
  *
  * 当前版本选择方案 A，是在“安全性、可维护性、实现复杂度”之间的权衡结果。
  */
-typedef struct CacheEntry
-{
-    uint32_t key;      // uint32_t 类型 key。
-    void *value;       // 任意类型 value（类似 unique_ptr，index 拥有）。
-    UT_hash_handle hh; // uthash 必须要求需要的字段。
-} CacheEntry;
-
-/**
- * @brief 缓存索引管理器。
- */
 typedef struct CacheIndexManager
 {
-    CacheEntry *index; // 哈希表头指针。
+    khash_t(khcim) * index; // 哈希表头指针。
 } CacheIndexManager;
 
 
@@ -79,9 +74,9 @@ void *cacheIndexManagerGet(CacheIndexManager *this, uint32_t key);
 void *cacheIndexManagerRemove(CacheIndexManager *this, uint32_t key);
 
 /**
- * @brief 删除指定条目（迭代器风格）。
+ * @brief 删除指定条目。
  */
-void cacheIndexManagerErase(CacheIndexManager *this, CacheEntry *cacheEntry);
+void cacheIndexManagerErase(CacheIndexManager *this, uint32_t key);
 
 
 #endif

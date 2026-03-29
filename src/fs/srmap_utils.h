@@ -3,30 +3,15 @@
 
 #include "utils/types.h"
 #include "cache/block_buffer.h"
-#include "uthash/uthash.h"
+#include "klib/khash.h"
 
 
 struct file_system_manager;
 
 
-/**
- * @brief SrmapCache 哈希表条目。
- */
-typedef struct
-{
-    uint32_t lpa;    // key: srmap block 的逻辑地址。
-    BlockBuffer blk; // value: block 缓存。
-    UT_hash_handle hh;
-} SrmapCacheEntry;
+KHASH_MAP_INIT_INT(khsc, BlockBuffer)
 
-/**
- * @brief 记录 SrmapCache 中，哪些 lpa 是 dirty 的。
- */
-typedef struct
-{
-    uint32_t lpa; // key: dirty 块的 lpa 号。
-    UT_hash_handle hh;
-} DirtyBlkEntry;
+KHASH_SET_INIT_INT(khdb)
 
 /**
  * @brief Srmap 工具结构体。
@@ -36,8 +21,8 @@ typedef struct
     struct file_system_manager *fsManager;
     uint32_t srmapStartLpa;
 
-    SrmapCacheEntry *srmapCache;
-    DirtyBlkEntry *dirtyBlks;
+    khash_t(khsc) * srmapCache;
+    khash_t(khdb) * dirtyBlks;
 } SrmapUtils;
 
 

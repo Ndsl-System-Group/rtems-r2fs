@@ -1,29 +1,18 @@
 #include "cache_lru_replacer.h"
 
+#include "uthash/utlist.h"
+
 #include <stdlib.h>
 #include <assert.h>
-
-
-static void detachFromLru(CacheLruReplacer *this, LruNode *node);
-
-static void attachToLruTail(CacheLruReplacer *this, LruNode *node);
-
-static void detachFromPin(CacheLruReplacer *this, LruNode *node);
-
-static void attachToPinTail(CacheLruReplacer *this, LruNode *node);
 
 
 void cacheLruReplacerInit(CacheLruReplacer *this)
 {
     assert(this);
 
-    this->head = NULL;
-    this->tail = NULL;
-
+    this->lruHead = NULL;
     this->pinHead = NULL;
-    this->pinTail = NULL;
-
-    this->table = NULL;
+    this->table = kh_init(khclr);
 
     this->size = 0;
 }
@@ -32,20 +21,17 @@ void cacheLruReplacerDestroy(CacheLruReplacer *this)
 {
     assert(this);
 
-    LruNode *node, *tmp;
+    khiter_t k;
 
-    HASH_ITER(hh, this->table, node, tmp)
+    for (k = kh_begin(this->table); kh_end(this->table) != k; ++k)
     {
-        HASH_DEL(this->table, node);
-        free(node);
+        if (kh_exist(this->table, k)) free(kh_value(this->table, k));
     }
 
-    this->head = NULL;
-    this->tail = NULL;
+    kh_destroy(khclr, this->table);
 
+    this->lruHead = NULL;
     this->pinHead = NULL;
-    this->pinTail = NULL;
-
     this->table = NULL;
 
     this->size = 0;
@@ -55,21 +41,20 @@ void cacheLruReplacerAdd(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    LruNode *node = NULL;
+    khiter_t k = kh_get(khclr, this->table, key);
+    assert(kh_end(this->table) == k);
 
-    HASH_FIND_INT(this->table, &key, node);
-    assert(node == NULL);
-
-    node = malloc(sizeof(LruNode));
+    LruNode *node = malloc(sizeof(LruNode));
     assert(node);
 
     node->key = key;
-    node->isPinned = 0;
-    node->prev = node->next = NULL;
+    node->isPinned = false;
 
-    attachToLruTail(this, node);
+    DL_APPEND(this->lruHead, node);
 
-    HASH_ADD_INT(this->table, key, node);
+    int res;
+    k = kh_put(khclr, this->table, key, &res);
+    kh_value(this->table, k) = node;
 
     ++this->size;
 }
@@ -78,24 +63,24 @@ void cacheLruReplacerAccess(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    LruNode *node = NULL;
+    khiter_t k = kh_get(khclr, this->table, key);
+    assert(kh_end(this->table) != k);
 
-    HASH_FIND_INT(this->table, &key, node);
-    assert(node);
+    LruNode *node = kh_value(this->table, k);
 
     if (node->isPinned)
     {
-        if (node == this->pinTail) return;
+        if (this->pinHead && node == this->pinHead->prev) return;
 
-        detachFromPin(this, node);
-        attachToPinTail(this, node);
+        DL_DELETE(this->pinHead, node);
+        DL_APPEND(this->pinHead, node);
     }
     else
     {
-        if (node == this->tail) return;
+        if (this->lruHead && node == this->lruHead->prev) return;
 
-        detachFromLru(this, node);
-        attachToLruTail(this, node);
+        DL_DELETE(this->lruHead, node);
+        DL_APPEND(this->lruHead, node);
     }
 }
 
@@ -111,13 +96,14 @@ uint32_t cacheLruReplacerPop(CacheLruReplacer *this)
     assert(this);
     assert(this->size > 0);
 
-    LruNode *node = this->head;
+    LruNode *node = this->lruHead;
 
     uint32_t key = node->key;
 
-    detachFromLru(this, node);
+    DL_DELETE(this->lruHead, node);
 
-    HASH_DEL(this->table, node);
+    khiter_t k = kh_get(khclr, this->table, key);
+    kh_del(khclr, this->table, k);
 
     free(node);
 
@@ -131,22 +117,23 @@ void cacheLruReplacerRemove(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    LruNode *node = NULL;
+    khiter_t k = kh_get(khclr, this->table, key);
+    assert(kh_end(this->table) != k);
 
-    HASH_FIND_INT(this->table, &key, node);
-    assert(node);
+    LruNode *node = kh_value(this->table, k);
 
     if (node->isPinned)
     {
-        detachFromPin(this, node);
+        DL_DELETE(this->pinHead, node);
     }
     else
     {
-        detachFromLru(this, node);
-        this->size--;
+        DL_DELETE(this->lruHead, node);
+
+        --this->size;
     }
 
-    HASH_DEL(this->table, node);
+    kh_del(khclr, this->table, k);
 
     free(node);
 }
@@ -155,21 +142,18 @@ void cacheLruReplacerPin(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    LruNode *node = NULL;
+    khiter_t k = kh_get(khclr, this->table, key);
+    if (kh_end(this->table) == k) return;
 
-    HASH_FIND_INT(this->table, &key, node);
+    LruNode *node = kh_value(this->table, k);
 
-    if (!node)
-        return;
+    if (node->isPinned) return;
 
-    if (node->isPinned)
-        return;
+    DL_DELETE(this->lruHead, node);
 
-    detachFromLru(this, node);
+    node->isPinned = true;
 
-    node->isPinned = 1;
-
-    attachToPinTail(this, node);
+    DL_APPEND(this->pinHead, node);
 
     --this->size;
 }
@@ -178,100 +162,18 @@ void cacheLruReplacerUnpin(CacheLruReplacer *this, uint32_t key)
 {
     assert(this);
 
-    LruNode *node = NULL;
+    khiter_t k = kh_get(khclr, this->table, key);
+    if (kh_end(this->table) == k) return;
 
-    HASH_FIND_INT(this->table, &key, node);
-
-    if (!node) return;
+    LruNode *node = kh_value(this->table, k);
 
     if (!node->isPinned) return;
 
-    detachFromPin(this, node);
+    DL_DELETE(this->pinHead, node);
 
-    node->isPinned = 0;
+    node->isPinned = false;
 
-    attachToLruTail(this, node);
+    DL_APPEND(this->lruHead, node);
 
     ++this->size;
-}
-
-
-static void detachFromLru(CacheLruReplacer *this, LruNode *node)
-{
-    if (node->prev)
-    {
-        node->prev->next = node->next;
-    }
-    else
-    {
-        this->head = node->next;
-    }
-
-    if (node->next)
-    {
-        node->next->prev = node->prev;
-    }
-    else
-    {
-        this->tail = node->prev;
-    }
-
-    node->prev = node->next = NULL;
-}
-
-static void attachToLruTail(CacheLruReplacer *this, LruNode *node)
-{
-    node->prev = this->tail;
-    node->next = NULL;
-
-    if (this->tail)
-    {
-        this->tail->next = node;
-    }
-    else
-    {
-        this->head = node;
-    }
-
-    this->tail = node;
-}
-
-static void detachFromPin(CacheLruReplacer *this, LruNode *node)
-{
-    if (node->prev)
-    {
-        node->prev->next = node->next;
-    }
-    else
-    {
-        this->pinHead = node->next;
-    }
-
-    if (node->next)
-    {
-        node->next->prev = node->prev;
-    }
-    else
-    {
-        this->pinTail = node->prev;
-    }
-
-    node->prev = node->next = NULL;
-}
-
-static void attachToPinTail(CacheLruReplacer *this, LruNode *node)
-{
-    node->prev = this->pinTail;
-    node->next = NULL;
-
-    if (this->pinTail)
-    {
-        this->pinTail->next = node;
-    }
-    else
-    {
-        this->pinHead = node;
-    }
-
-    this->pinTail = node;
 }

@@ -1,8 +1,8 @@
 #ifndef _GENERIC_CACHE_MANAGER_H_
 #define _GENERIC_CACHE_MANAGER_H_
 
-#include "cache_index_manager.h"
-#include "cache_lru_replacer.h"
+#include "cache/cache_index_manager.h"
+#include "cache/cache_lru_replacer.h"
 
 #include <stdbool.h>
 

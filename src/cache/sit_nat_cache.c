@@ -1,4 +1,5 @@
 #include "sit_nat_cache.h"
+
 #include "utils/rtfs_log.h"
 #include "utils/io_utils.h"
 
@@ -85,11 +86,11 @@ void sitNatCacheEntryHandleAddSsdVersion(SitNatCacheEntryHandle *this)
     if (this->entry) sitNatCacheAddSsdVersionForHandle(this->cache, this->entry);
 }
 
-void sitNatCacheInit(SitNatCache *this, struct comm_dev *device, size_t expectCacheSize)
+void sitNatCacheInit(SitNatCache *this, struct comm_dev *dev, size_t expectCacheSize)
 {
     genericCacheManagerInit(&this->cacheManager);
 
-    this->dev = device;
+    this->dev = dev;
     this->expectSize = expectCacheSize;
     this->curSize = 0;
 }
