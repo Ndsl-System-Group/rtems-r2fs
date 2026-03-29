@@ -6,3 +6,7 @@ build/
 *.img
 /Makefile
 /note/*
+/codex/*
+*.staging
+.codex
+waf
