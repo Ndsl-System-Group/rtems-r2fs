@@ -1,5 +1,7 @@
 #include "block_buffer.h"
 
+#include <memory.h>
+
 
 // TODO 该部分依赖底层 IO 层的接口设计。
 int blockBufferInit(BlockBuffer *this)
@@ -9,6 +11,11 @@ int blockBufferInit(BlockBuffer *this)
 
 void blockBufferDestroy(BlockBuffer *this)
 {
+}
+
+void blockBufferCopy(BlockBuffer *this, BlockBuffer *other)
+{
+    memcpy(this->buffer, other->buffer, BLOCK_BUFFER_SIZE);
 }
 
 char *blockBufferGetPtr(BlockBuffer *this)

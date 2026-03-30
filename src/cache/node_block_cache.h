@@ -17,4 +17,36 @@ typedef enum NodeBlockCacheEntryState
 } NodeBlockCacheEntryState;
 
 
+typedef struct NodeBlockCacheEntry
+{
+    uint32_t nid;
+    uint32_t parentNid;
+    uint32_t lpa;
+
+    BlockBuffer node;
+
+    uint32_t refCount;
+    NodeBlockCacheEntryState state;
+} NodeBlockCacheEntry;
+
+
+void nodeBlockCacheEntryInit(NodeBlockCacheEntry *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa);
+
+void nodeBlockCacheEntryDestroy(NodeBlockCacheEntry *this);
+
+uint32_t nodeBlockCacheEntryGetLpa(NodeBlockCacheEntry *this);
+
+void nodeBlockCacheEntrySetLpa(NodeBlockCacheEntry *this, uint32_t lpa);
+
+NodeBlockCacheEntryState nodeBlockCacheEntryGetState(NodeBlockCacheEntry *this);
+
+void nodeBlockCacheEntrySetState(NodeBlockCacheEntry *this, NodeBlockCacheEntryState state);
+
+struct RtfsNode *nodeBlockCacheEntryGetNodeBlockPtr(NodeBlockCacheEntry *this);
+
+BlockBuffer *nodeBlockCacheEntryGetNodeBuffer(NodeBlockCacheEntry *this);
+
+uint32_t nodeBlockCacheEntryGetNid(NodeBlockCacheEntry *this);
+
+
 #endif
