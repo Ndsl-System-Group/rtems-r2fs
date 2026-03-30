@@ -41,7 +41,7 @@ typedef struct
 /**
  * @brief 初始化 SIT LPA 映射器。
  */
-void sitOperatorInit(SitOperator *this, struct file_system_manager *fsManager, uint32_t seg0StartLpa, uint32_t segCount, uint32_t sitStartLpa, uint32_t sitSegmentCnt);
+void sitOperatorInit(SitOperator *this, struct file_system_manager *fsManager);
 
 /**
  * @brief 将 LPA 设置为无效。

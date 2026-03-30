@@ -137,12 +137,7 @@ uint32_t superManagerAllocSegment(super_manager *this)
 
     uint32_t seg_id = this->super_block_->first_free_segment_id;
     SitOperator sit_operator;
-    sitOperatorInit(&sit_operator,
-                    this->fs_manager_,
-                    this->super_block_->segment0_blkaddr,
-                    this->super_block_->segment_count,
-                    this->super_block_->sit_blkaddr,
-                    this->super_block_->segment_count_sit);
+    sitOperatorInit(&sit_operator, this->fs_manager_);
     SitPos sit_pos = sitGetSegIdPosInSit(&sit_operator, seg_id);
     SitNatCache *sit_cache = fileSystemManagerGetSitCache(this->fs_manager_);
     SitNatCacheEntryHandle sit_cache_handle = sitNatCacheGet(sit_cache, sit_pos.sitLpa);
@@ -172,12 +167,7 @@ uint32_t superManagerAllocLpaInner(super_manager *this, LpaAllocContext *ctx)
     }
 
     SitOperator sit_operator;
-    sitOperatorInit(&sit_operator,
-                    this->fs_manager_,
-                    this->super_block_->segment0_blkaddr,
-                    this->super_block_->segment_count,
-                    this->super_block_->sit_blkaddr,
-                    this->super_block_->segment_count_sit);
+    sitOperatorInit(&sit_operator, this->fs_manager_);
     uint32_t lpa = sitGetFirstLpaOfSegId(&sit_operator, *ctx->cur_seg_id_);
 
     // TODO: 添加超级块日志
