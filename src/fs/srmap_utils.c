@@ -1,6 +1,7 @@
 #include "srmap_utils.h"
 
 #include "fs/fs.h"
+#include "fs/fs_manager.h"
 #include "utils/rtfs_log.h"
 
 
@@ -27,8 +28,7 @@ void srmapUtilsInit(SrmapUtils *this, struct file_system_manager *fsManager)
     this->fsManager = fsManager;
     this->srmapCache = kh_init(khsc);
     this->dirtyBlks = kh_init(khdb);
-    // TODO 该部分依赖 file_system_manager 的接口。
-    // this->srmapStartLpa = fsManager->fileSystemManagerGetSuperCache()->srmap_blkaddr;
+    this->srmapStartLpa = fileSystemManagerGetSuperBlkMem(fsManager)->srmap_blkaddr;
 }
 
 void srmapUtilsDestroy(SrmapUtils *this)

@@ -106,8 +106,9 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
     // natLpaMappingInit(this->nat_lpa_mapping_, this, natStartLpa, natSegmentCnt);
 
     // SRMAP
-    this->srmap_utils_ = malloc(sizeof(SrmapUtils));
-    srmapUtilsInit(this->srmap_utils_, this);
+    // TODO 这里目前有一个 bug，这个函数里面会调用 fileSystemManagerGetSuperBlkMem(fsManager)->srmap_blkaddr 语句，目前上面的 TODO super_blk_mem 是 NULL，因此会空指针越界，导致程序崩溃。对上面的 sit nat utils 同理。
+    // this->srmap_utils_ = malloc(sizeof(SrmapUtils));
+    // srmapUtilsInit(this->srmap_utils_, this);
 
     // TODO(): 创建SIT_NAT缓存数量如何配置？
     this->sit_cache_ = malloc(sizeof(SitNatCache));
