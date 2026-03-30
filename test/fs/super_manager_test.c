@@ -31,7 +31,7 @@ struct file_system_manager
     comm_dev *dev_;
     fd_array *fd_arr_;
 
-    journal_container *cur_journal_;
+    JournalContainer *cur_journal_;
     bool is_unrecoverable_;
 };
 

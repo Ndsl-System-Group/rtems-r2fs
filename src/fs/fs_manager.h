@@ -11,7 +11,7 @@ typedef struct dir_data_block_cache dir_data_block_cache;
 typedef struct SitNatCache SitNatCache;
 // typedef struct SrmapUtils SrmapUtils;
 typedef struct fd_array fd_array;
-typedef struct journal_container journal_container;
+typedef struct JournalContainer JournalContainer;
 // typedef struct replace_protect_manager replace_protect_manager;
 
 // ==================== 生命周期管理 ====================
@@ -37,4 +37,4 @@ SitNatCache *fileSystemManagerGetSitCache(file_system_manager *this);
 SitNatCache *fileSystemManagerGetNatCache(file_system_manager *this);
 SrmapUtils *fileSystemManagerGetSrmapUtils(file_system_manager *this);
 fd_array *fileSystemManagerGetFdArray(file_system_manager *this);
-journal_container *fileSystemManagerGetCurJournal(file_system_manager *this);
+JournalContainer *fileSystemManagerGetCurJournal(file_system_manager *this);

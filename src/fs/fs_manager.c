@@ -28,7 +28,7 @@ typedef struct file_system_manager
     comm_dev *dev_;    // 底层设备抽象
     fd_array *fd_arr_; // 文件描述符数组
 
-    journal_container *cur_journal_; // 当前日志容器
+    JournalContainer *cur_journal_; // 当前日志容器
     // replace_protect_manager *rp_manager_;    // 替换保护管理器
     bool is_unrecoverable_; // 不可恢复错误标志
 } file_system_manager;
@@ -221,4 +221,4 @@ SitNatCache *fileSystemManagerGetSitCache(file_system_manager *this) { return th
 SitNatCache *fileSystemManagerGetNatCache(file_system_manager *this) { return this ? this->nat_cache_ : NULL; }
 SrmapUtils *fileSystemManagerGetSrmapUtils(file_system_manager *this) { return this ? this->srmap_utils_ : NULL; };
 fd_array *fileSystemManagerGetFdArray(file_system_manager *this) { return this ? this->fd_arr_ : NULL; };
-journal_container *fileSystemManagerGetCurJournal(file_system_manager *this) { return this ? this->cur_journal_ : NULL; };
+JournalContainer *fileSystemManagerGetCurJournal(file_system_manager *this) { return this ? this->cur_journal_ : NULL; };

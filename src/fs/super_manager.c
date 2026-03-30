@@ -53,7 +53,7 @@ uint32_t superManagerAllocNid(super_manager *this, uint32_t ino, bool is_inode)
     }
 
     NatLpaMapping nat_lpa_mapping;
-    natLpaMappingInit(&nat_lpa_mapping, this->fs_manager_, this->super_block_->nat_blkaddr, this->super_block_->segment_count_nat);
+    natLpaMappingInit(&nat_lpa_mapping, this->fs_manager_);
     NatNidPos nat_nid_pos = natGetNidPos(&nat_lpa_mapping, nid);
 
     SitNatCache *nat_cache = fileSystemManagerGetNatCache(this->fs_manager_);
@@ -91,7 +91,7 @@ uint32_t superManagerAllocNid(super_manager *this, uint32_t ino, bool is_inode)
 void superManagerFreeNid(super_manager *this, uint32_t nid)
 {
     NatLpaMapping nat_lpa_mapping;
-    natLpaMappingInit(&nat_lpa_mapping, this->fs_manager_, this->super_block_->nat_blkaddr, this->super_block_->segment_count_nat);
+    natLpaMappingInit(&nat_lpa_mapping, this->fs_manager_);
     NatNidPos nat_nid_pos = natGetNidPos(&nat_lpa_mapping, nid);
 
     SitNatCache *nat_cache = fileSystemManagerGetNatCache(this->fs_manager_);

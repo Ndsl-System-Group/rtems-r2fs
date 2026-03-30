@@ -4,6 +4,7 @@
 #include "utils/types.h"
 #include "cache/block_buffer.h"
 #include "cache/generic_cache_manager.h"
+#include "fs/fs.h"
 
 
 struct SitNatCache;
@@ -94,6 +95,16 @@ void sitNatCacheEntryHandleAddHostVersion(SitNatCacheEntryHandle *this);
  *  - refCount -1
  */
 void sitNatCacheEntryHandleAddSsdVersion(SitNatCacheEntryHandle *this);
+
+/**
+ * @brief 获取 Nat Block 缓存块的指针。
+ */
+struct RtfsNatBlock *sitNatCacheEntryHandleGetNatBlockPtr(SitNatCacheEntryHandle *this);
+
+/**
+ * @brief 获取 Sit Block 缓存块的指针。
+ */
+struct RtfsSitBlock *sitNatCacheEntryHandleGetSitBlockPtr(SitNatCacheEntryHandle *this);
 
 
 /**

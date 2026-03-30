@@ -113,7 +113,7 @@ void sitChangeLpaState(SitOperator *this, uint32_t lpa, int valid)
     }
 
     // TODO 写 SIT 日志，依赖日志接口。
-    // journal_container *curJournal = fsManagerGetCurJournal(this->fsManager);
+    // JournalContainer *curJournal = fsManagerGetCurJournal(this->fsManager);
     // SIT_journal_entry journalEntry = {.segID = segId, .newValue = *sitEntry};
     // journalAppendSitEntry(curJournal, &journalEntry);
 

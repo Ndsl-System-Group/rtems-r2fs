@@ -1,5 +1,6 @@
 #include "sit_nat_cache.h"
 
+#include "cache/block_buffer.h"
 #include "utils/rtfs_log.h"
 #include "utils/io_utils.h"
 #include "utils/rtfs_exception.h"
@@ -56,6 +57,7 @@ void sitNatCacheEntryDestroy(SitNatCacheEntry *this)
     }
 }
 
+
 void sitNatCacheEntryHandleInit(SitNatCacheEntryHandle *this, struct SitNatCache *cache, SitNatCacheEntry *entry)
 {
     this->cache = cache;
@@ -99,6 +101,17 @@ void sitNatCacheEntryHandleAddSsdVersion(SitNatCacheEntryHandle *this)
 {
     if (this->entry) sitNatCacheAddSsdVersionForHandle(this->cache, this->entry);
 }
+
+struct RtfsNatBlock *sitNatCacheEntryHandleGetNatBlockPtr(SitNatCacheEntryHandle *this)
+{
+    return (struct RtfsNatBlock *)blockBufferGetPtr(&this->entry->cache);
+}
+
+struct RtfsSitBlock *sitNatCacheEntryHandleGetSitBlockPtr(SitNatCacheEntryHandle *this)
+{
+    return (struct RtfsSitBlock *)blockBufferGetPtr(&this->entry->cache);
+}
+
 
 void sitNatCacheInit(SitNatCache *this, struct comm_dev *dev, size_t expectCacheSize)
 {
