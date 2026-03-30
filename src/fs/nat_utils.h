@@ -30,7 +30,7 @@ typedef struct
 /**
  * @brief 初始化。
  */
-void natLpaMappingInit(NatLpaMapping *this, struct file_system_manager *fsManager, uint32_t natStartLpa, uint32_t natSegmentCnt);
+void natLpaMappingInit(NatLpaMapping *this, struct file_system_manager *fsManager);
 
 /**
  * @brief 返回 nid 在 NAT 表中的位置：<lpa, idx>。

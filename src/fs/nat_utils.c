@@ -7,14 +7,19 @@
 #include <stddef.h>
 
 
-void natLpaMappingInit(NatLpaMapping *this, struct file_system_manager *fsManager, uint32_t natStartLpa, uint32_t natSegmentCnt)
+void natLpaMappingInit(NatLpaMapping *this, struct file_system_manager *fsManager)
 {
     assert(this);
     assert(fsManager);
 
     this->fsManager = fsManager;
-    this->natStartLpa = natStartLpa;
-    this->natSegmentCnt = natSegmentCnt;
+
+    // TODO
+    // nat_start_lpa = (*fs_manager->get_super_cache())->nat_blkaddr;
+    // nat_segment_cnt = (*fs_manager->get_super_cache())->segment_count_nat;
+
+    this->natStartLpa = 0;
+    this->natSegmentCnt = 0;
 }
 
 NatNidPos natGetNidPos(NatLpaMapping *this, uint32_t nid)
