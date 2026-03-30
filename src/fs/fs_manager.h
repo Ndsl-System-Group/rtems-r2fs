@@ -1,6 +1,6 @@
 #pragma once
 
-#include "srmap_utils.h"    // TODO(刘): 应该 struct srmap_utils
+#include "srmap_utils.h" // TODO(刘): 应该 struct srmap_utils
 
 typedef struct file_system_manager file_system_manager;
 typedef struct comm_dev comm_dev;
@@ -16,25 +16,25 @@ typedef struct journal_container journal_container;
 
 // ==================== 生命周期管理 ====================
 
-int FileSystemManagerSetup(comm_dev *dev);
-void FileSystemManagerFini(void);
-file_system_manager* FileSystemManagerGetInstance(void);
+int fileSystemManagerSetup(comm_dev *dev);
+void fileSystemManagerFini(void);
+file_system_manager *fileSystemManagerGetInstance(void);
 
 // ==================== 锁操作 API ====================
 
-void FileSystemManagerMetaLock(file_system_manager *this);
-void FileSystemManagerMetaUnlock(file_system_manager *this);
-void FileSystemManagerFreezeLock(file_system_manager *this);
-void FileSystemManagerFreezeUnLock(file_system_manager *this);
+void fileSystemManagerMetaLock(file_system_manager *this);
+void fileSystemManagerMetaUnlock(file_system_manager *this);
+void fileSystemManagerFreezeLock(file_system_manager *this);
+void fileSystemManagerFreezeUnLock(file_system_manager *this);
 
 // ==================== 成员访问器 ====================
 
-RtfsSuperBlock*         FileSystemManagerGetSuperBlkMem(file_system_manager *this);
-super_manager*          FileSystemManagerGetSuperManager(file_system_manager *this);
-node_block_cache*       FileSystemManagerGetNodeCache(file_system_manager *this);
-dir_data_block_cache*   FileSystemManagerGetDirDataCache(file_system_manager *this);
-SitNatCache*            FileSystemManagerGetSitCache(file_system_manager *this);
-SitNatCache*            FileSystemManagerGetNatCache(file_system_manager *this);
-SrmapUtils*             FileSystemManagerGetSrmapUtils(file_system_manager *this);
-fd_array*               FileSystemManagerGetFdArray(file_system_manager *this);
-journal_container*      FileSystemManagerGetCurJournal(file_system_manager *this);
+RtfsSuperBlock *fileSystemManagerGetSuperBlkMem(file_system_manager *this);
+super_manager *fileSystemManagerGetSuperManager(file_system_manager *this);
+node_block_cache *fileSystemManagerGetNodeCache(file_system_manager *this);
+dir_data_block_cache *fileSystemManagerGetDirDataCache(file_system_manager *this);
+SitNatCache *fileSystemManagerGetSitCache(file_system_manager *this);
+SitNatCache *fileSystemManagerGetNatCache(file_system_manager *this);
+SrmapUtils *fileSystemManagerGetSrmapUtils(file_system_manager *this);
+fd_array *fileSystemManagerGetFdArray(file_system_manager *this);
+journal_container *fileSystemManagerGetCurJournal(file_system_manager *this);

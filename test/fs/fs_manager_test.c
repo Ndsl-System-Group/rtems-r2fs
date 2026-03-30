@@ -7,7 +7,7 @@
 
 static void fsManagerReset(void)
 {
-    FileSystemManagerFini();
+    fileSystemManagerFini();
 }
 
 
@@ -15,21 +15,21 @@ RTFS_TEST(FsManagerGetInstance_BeforeSetup_ShouldBeNull)
 {
     fsManagerReset();
 
-    TEST_ASSERT_NULL(FileSystemManagerGetInstance());
+    TEST_ASSERT_NULL(fileSystemManagerGetInstance());
 }
 
 RTFS_TEST(FsManagerSetup_ShouldCreateSingletonAndInitializeSubModules)
 {
     fsManagerReset();
 
-    TEST_ASSERT_EQUAL(0, FileSystemManagerSetup(NULL));
+    TEST_ASSERT_EQUAL(0, fileSystemManagerSetup(NULL));
 
-    file_system_manager *manager = FileSystemManagerGetInstance();
+    file_system_manager *manager = fileSystemManagerGetInstance();
     TEST_ASSERT_NOT_NULL(manager);
 
-    SitNatCache *sit_cache = FileSystemManagerGetSitCache(manager);
-    SitNatCache *nat_cache = FileSystemManagerGetNatCache(manager);
-    SrmapUtils *srmap_utils = FileSystemManagerGetSrmapUtils(manager);
+    SitNatCache *sit_cache = fileSystemManagerGetSitCache(manager);
+    SitNatCache *nat_cache = fileSystemManagerGetNatCache(manager);
+    SrmapUtils *srmap_utils = fileSystemManagerGetSrmapUtils(manager);
 
     TEST_ASSERT_NOT_NULL(sit_cache);
     TEST_ASSERT_NOT_NULL(nat_cache);
@@ -53,44 +53,44 @@ RTFS_TEST(FsManagerGetters_AfterSetup_ShouldReflectCurrentAssemblyState)
 {
     fsManagerReset();
 
-    TEST_ASSERT_EQUAL(0, FileSystemManagerSetup(NULL));
+    TEST_ASSERT_EQUAL(0, fileSystemManagerSetup(NULL));
 
-    file_system_manager *manager = FileSystemManagerGetInstance();
+    file_system_manager *manager = fileSystemManagerGetInstance();
     TEST_ASSERT_NOT_NULL(manager);
 
-    TEST_ASSERT_NULL(FileSystemManagerGetSuperBlkMem(manager));
-    TEST_ASSERT_NULL(FileSystemManagerGetSuperManager(manager));
-    TEST_ASSERT_NULL(FileSystemManagerGetNodeCache(manager));
-    TEST_ASSERT_NULL(FileSystemManagerGetDirDataCache(manager));
-    TEST_ASSERT_NOT_NULL(FileSystemManagerGetSitCache(manager));
-    TEST_ASSERT_NOT_NULL(FileSystemManagerGetNatCache(manager));
-    TEST_ASSERT_NOT_NULL(FileSystemManagerGetSrmapUtils(manager));
-    TEST_ASSERT_NULL(FileSystemManagerGetFdArray(manager));
-    TEST_ASSERT_NULL(FileSystemManagerGetCurJournal(manager));
+    TEST_ASSERT_NULL(fileSystemManagerGetSuperBlkMem(manager));
+    TEST_ASSERT_NULL(fileSystemManagerGetSuperManager(manager));
+    TEST_ASSERT_NULL(fileSystemManagerGetNodeCache(manager));
+    TEST_ASSERT_NULL(fileSystemManagerGetDirDataCache(manager));
+    TEST_ASSERT_NOT_NULL(fileSystemManagerGetSitCache(manager));
+    TEST_ASSERT_NOT_NULL(fileSystemManagerGetNatCache(manager));
+    TEST_ASSERT_NOT_NULL(fileSystemManagerGetSrmapUtils(manager));
+    TEST_ASSERT_NULL(fileSystemManagerGetFdArray(manager));
+    TEST_ASSERT_NULL(fileSystemManagerGetCurJournal(manager));
 
     fsManagerReset();
 }
 
 RTFS_TEST(FsManagerGetters_WhenManagerIsNull_ShouldReturnNull)
 {
-    TEST_ASSERT_NULL(FileSystemManagerGetSuperBlkMem(NULL));
-    TEST_ASSERT_NULL(FileSystemManagerGetSuperManager(NULL));
-    TEST_ASSERT_NULL(FileSystemManagerGetNodeCache(NULL));
-    TEST_ASSERT_NULL(FileSystemManagerGetDirDataCache(NULL));
-    TEST_ASSERT_NULL(FileSystemManagerGetSitCache(NULL));
-    TEST_ASSERT_NULL(FileSystemManagerGetNatCache(NULL));
-    TEST_ASSERT_NULL(FileSystemManagerGetSrmapUtils(NULL));
-    TEST_ASSERT_NULL(FileSystemManagerGetFdArray(NULL));
-    TEST_ASSERT_NULL(FileSystemManagerGetCurJournal(NULL));
+    TEST_ASSERT_NULL(fileSystemManagerGetSuperBlkMem(NULL));
+    TEST_ASSERT_NULL(fileSystemManagerGetSuperManager(NULL));
+    TEST_ASSERT_NULL(fileSystemManagerGetNodeCache(NULL));
+    TEST_ASSERT_NULL(fileSystemManagerGetDirDataCache(NULL));
+    TEST_ASSERT_NULL(fileSystemManagerGetSitCache(NULL));
+    TEST_ASSERT_NULL(fileSystemManagerGetNatCache(NULL));
+    TEST_ASSERT_NULL(fileSystemManagerGetSrmapUtils(NULL));
+    TEST_ASSERT_NULL(fileSystemManagerGetFdArray(NULL));
+    TEST_ASSERT_NULL(fileSystemManagerGetCurJournal(NULL));
 }
 
 RTFS_TEST(FsManagerSetup_WhenCalledTwice_ShouldRejectSecondInitialization)
 {
     fsManagerReset();
 
-    TEST_ASSERT_EQUAL(0, FileSystemManagerSetup(NULL));
-    TEST_ASSERT_EQUAL(-1, FileSystemManagerSetup(NULL));
-    TEST_ASSERT_NOT_NULL(FileSystemManagerGetInstance());
+    TEST_ASSERT_EQUAL(0, fileSystemManagerSetup(NULL));
+    TEST_ASSERT_EQUAL(-1, fileSystemManagerSetup(NULL));
+    TEST_ASSERT_NOT_NULL(fileSystemManagerGetInstance());
 
     fsManagerReset();
 }
@@ -99,12 +99,12 @@ RTFS_TEST(FsManagerFini_AfterSetup_ShouldReleaseSingleton)
 {
     fsManagerReset();
 
-    TEST_ASSERT_EQUAL(0, FileSystemManagerSetup(NULL));
-    TEST_ASSERT_NOT_NULL(FileSystemManagerGetInstance());
+    TEST_ASSERT_EQUAL(0, fileSystemManagerSetup(NULL));
+    TEST_ASSERT_NOT_NULL(fileSystemManagerGetInstance());
 
-    FileSystemManagerFini();
+    fileSystemManagerFini();
 
-    TEST_ASSERT_NULL(FileSystemManagerGetInstance());
+    TEST_ASSERT_NULL(fileSystemManagerGetInstance());
 
     fsManagerReset();
 }
@@ -113,45 +113,45 @@ RTFS_TEST(FsManagerFini_WhenCalledRepeatedly_ShouldRemainSafe)
 {
     fsManagerReset();
 
-    FileSystemManagerFini();
-    TEST_ASSERT_NULL(FileSystemManagerGetInstance());
+    fileSystemManagerFini();
+    TEST_ASSERT_NULL(fileSystemManagerGetInstance());
 
-    TEST_ASSERT_EQUAL(0, FileSystemManagerSetup(NULL));
-    TEST_ASSERT_NOT_NULL(FileSystemManagerGetInstance());
+    TEST_ASSERT_EQUAL(0, fileSystemManagerSetup(NULL));
+    TEST_ASSERT_NOT_NULL(fileSystemManagerGetInstance());
 
-    FileSystemManagerFini();
-    FileSystemManagerFini();
+    fileSystemManagerFini();
+    fileSystemManagerFini();
 
-    TEST_ASSERT_NULL(FileSystemManagerGetInstance());
+    TEST_ASSERT_NULL(fileSystemManagerGetInstance());
 }
 
 RTFS_TEST(FsManagerSetup_AfterFini_ShouldAllowRecreation)
 {
     fsManagerReset();
 
-    TEST_ASSERT_EQUAL(0, FileSystemManagerSetup(NULL));
-    file_system_manager *first = FileSystemManagerGetInstance();
+    TEST_ASSERT_EQUAL(0, fileSystemManagerSetup(NULL));
+    file_system_manager *first = fileSystemManagerGetInstance();
     TEST_ASSERT_NOT_NULL(first);
 
-    FileSystemManagerFini();
-    TEST_ASSERT_NULL(FileSystemManagerGetInstance());
+    fileSystemManagerFini();
+    TEST_ASSERT_NULL(fileSystemManagerGetInstance());
 
-    TEST_ASSERT_EQUAL(0, FileSystemManagerSetup(NULL));
-    file_system_manager *second = FileSystemManagerGetInstance();
+    TEST_ASSERT_EQUAL(0, fileSystemManagerSetup(NULL));
+    file_system_manager *second = fileSystemManagerGetInstance();
     TEST_ASSERT_NOT_NULL(second);
-    TEST_ASSERT_NOT_NULL(FileSystemManagerGetSitCache(second));
-    TEST_ASSERT_NOT_NULL(FileSystemManagerGetNatCache(second));
-    TEST_ASSERT_NOT_NULL(FileSystemManagerGetSrmapUtils(second));
+    TEST_ASSERT_NOT_NULL(fileSystemManagerGetSitCache(second));
+    TEST_ASSERT_NOT_NULL(fileSystemManagerGetNatCache(second));
+    TEST_ASSERT_NOT_NULL(fileSystemManagerGetSrmapUtils(second));
 
     fsManagerReset();
 }
 
 RTFS_TEST(FsManagerLockApis_WhenManagerIsNull_ShouldBeSafe)
 {
-    FileSystemManagerMetaLock(NULL);
-    FileSystemManagerMetaUnlock(NULL);
-    FileSystemManagerFreezeLock(NULL);
-    FileSystemManagerFreezeUnLock(NULL);
+    fileSystemManagerMetaLock(NULL);
+    fileSystemManagerMetaUnlock(NULL);
+    fileSystemManagerFreezeLock(NULL);
+    fileSystemManagerFreezeUnLock(NULL);
 
     TEST_PASS();
 }
@@ -160,15 +160,15 @@ RTFS_TEST(FsManagerMetaLock_ShouldSupportRecursiveLocking)
 {
     fsManagerReset();
 
-    TEST_ASSERT_EQUAL(0, FileSystemManagerSetup(NULL));
+    TEST_ASSERT_EQUAL(0, fileSystemManagerSetup(NULL));
 
-    file_system_manager *manager = FileSystemManagerGetInstance();
+    file_system_manager *manager = fileSystemManagerGetInstance();
     TEST_ASSERT_NOT_NULL(manager);
 
-    FileSystemManagerMetaLock(manager);
-    FileSystemManagerMetaLock(manager);
-    FileSystemManagerMetaUnlock(manager);
-    FileSystemManagerMetaUnlock(manager);
+    fileSystemManagerMetaLock(manager);
+    fileSystemManagerMetaLock(manager);
+    fileSystemManagerMetaUnlock(manager);
+    fileSystemManagerMetaUnlock(manager);
 
     fsManagerReset();
 }
@@ -177,13 +177,13 @@ RTFS_TEST(FsManagerFreezeLock_ShouldSupportBasicLockUnlock)
 {
     fsManagerReset();
 
-    TEST_ASSERT_EQUAL(0, FileSystemManagerSetup(NULL));
+    TEST_ASSERT_EQUAL(0, fileSystemManagerSetup(NULL));
 
-    file_system_manager *manager = FileSystemManagerGetInstance();
+    file_system_manager *manager = fileSystemManagerGetInstance();
     TEST_ASSERT_NOT_NULL(manager);
 
-    FileSystemManagerFreezeLock(manager);
-    FileSystemManagerFreezeUnLock(manager);
+    fileSystemManagerFreezeLock(manager);
+    fileSystemManagerFreezeUnLock(manager);
 
     fsManagerReset();
 }
