@@ -13,7 +13,7 @@ void blockBufferDestroy(BlockBuffer *this)
 {
 }
 
-void blockBufferCopy(BlockBuffer *this, BlockBuffer *other)
+void blockBufferCopy(BlockBuffer *this, const BlockBuffer *other)
 {
     memcpy(this->buffer, other->buffer, BLOCK_BUFFER_SIZE);
 }

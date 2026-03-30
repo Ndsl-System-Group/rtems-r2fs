@@ -6,6 +6,7 @@
 #include "fs/fs.h"
 
 
+struct NodeBlockCache;
 struct comm_dev;
 
 
@@ -47,6 +48,32 @@ struct RtfsNode *nodeBlockCacheEntryGetNodeBlockPtr(NodeBlockCacheEntry *this);
 BlockBuffer *nodeBlockCacheEntryGetNodeBuffer(NodeBlockCacheEntry *this);
 
 uint32_t nodeBlockCacheEntryGetNid(NodeBlockCacheEntry *this);
+
+
+typedef struct NodeBlockCacheEntryHandle
+{
+    struct NodeBlockCache *cache;
+    NodeBlockCacheEntry *entry;
+} NodeBlockCacheEntryHandle;
+
+
+void nodeBlockCacheEntryHandleInit(NodeBlockCacheEntryHandle *this, struct NodeBlockCache *cache, NodeBlockCacheEntry *entry);
+
+void nodeBlockCacheEntryHandleDestroy(NodeBlockCacheEntryHandle *this);
+
+void nodeBlockCacheEntryHandleCopy(NodeBlockCacheEntryHandle *this, const NodeBlockCacheEntryHandle *other);
+
+bool nodeBlockCacheEntryHandleIsEmpty(NodeBlockCacheEntryHandle *this);
+
+void nodeBlockCacheEntryHandleAddHostVersion(NodeBlockCacheEntryHandle *this);
+
+void nodeBlockCacheEntryHandleAddSsdVersion(NodeBlockCacheEntryHandle *this);
+
+void nodeBlockCacheEntryHandleMarkDirty(NodeBlockCacheEntryHandle *this);
+
+void nodeBlockCacheEntryHandleDeleteNode(NodeBlockCacheEntryHandle *this);
+
+NodeBlockCacheEntry *nodeBlockCacheEntryHandleGetEntry(NodeBlockCacheEntryHandle *this);
 
 
 #endif
