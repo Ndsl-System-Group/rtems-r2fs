@@ -1,6 +1,7 @@
 #include "node_block_cache.h"
 
 #include "fs/nat_utils.h"
+#include "fs/sit_utils.h"
 #include "fs/fs_manager.h"
 #include "fs/super_manager.h"
 #include "utils/rtfs_exception.h"
@@ -155,6 +156,13 @@ NodeBlockCacheEntryHandle nodeBlockCacheAdd(NodeBlockCache *this, BlockBuffer *b
 
 NodeBlockCacheEntryHandle nodeBlockCacheGet(NodeBlockCache *this, uint32_t nid)
 {
+    NodeBlockCacheEntry *entry = (NodeBlockCacheEntry *)genericCacheManagerGet(&this->cacheManager, nid, true);
+    if (NULL != entry) nodeBlockCacheAddRefCount(this, entry);
+
+    NodeBlockCacheEntryHandle res = {.cache = this, .entry = entry};
+
+
+    return res;
 }
 
 NodeBlockCacheDirtyNode *nodeBlockCacheGetAndClearDirtyList(NodeBlockCache *this)
@@ -163,6 +171,7 @@ NodeBlockCacheDirtyNode *nodeBlockCacheGetAndClearDirtyList(NodeBlockCache *this
 
 void nodeBlockCacheForceReplace(NodeBlockCache *this)
 {
+    nodeBlockCacheDoReplace(this);
 }
 
 
@@ -208,7 +217,7 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper 
             THROW_FATAL_MESSAGE(e, "node cache helper: read lpa %u failed.", nidLpa);
         }
 
-        // node_handle = node_cache->add(std::move(buf), nid, parent_nid, nid_lpa);
+        // node_handle = node_cache->add(std::move(buf), nid, parentNid, nid_lpa);
         handle = nodeBlockCacheAdd(this->nodeBlockCache, &buffer, nid, parentNid, nidLpa);
 
         blockBufferDestroy(&buffer);
@@ -287,15 +296,59 @@ void nodeBlockCacheEntryHandleDoSubRef(NodeBlockCacheEntryHandle *this)
     if (NULL != this->entry) nodeBlockCacheSubRefCount(this->cache, this->entry);
 }
 
-// TODO
 void nodeBlockCacheAddRefCount(NodeBlockCache *this, NodeBlockCacheEntry *entry)
 {
+    ++entry->refCount;
+
+    // 引用计数同时维护了淘汰保护、脏、被引用、读写等状态。只要引用计数不为 0，就需要 pin。
+    if (1 == entry->refCount) genericCacheManagerPin(&this->cacheManager, entry->nid);
 }
 
 void nodeBlockCacheSubRefCount(NodeBlockCache *this, NodeBlockCacheEntry *entry)
 {
+    --entry->refCount;
+
+    if (0 == entry->refCount)
+    {
+        genericCacheManagerUnpin(&this->cacheManager, entry->nid);
+
+        // 如果该 node block 需要删除，则减少其父结点的引用计数，释放它的 FS 资源，把它移除缓存。
+        if (NODE_BLOCK_CACHE_ENTRY_DELETED == entry->state)
+        {
+            // 释放它的 nid。
+            superManagerFreeNid(fileSystemManagerGetSuperManager(this->fsManager), entry->nid);
+            RTFS_LOG(RTFS_LOG_INFO, "delete node %u.", entry->nid);
+
+            // 将它占有的 lpa 标记为垃圾块。
+            if (INVALID_LPA != entry->lpa)
+            {
+                SitOperator sitOp;
+                sitOperatorInit(&sitOp, this->fsManager);
+
+                sitInvalidateLpa(&sitOp, entry->lpa);
+
+                RTFS_LOG(RTFS_LOG_INFO, "the lpa of nid [%u] is [%u], will be invalidated.", entry->nid, entry->lpa);
+            }
+
+            // 将缓存项移除。
+            uint32_t nid = entry->nid;
+            uint32_t parentNid = entry->parentNid;
+            genericCacheManagerRemove(&this->cacheManager, nid);
+            --this->curSize;
+
+            // 减少父结点的引用计数。
+            if (INVALID_NID != parentNid)
+            {
+                NodeBlockCacheEntry *parentEntry = (NodeBlockCacheEntry *)genericCacheManagerGet(&this->cacheManager, parentNid, false);
+                assert(NULL != parentEntry);
+
+                nodeBlockCacheSubRefCount(this, parentEntry);
+            }
+        }
+    }
 }
 
+// TODO
 void nodeBlockCacheMarkDirty(NodeBlockCache *this, const NodeBlockCacheEntryHandle *handle)
 {
 }
@@ -306,4 +359,31 @@ void nodeBlockCacheRemoveEntry(NodeBlockCache *this, NodeBlockCacheEntry *entry)
 
 void nodeBlockCacheDoReplace(NodeBlockCache *this)
 {
+    if (this->curSize > this->expectSize)
+    {
+        while (true)
+        {
+            NodeBlockCacheEntry *entry = (NodeBlockCacheEntry *)genericCacheManagerReplaceOne(&this->cacheManager);
+
+            if (NULL != entry)
+            {
+                assert(0 == entry->refCount);
+                RTFS_LOG(RTFS_LOG_INFO, "replace node block cache entry, nid = %u", entry->nid);
+
+                --this->curSize;
+
+                // 将 parent 的引用计数 -1。
+                uint32_t parentNid = entry->parentNid;
+                if (INVALID_NID != parentNid)
+                {
+                    NodeBlockCacheEntry *parentEntry = (NodeBlockCacheEntry *)genericCacheManagerGet(&this->cacheManager, parentNid, false);
+                    assert(NULL != parentEntry);
+
+                    nodeBlockCacheSubRefCount(this, parentEntry);
+                }
+            }
+
+            if (NULL == entry || this->curSize <= this->expectSize) break;
+        }
+    }
 }

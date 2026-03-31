@@ -95,7 +95,8 @@ typedef struct NodeBlockCache
 
     NodeBlockCacheDirtyNode *dirtyListHead;
 
-    // TODO std::unordered_map<node_block_cache_entry*, std::list<node_block_cache_entry_handle>::iterator> dirty_pos;
+    // TODO
+    // std::unordered_map<node_block_cache_entry*, std::list<node_block_cache_entry_handle>::iterator> dirty_pos;
 
     struct file_system_manager *fsManager;
 } NodeBlockCache;
@@ -105,10 +106,19 @@ void nodeBlockCacheInit(NodeBlockCache *this, struct file_system_manager *fsMana
 
 void nodeBlockCacheDestroy(NodeBlockCache *this);
 
+/**
+ * @brief 将一个 node block 加入缓存，返回缓存项句柄。加入时，调用者需保证加入的 buffer 满足：refCount为 0（不存在读写引用，双版本号相同），语义上为 uptodate 状态。通常，只应当在缓存未命中时，从 SSD 读取或执行 file mapping 任务，并 add 结果。调用 add 后，buffer 的资源被移动到缓存项中，调用者若要使用 buffer，应通过返回的 handle 获取 buffer。parentNid 为索引树上的父 node block，若此 node 为 inode，则 parentNid 应置为 INVALID_NID。调用者应确保 parentNid 在缓存中。
+ */
 NodeBlockCacheEntryHandle nodeBlockCacheAdd(NodeBlockCache *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa);
 
+/**
+ * @brief 查找 nid 对应的缓存项。若不存在，则句柄的 isEmpty 方法返回 true。视作对缓存项的一次访问。
+ */
 NodeBlockCacheEntryHandle nodeBlockCacheGet(NodeBlockCache *this, uint32_t nid);
 
+/**
+ * @brief 清除 dirty list 中的 node 缓存项的 dirty 标记，清空 dirty list，并返回原先的 dirty list 用作淘汰保护。返回的 dirty list 中的元素，已经不带脏标记。
+ */
 NodeBlockCacheDirtyNode *nodeBlockCacheGetAndClearDirtyList(NodeBlockCache *this);
 
 void nodeBlockCacheForceReplace(NodeBlockCache *this);
@@ -134,9 +144,9 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper 
 
 /**
  * @brief 分配一个 nid，然后分配一个 node block 缓存项，把该 node block 缓存项和 nid 绑定。新缓存项的 oldLpa 和 newLpa 均为 invalid，状态为 dirty。新 node block 中，node footer 按参数内容初始化，其余内容初始化为 0。
- * @param ino: 该 node 所属文件（此接口用于创建索引树的 node，不用于创建 inode）。
- * @param noffset：该 node 在索引树中的逻辑编号。
- * @param parent_nid：该 node 在索引树上的父结点。
+ * @param ino 该 node 所属文件（此接口用于创建索引树的 node，不用于创建 inode）。
+ * @param noffset 该 node 在索引树中的逻辑编号。
+ * @param parentNid 该 node 在索引树上的父结点。
  * @return 返回新 node 缓存项句柄。
  */
 NodeBlockCacheEntryHandle nodeBlockCacheHelperCreateNodeEntry(NodeBlockCacheHelper *this, uint32_t ino, uint32_t noffset, uint32_t parentNid);
