@@ -254,3 +254,82 @@ RTFS_TEST(KhashStressTest)
 
     kh_destroy(khte, h);
 }
+
+
+#define KH_PTR_HASH_FUNC(key) ((khint_t)(uintptr_t)(key))
+#define KH_PTR_HASH_EQUAL(a, b) ((a) == (b))
+
+KHASH_INIT(khptr,             // 哈希表名。
+           void *,            // key = 指针。
+           int,               // data。
+           1,                 // is_map。
+           KH_PTR_HASH_FUNC,  // 哈希函数。
+           KH_PTR_HASH_EQUAL) // 相等函数。
+
+RTFS_TEST(KhashPtrKeyTest)
+{
+    khash_t(khptr) *h = kh_init(khptr);
+    TEST_ASSERT_NOT_NULL(h);
+
+    khiter_t iter;
+    int res;
+
+    // 模拟一些指针 key。
+    void *keys[5];
+    for (int i = 0; i < 5; ++i)
+    {
+        keys[i] = malloc(1);
+
+        iter = kh_put(khptr, h, keys[i], &res);
+        kh_value(h, iter) = i * 10;
+
+        TEST_ASSERT_EQUAL(res, 1);
+    }
+
+    TEST_ASSERT_EQUAL(kh_size(h), 5);
+
+    // 查找。
+    for (int i = 0; i < 5; ++i)
+    {
+        iter = kh_get(khptr, h, keys[i]);
+
+        RTFS_LOG(RTFS_LOG_INFO, "key: %p, data: %d", kh_key(h, iter), kh_value(h, iter));
+
+        TEST_ASSERT_NOT_EQUAL(iter, kh_end(h));
+        TEST_ASSERT_EQUAL(kh_value(h, iter), i * 10);
+    }
+
+    // 更新。
+    iter = kh_put(khptr, h, keys[2], &res);
+    TEST_ASSERT_EQUAL(res, 0); // 已存在。
+    kh_value(h, iter) = 999;
+
+    iter = kh_get(khptr, h, keys[2]);
+    TEST_ASSERT_EQUAL(kh_value(h, iter), 999);
+
+    // 删除。
+    iter = kh_get(khptr, h, keys[1]);
+    kh_del(khptr, h, iter);
+
+    iter = kh_get(khptr, h, keys[1]);
+    TEST_ASSERT_EQUAL(iter, kh_end(h));
+    TEST_ASSERT_EQUAL(kh_size(h), 4);
+
+    // 遍历并验证。
+    int count = 0;
+    for (iter = kh_begin(h); iter != kh_end(h); ++iter)
+    {
+        if (!kh_exist(h, iter)) continue;
+
+        RTFS_LOG(RTFS_LOG_INFO, "key: %p, data: %d", kh_key(h, iter), kh_value(h, iter));
+
+        TEST_ASSERT_TRUE(kh_value(h, iter) >= 0);
+
+        ++count;
+    }
+    TEST_ASSERT_EQUAL(count, 4);
+
+    // 清理。
+    for (int i = 0; i < 5; ++i) free(keys[i]);
+    kh_destroy(khptr, h);
+}

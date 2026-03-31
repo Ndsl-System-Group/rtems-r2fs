@@ -4,6 +4,7 @@
 #include "cache/generic_cache_manager.h"
 #include "cache/block_buffer.h"
 #include "fs/fs.h"
+#include "klib/khash.h"
 
 
 struct NodeBlockCache;
@@ -76,9 +77,27 @@ void nodeBlockCacheEntryHandleMarkDirty(NodeBlockCacheEntryHandle *this);
 void nodeBlockCacheEntryHandleDeleteNode(NodeBlockCacheEntryHandle *this);
 
 
-// TODO
+typedef struct NodeBlockCacheDirtyNode
+{
+    NodeBlockCacheEntryHandle handle;
+
+    struct NodeBlockCacheDirtyNode *prev;
+    struct NodeBlockCacheDirtyNode *next;
+} NodeBlockCacheDirtyNode;
+
+
 typedef struct NodeBlockCache
 {
+    GenericCacheManager cacheManager;
+
+    size_t expectSize;
+    size_t curSize;
+
+    NodeBlockCacheDirtyNode *dirtyListHead;
+
+    // TODO std::unordered_map<node_block_cache_entry*, std::list<node_block_cache_entry_handle>::iterator> dirty_pos;
+
+    struct file_system_manager *fs_manager;
 } NodeBlockCache;
 
 
