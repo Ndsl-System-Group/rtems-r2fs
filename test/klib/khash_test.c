@@ -256,15 +256,7 @@ RTFS_TEST(KhashStressTest)
 }
 
 
-#define KH_PTR_HASH_FUNC(key) ((khint_t)(uintptr_t)(key))
-#define KH_PTR_HASH_EQUAL(a, b) ((a) == (b))
-
-KHASH_INIT(khptr,             // 哈希表名。
-           void *,            // key = 指针。
-           int,               // data。
-           1,                 // is_map。
-           KH_PTR_HASH_FUNC,  // 哈希函数。
-           KH_PTR_HASH_EQUAL) // 相等函数。
+KHASH_MAP_INIT_PTR(khptr, int)
 
 RTFS_TEST(KhashPtrKeyTest)
 {
