@@ -101,6 +101,19 @@ typedef struct NodeBlockCache
 } NodeBlockCache;
 
 
+void nodeBlockCacheInit(NodeBlockCache *this, struct file_system_manager *fsManager, size_t expectSize);
+
+void nodeBlockCacheDestroy(NodeBlockCache *this);
+
+NodeBlockCacheEntryHandle nodeBlockCacheAdd(NodeBlockCache *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa);
+
+NodeBlockCacheEntryHandle nodeBlockCacheGet(uint32_t nid);
+
+NodeBlockCacheDirtyNode *nodeBlockCacheGetAndClearDirtyList(NodeBlockCache *this);
+
+void nodeBlockCacheForceReplace(NodeBlockCache *this);
+
+
 typedef struct NodeBlockCacheHelper
 {
     struct comm_dev *dev;

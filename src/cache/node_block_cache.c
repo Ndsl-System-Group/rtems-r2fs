@@ -11,6 +11,16 @@ static void nodeBlockCacheEntryHandleDoAddRef(NodeBlockCacheEntryHandle *this);
 
 static void nodeBlockCacheEntryHandleDoSubRef(NodeBlockCacheEntryHandle *this);
 
+static void nodeBlockCacheAddRefCount(NodeBlockCache *this, NodeBlockCacheEntry *entry);
+
+static void nodeBlockCacheSubRefCount(NodeBlockCache *this, NodeBlockCacheEntry *entry);
+
+static void nodeBlockCacheMarkDirty(NodeBlockCache *this, const NodeBlockCacheEntryHandle *handle);
+
+static void nodeBlockCacheRemoveEntry(NodeBlockCache *this, NodeBlockCacheEntry *entry);
+
+static void nodeBlockCacheDoReplace(NodeBlockCache *this);
+
 
 void nodeBlockCacheEntryInit(NodeBlockCacheEntry *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa)
 {
@@ -131,6 +141,32 @@ void nodeBlockCacheEntryHandleDeleteNode(NodeBlockCacheEntryHandle *this)
 }
 
 
+// TODO
+void nodeBlockCacheInit(NodeBlockCache *this, struct file_system_manager *fsManager, size_t expectSize)
+{
+}
+
+void nodeBlockCacheDestroy(NodeBlockCache *this)
+{
+}
+
+NodeBlockCacheEntryHandle nodeBlockCacheAdd(NodeBlockCache *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa)
+{
+}
+
+NodeBlockCacheEntryHandle nodeBlockCacheGet(uint32_t nid)
+{
+}
+
+NodeBlockCacheDirtyNode *nodeBlockCacheGetAndClearDirtyList(NodeBlockCache *this)
+{
+}
+
+void nodeBlockCacheForceReplace(NodeBlockCache *this)
+{
+}
+
+
 void nodeBlockCacheHelperInit(NodeBlockCacheHelper *this, struct file_system_manager *fsManager)
 {
     // TODO
@@ -246,4 +282,25 @@ void nodeBlockCacheEntryHandleDoSubRef(NodeBlockCacheEntryHandle *this)
 {
     // TODO
     // if (entry != nullptr) cache->sub_refcount(entry);
+}
+
+// TODO
+void nodeBlockCacheAddRefCount(NodeBlockCache *this, NodeBlockCacheEntry *entry)
+{
+}
+
+void nodeBlockCacheSubRefCount(NodeBlockCache *this, NodeBlockCacheEntry *entry)
+{
+}
+
+void nodeBlockCacheMarkDirty(NodeBlockCache *this, const NodeBlockCacheEntryHandle *handle)
+{
+}
+
+void nodeBlockCacheRemoveEntry(NodeBlockCache *this, NodeBlockCacheEntry *entry)
+{
+}
+
+void nodeBlockCacheDoReplace(NodeBlockCache *this)
+{
 }
