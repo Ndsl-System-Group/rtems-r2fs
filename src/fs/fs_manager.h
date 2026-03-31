@@ -6,7 +6,7 @@ typedef struct file_system_manager file_system_manager;
 typedef struct comm_dev comm_dev;
 typedef struct RtfsSuperBlock RtfsSuperBlock;
 typedef struct super_manager super_manager;
-typedef struct node_block_cache node_block_cache;
+typedef struct NodeBlockCache NodeBlockCache;
 typedef struct dir_data_block_cache dir_data_block_cache;
 typedef struct SitNatCache SitNatCache;
 // typedef struct SrmapUtils SrmapUtils;
@@ -31,7 +31,7 @@ void fileSystemManagerFreezeUnLock(file_system_manager *this);
 
 RtfsSuperBlock *fileSystemManagerGetSuperBlkMem(file_system_manager *this);
 super_manager *fileSystemManagerGetSuperManager(file_system_manager *this);
-node_block_cache *fileSystemManagerGetNodeCache(file_system_manager *this);
+NodeBlockCache *fileSystemManagerGetNodeCache(file_system_manager *this);
 dir_data_block_cache *fileSystemManagerGetDirDataCache(file_system_manager *this);
 SitNatCache *fileSystemManagerGetSitCache(file_system_manager *this);
 SitNatCache *fileSystemManagerGetNatCache(file_system_manager *this);

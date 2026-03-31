@@ -1,6 +1,8 @@
 #include "node_block_cache.h"
 
 #include "fs/nat_utils.h"
+#include "fs/fs_manager.h"
+#include "fs/super_manager.h"
 #include "utils/rtfs_exception.h"
 #include "utils/rtfs_log.h"
 
@@ -89,20 +91,19 @@ void nodeBlockCacheEntryHandleInit(NodeBlockCacheEntryHandle *this, struct NodeB
 
 void nodeBlockCacheEntryHandleDestroy(NodeBlockCacheEntryHandle *this)
 {
-    // TODO
-    // if (entry != nullptr)
-    // {
-    //     try
-    //     {
-    //         cache->sub_refcount(entry);
-    //     }
-    //     catch(const std::exception &e)
-    //     {
-    //         RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of node block cache entry: "
-    //                                      "%s",
-    //                   e.what());
-    //     }
-    // }
+    CEXCEPTION_T e;
+
+    if (NULL != this->entry)
+    {
+        Try
+        {
+            nodeBlockCacheSubRefCount(this->cache, this->entry);
+        }
+        Catch(e)
+        {
+            RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of node block cache entry: %d", e);
+        }
+    }
 }
 
 void nodeBlockCacheEntryHandleCopy(NodeBlockCacheEntryHandle *this, const NodeBlockCacheEntryHandle *other)
@@ -110,8 +111,7 @@ void nodeBlockCacheEntryHandleCopy(NodeBlockCacheEntryHandle *this, const NodeBl
     this->cache = other->cache;
     this->entry = other->entry;
 
-    // TODO
-    // do_addref();
+    nodeBlockCacheEntryHandleDoAddRef(this);
 }
 
 bool nodeBlockCacheEntryHandleIsEmpty(NodeBlockCacheEntryHandle *this)
@@ -119,25 +119,24 @@ bool nodeBlockCacheEntryHandleIsEmpty(NodeBlockCacheEntryHandle *this)
     return NULL == this->entry;
 }
 
-// TODO
 void nodeBlockCacheEntryHandleAddHostVersion(NodeBlockCacheEntryHandle *this)
 {
-    // cache->add_refcount(entry);
+    nodeBlockCacheAddRefCount(this->cache, this->entry);
 }
 
 void nodeBlockCacheEntryHandleAddSsdVersion(NodeBlockCacheEntryHandle *this)
 {
-    // cache->sub_refcount(entry);
+    nodeBlockCacheSubRefCount(this->cache, this->entry);
 }
 
 void nodeBlockCacheEntryHandleMarkDirty(NodeBlockCacheEntryHandle *this)
 {
-    // cache->mark_dirty(*this);
+    nodeBlockCacheMarkDirty(this->cache, this);
 }
 
 void nodeBlockCacheEntryHandleDeleteNode(NodeBlockCacheEntryHandle *this)
 {
-    // cache->remove_entry(entry);
+    nodeBlockCacheRemoveEntry(this->cache, this->entry);
 }
 
 
@@ -154,7 +153,7 @@ NodeBlockCacheEntryHandle nodeBlockCacheAdd(NodeBlockCache *this, BlockBuffer *b
 {
 }
 
-NodeBlockCacheEntryHandle nodeBlockCacheGet(uint32_t nid)
+NodeBlockCacheEntryHandle nodeBlockCacheGet(NodeBlockCache *this, uint32_t nid)
 {
 }
 
@@ -169,11 +168,11 @@ void nodeBlockCacheForceReplace(NodeBlockCache *this)
 
 void nodeBlockCacheHelperInit(NodeBlockCacheHelper *this, struct file_system_manager *fsManager)
 {
+    this->fsManager = fsManager;
+    this->natCache = fileSystemManagerGetNatCache(fsManager);
+    this->nodeBlockCache = fileSystemManagerGetNodeCache(fsManager);
     // TODO
     // dev = fs_manager->get_device();
-    // nat_cache = fs_manager->get_nat_cache();
-    // node_cache = fs_manager->get_node_cache();
-    // this->fs_manager = fs_manager;
 }
 
 void nodeBlockCacheHelperDestroy(NodeBlockCacheHelper *this)
@@ -181,38 +180,38 @@ void nodeBlockCacheHelperDestroy(NodeBlockCacheHelper *this)
     this->dev = NULL;
     this->natCache = NULL;
     this->nodeBlockCache = NULL;
-    this->fs_manager = NULL;
+    this->fsManager = NULL;
 }
 
 NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper *this, uint32_t nid, uint32_t parentNid)
 {
     CEXCEPTION_T e;
 
-    // TODO
-    // NodeBlockCacheEntryHandle handle = nodeBlockCacheGet(nid);
-    NodeBlockCacheEntryHandle handle;
+    NodeBlockCacheEntryHandle handle = nodeBlockCacheGet(this->nodeBlockCache, nid);
     if (nodeBlockCacheEntryHandleIsEmpty(&handle))
     {
         NatLpaMapping nlp;
-        natLpaMappingInit(&nlp, this->fs_manager);
+        natLpaMappingInit(&nlp, this->fsManager);
 
         // 从 NAT 表中得到 nid block 的 lpa。
         uint32_t nidLpa = natGetLpaOfNid(&nlp, nid);
 
-        BlockBuffer buf;
-        blockBufferInit(&buf);
+        BlockBuffer buffer;
+        blockBufferInit(&buffer);
 
         Try
         {
-            blockBufferReadFromLpa(&buf, this->dev, nidLpa);
+            blockBufferReadFromLpa(&buffer, this->dev, nidLpa);
         }
         Catch(e)
         {
             THROW_FATAL_MESSAGE(e, "node cache helper: read lpa %u failed.", nidLpa);
         }
 
-        // TODO
         // node_handle = node_cache->add(std::move(buf), nid, parent_nid, nid_lpa);
+        handle = nodeBlockCacheAdd(this->nodeBlockCache, &buffer, nid, parentNid, nidLpa);
+
+        blockBufferDestroy(&buffer);
     }
 
     struct RtfsNode *node = nodeBlockCacheEntryGetNodeBlockPtr(handle.entry);
@@ -225,13 +224,14 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper 
 
 NodeBlockCacheEntryHandle nodeBlockCacheHelperCreateNodeEntry(NodeBlockCacheHelper *this, uint32_t ino, uint32_t noffset, uint32_t parentNid)
 {
-    // TODO
     // 分配 nid，创建 node block 缓存项并加入缓存。
-    // uint32_t new_nid = fs_manager->get_super_manager()->alloc_nid(ino);
-    // auto handle = node_cache->add(block_buffer(), new_nid, parent_nid, INVALID_LPA);
+    uint32_t newNid = superManagerAllocNid(fileSystemManagerGetSuperManager(this->fsManager), ino, false);
 
-    uint32_t newNid = 0;
-    NodeBlockCacheEntryHandle handle;
+    BlockBuffer buffer;
+    blockBufferInit(&buffer);
+
+    NodeBlockCacheEntryHandle handle = nodeBlockCacheAdd(this->nodeBlockCache, &buffer, newNid, parentNid, INVALID_LPA);
+
     struct RtfsNode *node = nodeBlockCacheEntryGetNodeBlockPtr(handle.entry);
 
     // 初始化 node footer。
@@ -243,19 +243,22 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperCreateNodeEntry(NodeBlockCacheHelp
     // 标记缓存项为 dirty。
     nodeBlockCacheEntryHandleMarkDirty(&handle);
 
+    blockBufferDestroy(&buffer);
+
 
     return handle;
 }
 
 NodeBlockCacheEntryHandle nodeBlockCacheHelperCreateInodeEntry(NodeBlockCacheHelper *this)
 {
-    // TODO
     // 分配 nid，创建 inode block 缓存项并加入缓存。
-    // uint32_t new_nid = fs_manager->get_super_manager()->alloc_nid(INVALID_NID, true);
-    // auto handle = node_cache->add(block_buffer(), new_nid, INVALID_NID, INVALID_LPA);
+    uint32_t newNid = superManagerAllocNid(fileSystemManagerGetSuperManager(this->fsManager), INVALID_NID, true);
 
-    uint32_t newNid = 0;
-    NodeBlockCacheEntryHandle handle;
+    BlockBuffer buffer;
+    blockBufferInit(&buffer);
+
+    NodeBlockCacheEntryHandle handle = nodeBlockCacheAdd(this->nodeBlockCache, &buffer, newNid, INVALID_NID, INVALID_LPA);
+
     struct RtfsNode *node = nodeBlockCacheEntryGetNodeBlockPtr(handle.entry);
 
     // 初始化 node footer。
@@ -267,6 +270,8 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperCreateInodeEntry(NodeBlockCacheHel
     // 标记缓存项为 dirty。
     nodeBlockCacheEntryHandleMarkDirty(&handle);
 
+    blockBufferDestroy(&buffer);
+
 
     return handle;
 }
@@ -274,14 +279,12 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperCreateInodeEntry(NodeBlockCacheHel
 
 void nodeBlockCacheEntryHandleDoAddRef(NodeBlockCacheEntryHandle *this)
 {
-    // TODO
-    // if (entry != nullptr) cache->add_refcount(entry);
+    if (NULL != this->entry) nodeBlockCacheAddRefCount(this->cache, this->entry);
 }
 
 void nodeBlockCacheEntryHandleDoSubRef(NodeBlockCacheEntryHandle *this)
 {
-    // TODO
-    // if (entry != nullptr) cache->sub_refcount(entry);
+    if (NULL != this->entry) nodeBlockCacheSubRefCount(this->cache, this->entry);
 }
 
 // TODO

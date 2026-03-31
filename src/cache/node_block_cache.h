@@ -97,7 +97,7 @@ typedef struct NodeBlockCache
 
     // TODO std::unordered_map<node_block_cache_entry*, std::list<node_block_cache_entry_handle>::iterator> dirty_pos;
 
-    struct file_system_manager *fs_manager;
+    struct file_system_manager *fsManager;
 } NodeBlockCache;
 
 
@@ -107,7 +107,7 @@ void nodeBlockCacheDestroy(NodeBlockCache *this);
 
 NodeBlockCacheEntryHandle nodeBlockCacheAdd(NodeBlockCache *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa);
 
-NodeBlockCacheEntryHandle nodeBlockCacheGet(uint32_t nid);
+NodeBlockCacheEntryHandle nodeBlockCacheGet(NodeBlockCache *this, uint32_t nid);
 
 NodeBlockCacheDirtyNode *nodeBlockCacheGetAndClearDirtyList(NodeBlockCache *this);
 
@@ -119,7 +119,7 @@ typedef struct NodeBlockCacheHelper
     struct comm_dev *dev;
     struct SitNatCache *natCache;
     NodeBlockCache *nodeBlockCache;
-    struct file_system_manager *fs_manager;
+    struct file_system_manager *fsManager;
 } NodeBlockCacheHelper;
 
 

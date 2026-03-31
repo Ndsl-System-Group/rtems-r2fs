@@ -21,7 +21,7 @@ struct file_system_manager
 
     struct RtfsSuperBlock *super_blk_mem_;
     super_manager *sp_manager_;
-    node_block_cache *node_cache_;
+    NodeBlockCache *node_cache_;
     dir_data_block_cache *dir_data_cache_;
 
     SrmapUtils *srmap_utils_;
