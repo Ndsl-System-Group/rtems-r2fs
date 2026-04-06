@@ -6,7 +6,8 @@
 typedef struct super_manager super_manager;
 typedef struct file_system_manager file_system_manager;
 
-void superManagerInit(super_manager *this, file_system_manager *fs_manager);
+super_manager *superManagerCreate(file_system_manager *fs_manager);
+void superManagerDestroy(super_manager *this);
 
 uint32_t superManagerAllocNid(super_manager *this, uint32_t ino, bool is_inode);
 void superManagerFreeNid(super_manager *this, uint32_t nid);

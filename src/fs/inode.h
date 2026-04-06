@@ -1,7 +1,11 @@
 #ifndef _INODE_H_
 #define _INODE_H_
 
+#include <stdbool.h>
+#include <stdint.h>
 #include <sys/endian.h>
+
+#include "fs.h"
 
 
 /* Return the file system structure given a path location.
@@ -23,5 +27,20 @@
 // The inode number or ino.
 typedef uint64_t rtfs_ino;
 
+typedef struct RtfsRuntimeInodeView
+{
+    rtfs_ino ino;
+    rtfs_ino parent_ino;
+    uint8_t file_type;
+} RtfsRuntimeInodeView;
+
+void rtfsRuntimeInodeViewInit(
+    RtfsRuntimeInodeView *view,
+    rtfs_ino ino,
+    rtfs_ino parent_ino,
+    uint8_t file_type
+);
+
+bool rtfsInodeIsDirectoryType(uint8_t file_type);
 
 #endif

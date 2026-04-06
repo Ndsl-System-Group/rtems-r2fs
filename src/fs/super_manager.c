@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <stdlib.h>
 
 #include "fs.h"
 #include "fs/fs_manager.h"
@@ -33,6 +34,18 @@ typedef struct super_manager
     UT_array *uncommit_node_segs, *uncommit_data_segs;
 } super_manager;
 
+super_manager *superManagerCreate(file_system_manager *fs_manager)
+{
+    super_manager *this = calloc(1, sizeof(*this));
+    if (this == NULL)
+    {
+        return NULL;
+    }
+
+    superManagerInit(this, fs_manager);
+    return this;
+}
+
 void superManagerInit(super_manager *this, file_system_manager *fs_manager)
 {
     this->fs_manager_ = fs_manager;
@@ -40,6 +53,28 @@ void superManagerInit(super_manager *this, file_system_manager *fs_manager)
     UT_icd int_icd = {sizeof(int), NULL, NULL, NULL};
     utarray_new(this->uncommit_node_segs, &int_icd);
     utarray_new(this->uncommit_data_segs, &int_icd);
+}
+
+void superManagerDestroy(super_manager *this)
+{
+    if (this == NULL)
+    {
+        return;
+    }
+
+    if (this->uncommit_node_segs != NULL)
+    {
+        utarray_free(this->uncommit_node_segs);
+        this->uncommit_node_segs = NULL;
+    }
+
+    if (this->uncommit_data_segs != NULL)
+    {
+        utarray_free(this->uncommit_data_segs);
+        this->uncommit_data_segs = NULL;
+    }
+
+    free(this);
 }
 
 /******************************* Nid ******************************************** */
