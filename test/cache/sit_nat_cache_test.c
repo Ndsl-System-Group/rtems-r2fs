@@ -3,7 +3,7 @@
 #include "cache/sit_nat_cache.h"
 
 
-RTFS_TEST(SNCEInitDestroyTest)
+RTFS_TEST(SnceInitDestroyTest)
 {
     SitNatCacheEntry entry;
 
@@ -16,7 +16,7 @@ RTFS_TEST(SNCEInitDestroyTest)
 }
 
 
-RTFS_TEST(SNCEHInitDestroy)
+RTFS_TEST(SnceHInitDestroy)
 {
     SitNatCache cache;
     SitNatCacheEntry entry;
@@ -39,7 +39,7 @@ RTFS_TEST(SNCEHInitDestroy)
     sitNatCacheDestroy(&cache);
 }
 
-RTFS_TEST(SNCEHCopy)
+RTFS_TEST(SnceHCopy)
 {
     SitNatCache cache;
     SitNatCacheEntry entry;
@@ -63,7 +63,7 @@ RTFS_TEST(SNCEHCopy)
     sitNatCacheDestroy(&cache);
 }
 
-RTFS_TEST(SNCGet)
+RTFS_TEST(SncGet)
 {
     SitNatCache cache;
 
@@ -81,7 +81,7 @@ RTFS_TEST(SNCGet)
     sitNatCacheDestroy(&cache);
 }
 
-RTFS_TEST(SNCGetSameLpa)
+RTFS_TEST(SncGetSameLpa)
 {
     SitNatCache cache;
 
@@ -100,7 +100,7 @@ RTFS_TEST(SNCGetSameLpa)
 }
 
 // TODO 该部分逻辑等 replacer 的 pin 功能加上以后一起测试。
-// RTFS_TEST(SNCReplace)
+// RTFS_TEST(SncReplace)
 // {
 //     SitNatCache cache;
 

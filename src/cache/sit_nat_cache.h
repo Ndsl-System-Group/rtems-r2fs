@@ -4,6 +4,7 @@
 #include "utils/types.h"
 #include "cache/block_buffer.h"
 #include "cache/generic_cache_manager.h"
+#include "fs/fs.h"
 
 
 struct SitNatCache;
@@ -66,14 +67,12 @@ typedef struct SitNatCacheEntryHandle
  */
 void sitNatCacheEntryHandleInit(SitNatCacheEntryHandle *this, struct SitNatCache *cache, SitNatCacheEntry *entry);
 
-
 /**
  * @brief 销毁 handle。
  * @details
  *  - 若 entry != NULL，则减少 entry 的 refCount。
  */
 void sitNatCacheEntryHandleDestroy(SitNatCacheEntryHandle *this);
-
 
 /**
  * @brief 复制 handle。
@@ -83,7 +82,6 @@ void sitNatCacheEntryHandleDestroy(SitNatCacheEntryHandle *this);
  */
 void sitNatCacheEntryHandleCopy(SitNatCacheEntryHandle *this, const SitNatCacheEntryHandle *other);
 
-
 /**
  * @brief 为 entry 添加一个主机侧引用。
  * @details
@@ -91,13 +89,22 @@ void sitNatCacheEntryHandleCopy(SitNatCacheEntryHandle *this, const SitNatCacheE
  */
 void sitNatCacheEntryHandleAddHostVersion(SitNatCacheEntryHandle *this);
 
-
 /**
  * @brief 为 entry 添加一个 SSD 版本完成标记。
  * @details
  *  - refCount -1
  */
 void sitNatCacheEntryHandleAddSsdVersion(SitNatCacheEntryHandle *this);
+
+/**
+ * @brief 获取 Nat Block 缓存块的指针。
+ */
+struct RtfsNatBlock *sitNatCacheEntryHandleGetNatBlockPtr(SitNatCacheEntryHandle *this);
+
+/**
+ * @brief 获取 Sit Block 缓存块的指针。
+ */
+struct RtfsSitBlock *sitNatCacheEntryHandleGetSitBlockPtr(SitNatCacheEntryHandle *this);
 
 
 /**
@@ -145,12 +152,10 @@ typedef struct SitNatCache
  */
 void sitNatCacheInit(SitNatCache *this, struct comm_dev *dev, size_t expectCacheSize);
 
-
 /**
  * @brief 销毁 SIT/NAT cache。
  */
 void sitNatCacheDestroy(SitNatCache *this);
-
 
 /**
  * @brief 获取指定 lpa 的缓存项。
@@ -163,7 +168,6 @@ void sitNatCacheDestroy(SitNatCache *this);
  * @return SitNatCacheEntryHandle
  */
 SitNatCacheEntryHandle sitNatCacheGet(SitNatCache *this, uint32_t lpa);
-
 
 /**
  * @brief 标记 SSD 版本完成。

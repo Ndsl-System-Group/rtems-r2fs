@@ -8,11 +8,11 @@
 typedef struct KbTreeTestEntry
 {
     int key;
-    int value;
+    int data;
 } KbTreeTestEntry;
 
 
-#define KBTREE_TEST_ENTRY_CMP(a, b) ((a).key < (b).key ? -1 : ((a).key > (b).key))
+#define KBTREE_TEST_ENTRY_CMP(a, b) ((a).key < (b).key ? -1 : ((a).key > (b).key ? 1 : 0))
 
 KBTREE_INIT(ktte, KbTreeTestEntry, KBTREE_TEST_ENTRY_CMP)
 
@@ -27,7 +27,7 @@ RTFS_TEST(KbtreeInsertTest)
     for (int i = 0; i < 10; ++i)
     {
         t.key = i;
-        t.value = i * 10;
+        t.data = i * 10;
         kb_put(ktte, tree, t);
     }
 
@@ -37,7 +37,39 @@ RTFS_TEST(KbtreeInsertTest)
         KbTreeTestEntry *p = kb_getp(ktte, tree, &t);
 
         TEST_ASSERT_NOT_NULL(p);
-        TEST_ASSERT_EQUAL(p->value, i * 10);
+        TEST_ASSERT_EQUAL(p->data, i * 10);
+    }
+
+
+    kb_destroy(ktte, tree);
+}
+
+RTFS_TEST(KbtreeInsertDupTest)
+{
+    kbtree_t(ktte) *tree = kb_init(ktte, KB_DEFAULT_SIZE);
+
+
+    KbTreeTestEntry t = {0};
+
+    for (int i = 0; i < 10; ++i)
+    {
+        t.key = i;
+        t.data = i * 10;
+        kb_put(ktte, tree, t);
+    }
+
+    // 刻意插入一条 key 重复的数据。插入 key = 0 的 data 数据，因为 key 重复，该条数据插入会被废弃。
+    t.key = 0;
+    t.data = 100;
+    kb_put(ktte, tree, t);
+
+    for (int i = 9; i >= 0; --i)
+    {
+        t.key = i;
+        KbTreeTestEntry *p = kb_getp(ktte, tree, &t);
+
+        TEST_ASSERT_NOT_NULL(p);
+        TEST_ASSERT_EQUAL(p->data, i * 10);
     }
 
 
@@ -55,19 +87,18 @@ RTFS_TEST(KbtreeOrderedIterTest)
     for (int i = 0; i < 5; ++i)
     {
         t.key = keys[i];
-        t.value = keys[i];
+        t.data = keys[i];
         kb_put(ktte, tree, t);
     }
 
     kbitr_t itr;
-    kb_itr_first(ktte, tree, &itr);
     int key = -INT_MAX;
 
-    for (; kb_itr_valid(&itr); kb_itr_next(ktte, tree, &itr))
+    for (kb_itr_first(ktte, tree, &itr); kb_itr_valid(&itr); kb_itr_next(ktte, tree, &itr))
     {
         KbTreeTestEntry *p = &kb_itr_key(KbTreeTestEntry, &itr);
 
-        RTFS_LOG(RTFS_LOG_INFO, "key = %d, value = %d", p->key, p->value);
+        RTFS_LOG(RTFS_LOG_INFO, "key = %d, data = %d", p->key, p->data);
 
         TEST_ASSERT_TRUE(p->key > key);
         key = p->key;
@@ -84,11 +115,45 @@ RTFS_TEST(KbtreeIntervalTest)
 
     KbTreeTestEntry t;
 
+    // 插入 0~9。
+    for (int i = 0; i < 10; ++i)
+    {
+        t.key = i;
+        t.data = i;
+        kb_put(ktte, tree, t);
+    }
+
+    // 查找 5 的区间。
+    KbTreeTestEntry query = {.key = 5};
+    KbTreeTestEntry *lower = NULL;
+    KbTreeTestEntry *upper = NULL;
+
+    // lower 找到的是最后一个 <= query 的元素。upper 找到的是第一个 >= query 的元素。如果存在等于 query 的 key，lower 会直接指向该元素，同理 upper。
+    kb_interval(ktte, tree, query, &lower, &upper);
+
+    // lower = 5, upper = 5。
+    TEST_ASSERT_NOT_NULL(lower);
+    TEST_ASSERT_NOT_NULL(upper);
+
+    TEST_ASSERT_EQUAL(lower->key, 5);
+    TEST_ASSERT_EQUAL(upper->key, 5);
+
+
+    kb_destroy(ktte, tree);
+}
+
+RTFS_TEST(KbtreeIntervalTest2)
+{
+    kbtree_t(ktte) *tree = kb_init(ktte, KB_DEFAULT_SIZE);
+
+
+    KbTreeTestEntry t;
+
     // 插入偶数。
     for (int i = 0; i < 10; i += 2)
     {
         t.key = i;
-        t.value = i;
+        t.data = i;
         kb_put(ktte, tree, t);
     }
 
@@ -139,7 +204,7 @@ RTFS_TEST(KbtreeRangeEraseTest)
     for (int i = 9; i >= 0; --i)
     {
         t.key = i;
-        t.value = i;
+        t.data = i;
         kb_put(ktte, tree, t);
     }
 
@@ -185,7 +250,7 @@ RTFS_TEST(KbtreeRangeEraseTest)
         {
             TEST_ASSERT_NOT_NULL(p);
 
-            RTFS_LOG(RTFS_LOG_INFO, "key = %d, value = %d", p->key, p->value);
+            RTFS_LOG(RTFS_LOG_INFO, "key = %d, data = %d", p->key, p->data);
         }
     }
 

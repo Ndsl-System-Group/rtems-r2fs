@@ -1,20 +1,23 @@
 #include "nat_utils.h"
 
+#include "cache/sit_nat_cache.h"
 #include "fs/fs.h"
+#include "fs/fs_manager.h"
 #include "utils/rtfs_log.h"
+#include "journal/journal_container.h"
 
 #include <assert.h>
 #include <stddef.h>
 
 
-void natLpaMappingInit(NatLpaMapping *this, struct file_system_manager *fsManager, uint32_t natStartLpa, uint32_t natSegmentCnt)
+void natLpaMappingInit(NatLpaMapping *this, struct file_system_manager *fsManager)
 {
     assert(this);
     assert(fsManager);
 
     this->fsManager = fsManager;
-    this->natStartLpa = natStartLpa;
-    this->natSegmentCnt = natSegmentCnt;
+    this->natStartLpa = fileSystemManagerGetSuperBlkMem(fsManager)->nat_blkaddr;
+    this->natSegmentCnt = fileSystemManagerGetSuperBlkMem(fsManager)->segment_count_nat;
 }
 
 NatNidPos natGetNidPos(NatLpaMapping *this, uint32_t nid)
@@ -34,42 +37,37 @@ uint32_t natGetLpaOfNid(NatLpaMapping *this, uint32_t nid)
 {
     NatNidPos pos = natGetNidPos(this, nid);
 
-    struct RtfsNatEntry *natEntries = NULL;
+    uint32_t natBlockLpa = pos.lpa;
+    uint32_t natEntryIdx = pos.idx;
+    RTFS_LOG(RTFS_LOG_INFO, "nat entry pos of nid %u: lpa=%u, idx=%u", nid, natBlockLpa, natEntryIdx);
 
-    // TODO 依赖 fs_manager 获取 nat cache 的接口和 SIT_NAT_cache_entry_handle 获取 entries 的接口。
-    // SIT_NAT_cache_entry_handle natHandle = natCacheGet(this->fsManager, pos.lpa);
-    // natEntries = natHandleGetEntries(natHandle);
+    SitNatCacheEntryHandle natHandle = sitNatCacheGet(fileSystemManagerGetNatCache(this->fsManager), natBlockLpa);
+    struct RtfsNatEntry natEntry = sitNatCacheEntryHandleGetNatBlockPtr(&natHandle)->entries[natEntryIdx];
 
-    assert(natEntries != NULL);
-
-    uint32_t nidLpa = natEntries[pos.idx].block_addr;
-
-    RTFS_LOG(RTFS_LOG_INFO, "nat entry pos of nid %u: lpa=%u, idx=%u", nid, pos.lpa, pos.idx);
+    uint32_t nidLpa = natEntry.block_addr;
     RTFS_LOG(RTFS_LOG_INFO, "lpa of nid %u: %u", nid, nidLpa);
+
 
     return nidLpa;
 }
 
 void natSetLpaOfNid(NatLpaMapping *this, uint32_t nid, uint32_t newLpa)
 {
+    // 设置 Nat 表项。
     NatNidPos pos = natGetNidPos(this, nid);
 
-    struct RtfsNatEntry *natEntries = NULL;
+    uint32_t natBlockLpa = pos.lpa;
+    uint32_t natEntryIdx = pos.idx;
 
-    // TODO 同理依赖相关接口。
-    // SIT_NAT_cache_entry_handle natHandle = natCacheGet(this->fsManager, pos.lpa);
-    // natEntries = natHandleGetEntries(natHandle);
+    SitNatCacheEntryHandle natHandle = sitNatCacheGet(fileSystemManagerGetNatCache(this->fsManager), natBlockLpa);
+    struct RtfsNatEntry natEntry = sitNatCacheEntryHandleGetNatBlockPtr(&natHandle)->entries[natEntryIdx];
 
-    assert(natEntries != NULL);
-
-    natEntries[pos.idx].block_addr = newLpa;
-
+    natEntry.block_addr = newLpa;
     RTFS_LOG(RTFS_LOG_DEBUG, "set nid(%u)'s lpa to %u.", nid, newLpa);
 
-    // TODO 记录 NAT 日志，依赖日志接口。
-    // journal_container *curJournal = fsManagerGetCurJournal(this->fsManager);
-    // NAT_journal_entry natJournal = {.nid = nid, .newValue = natEntries[pos.idx]};
-    // journalAppendNatEntry(curJournal, &natJournal);
-
-    // natHandleAddHostVersion(natHandle);
+    // 记录 NAT 日志。
+    JournalContainer *curJournal = fileSystemManagerGetCurJournal(this->fsManager);
+    NatJournalEntry natJournal = {.nid = nid, .newValue = natEntry};
+    journalContainerAppendNatJournalEntry(curJournal, &natJournal);
+    sitNatCacheEntryHandleAddHostVersion(&natHandle);
 }

@@ -31,7 +31,7 @@ struct file_system_manager
     comm_dev *dev_;
     fd_array *fd_arr_;
 
-    journal_container *cur_journal_;
+    JournalContainer *cur_journal_;
     bool is_unrecoverable_;
 };
 
@@ -102,7 +102,7 @@ RTFS_TEST(SuperManagerInit_ShouldBindFsManagerAndInitializeArrays)
     superManagerFixtureInit(&fixture);
     memset(&manager, 0, sizeof(manager));
 
-    SuperManagerInit(&manager, &fixture.fs_manager);
+    superManagerInit(&manager, &fixture.fs_manager);
 
     TEST_ASSERT_EQUAL_PTR(&fixture.fs_manager, manager.fs_manager_);
     TEST_ASSERT_EQUAL_PTR(&fixture.super_block, manager.super_block_);
@@ -125,9 +125,9 @@ RTFS_TEST(SuperManagerAllocNid_WhenFreeListIsEmpty_ShouldReturnInvalidNid)
     memset(&manager, 0, sizeof(manager));
     fixture.super_block.next_free_nid = INVALID_NID;
 
-    SuperManagerInit(&manager, &fixture.fs_manager);
+    superManagerInit(&manager, &fixture.fs_manager);
 
-    TEST_ASSERT_EQUAL(INVALID_NID, SuperManagerAllocNid(&manager, 123, true));
+    TEST_ASSERT_EQUAL(INVALID_NID, superManagerAllocNid(&manager, 123, true));
     TEST_ASSERT_EQUAL(INVALID_NID, fixture.super_block.next_free_nid);
 
     utarray_free(manager.uncommit_node_segs);
@@ -147,9 +147,9 @@ RTFS_TEST(SuperManagerAllocNid_WhenNatCacheIsMissing_ShouldReturnInvalidNid)
     fixture.super_block.segment_count_nat = 1;
     fixture.fs_manager.nat_cache_ = NULL;
 
-    SuperManagerInit(&manager, &fixture.fs_manager);
+    superManagerInit(&manager, &fixture.fs_manager);
 
-    TEST_ASSERT_EQUAL(INVALID_NID, SuperManagerAllocNid(&manager, 55, false));
+    TEST_ASSERT_EQUAL(INVALID_NID, superManagerAllocNid(&manager, 55, false));
     TEST_ASSERT_EQUAL(3, fixture.super_block.next_free_nid);
 
     utarray_free(manager.uncommit_node_segs);
@@ -174,9 +174,9 @@ RTFS_TEST(SuperManagerAllocNid_WhenAllocatingInode_ShouldPopFreeListAndBindSelfI
     nat_block->entries[5].ino = 0;
     nat_block->entries[5].block_addr = 9;
 
-    SuperManagerInit(&manager, &fixture.fs_manager);
+    superManagerInit(&manager, &fixture.fs_manager);
 
-    TEST_ASSERT_EQUAL(5, SuperManagerAllocNid(&manager, 777, true));
+    TEST_ASSERT_EQUAL(5, superManagerAllocNid(&manager, 777, true));
     TEST_ASSERT_EQUAL(9, fixture.super_block.next_free_nid);
     TEST_ASSERT_EQUAL(5, nat_block->entries[5].ino);
     TEST_ASSERT_EQUAL(INVALID_LPA, nat_block->entries[5].block_addr);
@@ -203,9 +203,9 @@ RTFS_TEST(SuperManagerAllocNid_WhenAllocatingNode_ShouldUseProvidedIno)
     nat_block->entries[7].ino = 0;
     nat_block->entries[7].block_addr = 11;
 
-    SuperManagerInit(&manager, &fixture.fs_manager);
+    superManagerInit(&manager, &fixture.fs_manager);
 
-    TEST_ASSERT_EQUAL(7, SuperManagerAllocNid(&manager, 1234, false));
+    TEST_ASSERT_EQUAL(7, superManagerAllocNid(&manager, 1234, false));
     TEST_ASSERT_EQUAL(11, fixture.super_block.next_free_nid);
     TEST_ASSERT_EQUAL(1234, nat_block->entries[7].ino);
     TEST_ASSERT_EQUAL(INVALID_LPA, nat_block->entries[7].block_addr);
@@ -231,9 +231,9 @@ RTFS_TEST(SuperManagerAllocNid_WhenNatEntryHasNoNextFreeNid_ShouldReturnInvalidN
     nat_block = superManagerFixtureAddNatBlock(&fixture, 300);
     nat_block->entries[4].block_addr = INVALID_LPA;
 
-    SuperManagerInit(&manager, &fixture.fs_manager);
+    superManagerInit(&manager, &fixture.fs_manager);
 
-    TEST_ASSERT_EQUAL(INVALID_NID, SuperManagerAllocNid(&manager, 99, false));
+    TEST_ASSERT_EQUAL(INVALID_NID, superManagerAllocNid(&manager, 99, false));
     TEST_ASSERT_EQUAL(4, fixture.super_block.next_free_nid);
     TEST_ASSERT_EQUAL(INVALID_LPA, nat_block->entries[4].block_addr);
 
@@ -259,9 +259,9 @@ RTFS_TEST(SuperManagerFreeNid_ShouldPushNidBackToFreeListHead)
     nat_block->entries[7].ino = 999;
     nat_block->entries[7].block_addr = 555;
 
-    SuperManagerInit(&manager, &fixture.fs_manager);
+    superManagerInit(&manager, &fixture.fs_manager);
 
-    SuperManagerFreeNid(&manager, 7);
+    superManagerFreeNid(&manager, 7);
 
     TEST_ASSERT_EQUAL(7, fixture.super_block.next_free_nid);
     TEST_ASSERT_EQUAL(INVALID_NID, nat_block->entries[7].ino);
@@ -285,9 +285,9 @@ RTFS_TEST(SuperManagerFreeNid_WhenNatCacheIsMissing_ShouldLeaveFreeListUntouched
     fixture.super_block.segment_count_nat = 1;
     fixture.fs_manager.nat_cache_ = NULL;
 
-    SuperManagerInit(&manager, &fixture.fs_manager);
+    superManagerInit(&manager, &fixture.fs_manager);
 
-    SuperManagerFreeNid(&manager, 9);
+    superManagerFreeNid(&manager, 9);
 
     TEST_ASSERT_EQUAL(15, fixture.super_block.next_free_nid);
 

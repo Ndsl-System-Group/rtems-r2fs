@@ -13,25 +13,25 @@
 
 typedef struct file_system_manager
 {
-    rtems_recursive_mutex fs_meta_lock_;     // 元数据递归互斥锁
-    pthread_rwlock_t fs_freeze_lock_;        // 冻结读写锁
+    rtems_recursive_mutex fs_meta_lock_; // 元数据递归互斥锁
+    pthread_rwlock_t fs_freeze_lock_;    // 冻结读写锁
 
-    struct RtfsSuperBlock *super_blk_mem_;   // 超级块内存镜像
-    super_manager *sp_manager_;              // 超级块管理器
-    node_block_cache *node_cache_;           // 节点块缓存
-    dir_data_block_cache *dir_data_cache_;   // 目录数据块缓存
+    struct RtfsSuperBlock *super_blk_mem_; // 超级块内存镜像
+    super_manager *sp_manager_;            // 超级块管理器
+    node_block_cache *node_cache_;         // 节点块缓存
+    dir_data_block_cache *dir_data_cache_; // 目录数据块缓存
 
-    SrmapUtils *srmap_utils_;                // SRMAP
-    SitNatCache* sit_cache_;                 // 缓存
-    SitNatCache* nat_cache_;
+    SrmapUtils *srmap_utils_; // SRMAP
+    SitNatCache *sit_cache_;  // 缓存
+    SitNatCache *nat_cache_;
 
-    comm_dev *dev_;                          // 底层设备抽象
-    fd_array *fd_arr_;                       // 文件描述符数组
+    comm_dev *dev_;    // 底层设备抽象
+    fd_array *fd_arr_; // 文件描述符数组
 
-    journal_container *cur_journal_;         // 当前日志容器
+    JournalContainer *cur_journal_; // 当前日志容器
     // replace_protect_manager *rp_manager_;    // 替换保护管理器
-    bool is_unrecoverable_;                  // 不可恢复错误标志
-}file_system_manager;
+    bool is_unrecoverable_; // 不可恢复错误标志
+} file_system_manager;
 
 static uint64_t super_block_lpa;
 static size_t dentry_cache_size;
@@ -56,7 +56,8 @@ static int _init_locks(file_system_manager *this)
     rtems_recursive_mutex_init(&this->fs_meta_lock_, "FsMetaLock");
 
     ret = pthread_rwlock_init(&this->fs_freeze_lock_, NULL);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         rtems_recursive_mutex_destroy(&this->fs_meta_lock_);
         return -ret;
     }
@@ -71,12 +72,14 @@ static void _destroy_locks(file_system_manager *this)
 }
 
 
-static file_system_manager* _internal_create(struct comm_dev *dev) {
-    file_system_manager *this = (file_system_manager*)calloc(1, sizeof(file_system_manager));
+static file_system_manager *_internal_create(struct comm_dev *dev)
+{
+    file_system_manager *this = (file_system_manager *)calloc(1, sizeof(file_system_manager));
     if (!this) return NULL;
 
     int ret = _init_locks(this);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         free(this);
         return NULL;
     }
@@ -103,8 +106,9 @@ static file_system_manager* _internal_create(struct comm_dev *dev) {
     // natLpaMappingInit(this->nat_lpa_mapping_, this, natStartLpa, natSegmentCnt);
 
     // SRMAP
-    this->srmap_utils_ = malloc(sizeof(SrmapUtils));
-    srmapUtilsInit(this->srmap_utils_, this);
+    // TODO 这里目前有一个 bug，这个函数里面会调用 fileSystemManagerGetSuperBlkMem(fsManager)->srmap_blkaddr 语句，目前上面的 TODO super_blk_mem 是 NULL，因此会空指针越界，导致程序崩溃。对上面的 sit nat utils 同理。
+    // this->srmap_utils_ = malloc(sizeof(SrmapUtils));
+    // srmapUtilsInit(this->srmap_utils_, this);
 
     // TODO(): 创建SIT_NAT缓存数量如何配置？
     this->sit_cache_ = malloc(sizeof(SitNatCache));
@@ -117,7 +121,8 @@ static file_system_manager* _internal_create(struct comm_dev *dev) {
     return this;
 }
 
-static void _internal_destroy(file_system_manager *this) {
+static void _internal_destroy(file_system_manager *this)
+{
     if (!this) return;
 
     // 1. 销毁子模块 (按依赖逆序)
@@ -136,7 +141,8 @@ static void _internal_destroy(file_system_manager *this) {
     // DestroySuperManager(this->sp_manager);
 
     // 2. 释放超级块内存 (如果已分配)
-    if (this->super_blk_mem_) {
+    if (this->super_blk_mem_)
+    {
         free(this->super_blk_mem_);
     }
 
@@ -149,61 +155,71 @@ static void _internal_destroy(file_system_manager *this) {
 
 // ==================== 公开 API 实现 ====================
 
-int FileSystemManagerSetup(comm_dev *dev){
+int fileSystemManagerSetup(comm_dev *dev)
+{
     int ret = 0;
-    rtems_mutex_lock(&g_fs_manager_init_lock);
+    rtems_recursive_mutex_lock(&g_fs_manager_init_lock);
 
-    if (g_fs_manager != NULL) {
+    if (g_fs_manager != NULL)
+    {
         ret = -1;
         goto out;
     }
 
     g_fs_manager = _internal_create(dev);
-    if (!g_fs_manager) {
+    if (!g_fs_manager)
+    {
         ret = -ENOMEM;
     }
 
 out:
-    rtems_mutex_unlock(&g_fs_manager_init_lock);
+    rtems_recursive_mutex_unlock(&g_fs_manager_init_lock);
     return ret;
 };
 
-void FileSystemManagerFini(void){
-    rtems_mutex_lock(&g_fs_manager_init_lock);
+void fileSystemManagerFini(void)
+{
+    rtems_recursive_mutex_lock(&g_fs_manager_init_lock);
 
-    if (g_fs_manager != NULL) {
+    if (g_fs_manager != NULL)
+    {
         _internal_destroy(g_fs_manager);
         g_fs_manager = NULL;
     }
 
-    rtems_mutex_unlock(&g_fs_manager_init_lock);
+    rtems_recursive_mutex_unlock(&g_fs_manager_init_lock);
 };
 
-file_system_manager* FileSystemManagerGetInstance(void){
+file_system_manager *fileSystemManagerGetInstance(void)
+{
     return g_fs_manager;
 };
 
-void FileSystemManagerMetaLock(file_system_manager *this){
+void fileSystemManagerMetaLock(file_system_manager *this)
+{
     if (this) rtems_recursive_mutex_lock(&this->fs_meta_lock_);
 };
-void FileSystemManagerMetaUnlock(file_system_manager *this){
+void fileSystemManagerMetaUnlock(file_system_manager *this)
+{
     if (this) rtems_recursive_mutex_unlock(&this->fs_meta_lock_);
 };
-void FileSystemManagerFreezeLock(file_system_manager *this){
+void fileSystemManagerFreezeLock(file_system_manager *this)
+{
     if (this) pthread_rwlock_wrlock(&this->fs_freeze_lock_);
 };
-void FileSystemManagerFreezeUnLock(file_system_manager *this){
+void fileSystemManagerFreezeUnLock(file_system_manager *this)
+{
     if (this) pthread_rwlock_unlock(&this->fs_freeze_lock_);
 };
 
 // ==================== Getter 函数实现 ====================
 
-RtfsSuperBlock*         FileSystemManagerGetSuperBlkMem(file_system_manager *this)      { return this ? this->super_blk_mem_ : NULL; };
-super_manager*          FileSystemManagerGetSuperManager(file_system_manager *this)     { return this ? this->sp_manager_ : NULL; };
-node_block_cache*       FileSystemManagerGetNodeCache(file_system_manager *this)        { return this ? this->node_cache_ : NULL; };
-dir_data_block_cache*   FileSystemManagerGetDirDataCache(file_system_manager *this)     { return this ? this->dir_data_cache_ : NULL; };
-SitNatCache*            FileSystemManagerGetSitCache(file_system_manager *this)         { return this ? this->sit_cache_ : NULL; }
-SitNatCache*            FileSystemManagerGetNatCache(file_system_manager *this)         { return this ? this->nat_cache_ : NULL; }
-SrmapUtils*             FileSystemManagerGetSrmapUtils(file_system_manager *this)       { return this ? this->srmap_utils_ : NULL; };
-fd_array*               FileSystemManagerGetFdArray(file_system_manager *this)          { return this ? this->fd_arr_ : NULL; };
-journal_container*      FileSystemManagerGetCurJournal(file_system_manager *this)       { return this ? this->cur_journal_ : NULL; };
+RtfsSuperBlock *fileSystemManagerGetSuperBlkMem(file_system_manager *this) { return this ? this->super_blk_mem_ : NULL; };
+super_manager *fileSystemManagerGetSuperManager(file_system_manager *this) { return this ? this->sp_manager_ : NULL; };
+node_block_cache *fileSystemManagerGetNodeCache(file_system_manager *this) { return this ? this->node_cache_ : NULL; };
+dir_data_block_cache *fileSystemManagerGetDirDataCache(file_system_manager *this) { return this ? this->dir_data_cache_ : NULL; };
+SitNatCache *fileSystemManagerGetSitCache(file_system_manager *this) { return this ? this->sit_cache_ : NULL; }
+SitNatCache *fileSystemManagerGetNatCache(file_system_manager *this) { return this ? this->nat_cache_ : NULL; }
+SrmapUtils *fileSystemManagerGetSrmapUtils(file_system_manager *this) { return this ? this->srmap_utils_ : NULL; };
+fd_array *fileSystemManagerGetFdArray(file_system_manager *this) { return this ? this->fd_arr_ : NULL; };
+JournalContainer *fileSystemManagerGetCurJournal(file_system_manager *this) { return this ? this->cur_journal_ : NULL; };

@@ -31,6 +31,11 @@ int blockBufferInit(BlockBuffer *this);
 void blockBufferDestroy(BlockBuffer *this);
 
 /**
+ * @brief 拷贝 blockBuffer。
+ */
+void blockBufferCopy(BlockBuffer *this, const BlockBuffer *other);
+
+/**
  * @brief 获取 blockBuffer 内部 DMA 缓冲区指针。
  */
 char *blockBufferGetPtr(BlockBuffer *this);

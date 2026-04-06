@@ -1,7 +1,9 @@
 #include "sit_nat_cache.h"
 
+#include "cache/block_buffer.h"
 #include "utils/rtfs_log.h"
 #include "utils/io_utils.h"
+#include "utils/rtfs_exception.h"
 
 #include <assert.h>
 
@@ -11,19 +13,26 @@ static void sitNatCacheEntryHandleDoAddRef(SitNatCacheEntryHandle *this);
 
 static void sitNatCacheEntryHandleDoSubRef(SitNatCacheEntryHandle *this);
 
-static SitNatCacheEntry *sitNatCacheGetCacheEntryInner(SitNatCache *this, uint32_t lpa, bool isAccess);
+// 释放对 entry 的引用。会对缓存项调用 subRefcount。
+static void sitNatCachePutCacheEntry(SitNatCache *this, SitNatCacheEntry *entry);
 
+// 将 entry 的引用计数 +1。如果引用计数之前为 0，则 pin 住缓存项。
 static void sitNatCacheAddRefcount(SitNatCache *this, SitNatCacheEntry *entry);
 
+// 将 entry 的引用计数 -1。如果引用计数减至 0，则 unpin 缓存项。
 static void sitNatCacheSubRefcount(SitNatCache *this, SitNatCacheEntry *entry);
+
+// entry 的主机侧和 SSD 版本号管理。
+static void sitNatCacheAddHostVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry);
+
+static void sitNatCacheAddSsdVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry);
+
+// 通过 lpa 在 cache_manager 中查找缓存项，找不到则从 SSD 读取。不增加缓存项的 refCount。
+static SitNatCacheEntry *sitNatCacheGetCacheEntryInner(SitNatCache *this, uint32_t lpa, bool isAccess);
 
 static void sitNatCacheDoReplace(SitNatCache *this);
 
 static void sitNatCacheReadLpa(SitNatCache *this, SitNatCacheEntry *entry);
-
-static void sitNatCacheAddHostVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry);
-
-static void sitNatCacheAddSsdVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry);
 
 
 /* 公共函数实现 */
@@ -48,6 +57,7 @@ void sitNatCacheEntryDestroy(SitNatCacheEntry *this)
     }
 }
 
+
 void sitNatCacheEntryHandleInit(SitNatCacheEntryHandle *this, struct SitNatCache *cache, SitNatCacheEntry *entry)
 {
     this->cache = cache;
@@ -56,12 +66,18 @@ void sitNatCacheEntryHandleInit(SitNatCacheEntryHandle *this, struct SitNatCache
 
 void sitNatCacheEntryHandleDestroy(SitNatCacheEntryHandle *this)
 {
+    CEXCEPTION_T e;
+
     if (this->entry)
     {
-        // if (this->cache->putCacheEntry(this->cache, this->entry))
-        // {
-        //     RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of SitNatCacheEntry");
-        // }
+        Try
+        {
+            sitNatCachePutCacheEntry(this->cache, this->entry);
+        }
+        Catch(e)
+        {
+            RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of SitNatCacheEntry: %d", e);
+        }
 
         this->entry = NULL;
         this->cache = NULL;
@@ -85,6 +101,17 @@ void sitNatCacheEntryHandleAddSsdVersion(SitNatCacheEntryHandle *this)
 {
     if (this->entry) sitNatCacheAddSsdVersionForHandle(this->cache, this->entry);
 }
+
+struct RtfsNatBlock *sitNatCacheEntryHandleGetNatBlockPtr(SitNatCacheEntryHandle *this)
+{
+    return (struct RtfsNatBlock *)blockBufferGetPtr(&this->entry->cache);
+}
+
+struct RtfsSitBlock *sitNatCacheEntryHandleGetSitBlockPtr(SitNatCacheEntryHandle *this)
+{
+    return (struct RtfsSitBlock *)blockBufferGetPtr(&this->entry->cache);
+}
+
 
 void sitNatCacheInit(SitNatCache *this, struct comm_dev *dev, size_t expectCacheSize)
 {
@@ -138,7 +165,40 @@ void sitNatCacheEntryHandleDoSubRef(SitNatCacheEntryHandle *this)
     if (this->entry) sitNatCacheSubRefcount(this->cache, this->entry);
 }
 
-// 通过 lpa 在 cache_manager 中查找缓存项，找不到则从 SSD 读取。不增加缓存项的 refCount。
+void sitNatCachePutCacheEntry(SitNatCache *this, SitNatCacheEntry *entry)
+{
+    sitNatCacheSubRefcount(this, entry);
+}
+
+void sitNatCacheAddRefcount(SitNatCache *this, SitNatCacheEntry *entry)
+{
+    ++entry->refCount;
+
+    if (1 == entry->refCount) genericCacheManagerPin(&this->cacheManager, entry->lpa);
+}
+
+void sitNatCacheSubRefcount(SitNatCache *this, SitNatCacheEntry *entry)
+{
+    --entry->refCount;
+
+    if (0 == entry->refCount)
+    {
+        genericCacheManagerUnpin(&this->cacheManager, entry->lpa);
+
+        sitNatCacheDoReplace(this);
+    }
+}
+
+void sitNatCacheAddHostVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry)
+{
+    sitNatCacheAddRefcount(this, entry);
+}
+
+void sitNatCacheAddSsdVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry)
+{
+    sitNatCacheSubRefcount(this, entry);
+}
+
 SitNatCacheEntry *sitNatCacheGetCacheEntryInner(SitNatCache *this, uint32_t lpa, bool isAccess)
 {
     SitNatCacheEntry *entry = genericCacheManagerGet(&this->cacheManager, lpa, isAccess);
@@ -159,25 +219,6 @@ SitNatCacheEntry *sitNatCacheGetCacheEntryInner(SitNatCache *this, uint32_t lpa,
 
 
     return entry;
-}
-
-void sitNatCacheAddRefcount(SitNatCache *this, SitNatCacheEntry *entry)
-{
-    ++entry->refCount;
-
-    if (1 == entry->refCount) genericCacheManagerPin(&this->cacheManager, entry->lpa);
-}
-
-void sitNatCacheSubRefcount(SitNatCache *this, SitNatCacheEntry *entry)
-{
-    --entry->refCount;
-
-    if (0 == entry->refCount)
-    {
-        genericCacheManagerUnpin(&this->cacheManager, entry->lpa);
-
-        sitNatCacheDoReplace(this);
-    }
 }
 
 void sitNatCacheDoReplace(SitNatCache *this)
@@ -208,15 +249,4 @@ void sitNatCacheReadLpa(SitNatCache *this, SitNatCacheEntry *entry)
     // TODO
     // int res = comm_submit_sync_rw_request(dev, entry->cache.get_ptr(), LPA_TO_LBA(entry->lpa_), LBA_PER_LPA, COMM_IO_READ);
     // if (res != 0) throw io_error("SIT/NAT cache entry: read lpa failed.");
-}
-
-// entry 的主机侧 和 SSD 版本号管理。
-void sitNatCacheAddHostVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry)
-{
-    sitNatCacheAddRefcount(this, entry);
-}
-
-void sitNatCacheAddSsdVersionForHandle(SitNatCache *this, SitNatCacheEntry *entry)
-{
-    sitNatCacheSubRefcount(this, entry);
 }
