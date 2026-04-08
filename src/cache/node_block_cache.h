@@ -86,6 +86,8 @@ typedef struct NodeBlockCacheDirtyNode
 } NodeBlockCacheDirtyNode;
 
 
+KHASH_MAP_INIT_PTR(khdp, NodeBlockCacheDirtyNode *)
+
 typedef struct NodeBlockCache
 {
     GenericCacheManager cacheManager;
@@ -95,8 +97,7 @@ typedef struct NodeBlockCache
 
     NodeBlockCacheDirtyNode *dirtyListHead;
 
-    // TODO
-    // std::unordered_map<node_block_cache_entry*, std::list<node_block_cache_entry_handle>::iterator> dirty_pos;
+    khash_t(khdp) * dirtyPos;
 
     struct file_system_manager *fsManager;
 } NodeBlockCache;

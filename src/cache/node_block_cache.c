@@ -6,6 +6,7 @@
 #include "fs/super_manager.h"
 #include "utils/rtfs_exception.h"
 #include "utils/rtfs_log.h"
+#include "uthash/utlist.h"
 
 #include <assert.h>
 
@@ -141,17 +142,63 @@ void nodeBlockCacheEntryHandleDeleteNode(NodeBlockCacheEntryHandle *this)
 }
 
 
-// TODO
 void nodeBlockCacheInit(NodeBlockCache *this, struct file_system_manager *fsManager, size_t expectSize)
 {
+    this->expectSize = expectSize;
+    this->curSize = 0;
+    this->fsManager = fsManager;
+
+    this->dirtyListHead = NULL;
+
+    genericCacheManagerInit(&this->cacheManager);
+
+    this->dirtyPos = kh_init(khdp);
 }
 
 void nodeBlockCacheDestroy(NodeBlockCache *this)
 {
+    if (NULL == this->dirtyListHead) RTFS_LOG(RTFS_LOG_WARNING, "node block cache still has dirty block while destructed.");
+
+    kh_destroy(khdp, this->dirtyPos);
+    this->dirtyPos = NULL;
+
+    genericCacheManagerDestroy(&this->cacheManager);
+
+    this->dirtyListHead = NULL;
+
+    this->fsManager = NULL;
+    this->curSize = 0;
+    this->expectSize = 0;
 }
 
 NodeBlockCacheEntryHandle nodeBlockCacheAdd(NodeBlockCache *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa)
 {
+    assert(NULL == genericCacheManagerGet(&this->cacheManager, nid, false));
+
+    // 构造新的缓存项。
+    NodeBlockCacheEntry *entry = (NodeBlockCacheEntry *)malloc(sizeof(NodeBlockCacheEntry));
+    nodeBlockCacheEntryInit(entry, buffer, nid, parentNid, lpa);
+
+    // 将 parentNid 的引用计数加 1。
+    if (INVALID_NID != parentNid)
+    {
+        NodeBlockCacheEntry *parentEntry = (NodeBlockCacheEntry *)genericCacheManagerGet(&this->cacheManager, parentNid, false);
+        assert(NULL != parentEntry);
+
+        nodeBlockCacheAddRefCount(this, parentEntry);
+    }
+
+    // 将缓存项加入 cacheManager，并尝试进行置换（若加入后的缓存数量加入阈值）。
+    genericCacheManagerAdd(&this->cacheManager, nid, entry);
+    nodeBlockCacheAddRefCount(this, entry);
+    ++this->curSize;
+    nodeBlockCacheDoReplace(this);
+
+
+    NodeBlockCacheEntryHandle res = {.cache = this, .entry = entry};
+
+
+    return res;
 }
 
 NodeBlockCacheEntryHandle nodeBlockCacheGet(NodeBlockCache *this, uint32_t nid)
@@ -167,6 +214,24 @@ NodeBlockCacheEntryHandle nodeBlockCacheGet(NodeBlockCache *this, uint32_t nid)
 
 NodeBlockCacheDirtyNode *nodeBlockCacheGetAndClearDirtyList(NodeBlockCache *this)
 {
+    NodeBlockCacheDirtyNode *cur = NULL, *tmp = NULL;
+
+    // 遍历 dirty list，修改状态。
+    DL_FOREACH_SAFE(this->dirtyListHead, cur, tmp)
+    {
+        NodeBlockCacheEntryHandle *handle = &cur->handle;
+
+        assert(NODE_BLOCK_CACHE_ENTRY_DIRTY == handle->entry->state && handle->entry->refCount >= 1);
+
+        handle->entry->state = NODE_BLOCK_CACHE_ENTRY_UPTODATE;
+    }
+
+    // swap 直接摘链表，清空 dirty list，并返回原先的 dirty list 用作淘汰保护。
+    NodeBlockCacheDirtyNode *res = this->dirtyListHead;
+    this->dirtyListHead = NULL;
+
+
+    return res;
 }
 
 void nodeBlockCacheForceReplace(NodeBlockCache *this)
@@ -348,13 +413,49 @@ void nodeBlockCacheSubRefCount(NodeBlockCache *this, NodeBlockCacheEntry *entry)
     }
 }
 
-// TODO
 void nodeBlockCacheMarkDirty(NodeBlockCache *this, const NodeBlockCacheEntryHandle *handle)
 {
+    // 保证 node block 缓存项如果是 dirty 状态，一定至少有一个引用计数。
+    if (handle->entry->state != NODE_BLOCK_CACHE_ENTRY_DIRTY)
+    {
+        assert(handle->entry->state == NODE_BLOCK_CACHE_ENTRY_UPTODATE);
+
+        handle->entry->state = NODE_BLOCK_CACHE_ENTRY_DIRTY;
+
+        NodeBlockCacheDirtyNode *node = (NodeBlockCacheDirtyNode *)malloc(sizeof(NodeBlockCacheDirtyNode));
+        assert(NULL != node);
+
+        node->handle = *handle;
+        node->prev = node->next = NULL;
+
+        DL_APPEND(this->dirtyListHead, node);
+
+        int res;
+        khiter_t k = kh_put(khdp, this->dirtyPos, handle->entry, &res);
+        assert(-1 != res);
+
+        kh_value(this->dirtyPos, k) = node;
+    }
 }
 
 void nodeBlockCacheRemoveEntry(NodeBlockCache *this, NodeBlockCacheEntry *entry)
 {
+    if (NODE_BLOCK_CACHE_ENTRY_DIRTY == entry->state)
+    {
+        khiter_t k = kh_get(khdp, this->dirtyPos, entry);
+        assert(kh_end(this->dirtyPos) != k);
+
+        NodeBlockCacheDirtyNode *node = kh_value(this->dirtyPos, k);
+        assert(node->handle.entry == entry);
+
+        DL_DELETE(this->dirtyListHead, node);
+
+        kh_del(khdp, this->dirtyPos, k);
+
+        free(node);
+    }
+
+    entry->state = NODE_BLOCK_CACHE_ENTRY_DELETED;
 }
 
 void nodeBlockCacheDoReplace(NodeBlockCache *this)
