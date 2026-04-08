@@ -11,6 +11,38 @@ typedef enum JournalOutputState
 
 
 /**
+ * @brief 日志条目的合并与输出接口。
+ */
+typedef struct JournalOutputVector
+{
+    /**
+     * @brief 生成日志项输出向量。向量中的每个元素是一个日志条目。
+     * @details 此接口内完成：
+     * 1. 修改相同目标的日志条目合并，仅保留最后一个日志条目，反应该目标的最新值。
+     * 2. 将日志条目在输出向量中按一定顺序排列，SSD 处理时能一次性处理多个目标在同一 page 内的日志条目。
+     */
+    void (*generateOutputVector)(struct JournalOutputVector *this);
+
+    /**
+     * @brief 上层即将开始输出。outputToBuffer 对调用者是无状态的，此接口内将初始化 output 状态，从输出向量头部开始。
+     */
+    void (*prepareOutput)(struct JournalOutputVector *this);
+
+    /**
+     * @brief 将日志项输出到调用者提供的缓存区域 [*pStartAddr, endAddr)。尽可能多地在缓存区域中输出，除非已经输出完毕或缓存空间不足。
+     *
+     * @return 返回值如下：
+     * OK：成功完成了输出，此时 *pStartAddr 被置为输出区域的尾后地址
+     * NO_ENOUGH_BUFFER：提供的缓存空间不足以输出一个[首部 + 日志条目]，*pStartAddr 不变。
+     * REACH_END：已经输出完毕，*pStartAddr 不变。
+     *
+     * @details 多次调用此接口，则本次调用将继续上一次调用已输出的日志条目之后，进行输出。如果缓存区域没有全部写入，此接口在尾部至少留下一个 NOP 日志项的空间，除非输入的缓存区域不足以放下 NOP。（需由调用方，即 JournalWriter 保证，提供的缓存区足够放下 NOP）。
+     */
+    JournalOutputState (*outputToBuffer)(struct JournalOutputVector *this, char **pStartAddr, char *endAddr);
+} JournalOutputVector;
+
+
+/**
  * @brief 计算能够写入的日志条目个数的通用算法。
  * @param bufferSize 目标缓存区大小（字节为单位）。
  * @param entrySize 日志条目大小（字节为单位）。
