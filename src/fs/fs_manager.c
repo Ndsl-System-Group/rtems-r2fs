@@ -9,6 +9,8 @@
 #include "sit_utils.h"
 #include "nat_utils.h"
 #include "cache/sit_nat_cache.h"
+#include "cache/super_cache.h"
+#include "super_manager.h"
 #include "srmap_utils.h"
 
 typedef struct file_system_manager
@@ -16,6 +18,7 @@ typedef struct file_system_manager
     rtems_recursive_mutex fs_meta_lock_; // 元数据递归互斥锁
     pthread_rwlock_t fs_freeze_lock_;    // 冻结读写锁
 
+    SuperCache super_cache_;               // 超级块缓存
     struct RtfsSuperBlock *super_blk_mem_; // 超级块内存镜像
     super_manager *sp_manager_;            // 超级块管理器
     NodeBlockCache *node_cache_;           // 节点块缓存
@@ -86,14 +89,11 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
 
     this->dev_ = dev;
     // this->is_unrecoverable_ = false;
-    // TODO: 从设备读取超级块到内存
-    // ret = blockBufferReadFromLpa(&this->super_buf, dev, g_super_block_lpa);
-    // if (ret != 0) {
-    //     _destroy_locks(this);
-    //     free(this);
-    //     return NULL;
-    // }
-    // this->super_blk_mem = (struct RtfsSuperBlock*)blockBufferGetPtr(&this->super_buf);
+
+    // super block 由 fs_manager 统一装配并持有，后续由 super_manager 消费其内存镜像。
+    superCacheInit(&this->super_cache_, dev, super_block_lpa);
+    superCacheReadSuperBlock(&this->super_cache_);
+    this->super_blk_mem_ = superCacheGet(&this->super_cache_);
 
     // TODO: 初始化各个子模块
 
@@ -115,8 +115,7 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
     sitNatCacheInit(this->sit_cache_, dev, 100);
     this->nat_cache_ = malloc(sizeof(SitNatCache));
     sitNatCacheInit(this->nat_cache_, dev, 100);
-    // this->sp_manager = SuperManagerCreate(this);
-    // ...
+    this->sp_manager_ = superManagerCreate(this);
 
     return this;
 }
@@ -138,13 +137,12 @@ static void _internal_destroy(file_system_manager *this)
     // DestroySitCache(this->sit_cache);
     // DestroyDirDataCache(this->dir_data_cache);
     // DestroyNodeCache(this->node_cache);
-    // DestroySuperManager(this->sp_manager);
+    superManagerDestroy(this->sp_manager_);
+    this->sp_manager_ = NULL;
 
-    // 2. 释放超级块内存 (如果已分配)
-    if (this->super_blk_mem_)
-    {
-        free(this->super_blk_mem_);
-    }
+    // 2. 释放超级块缓存及其持有的内存镜像
+    superCacheDestroy(&this->super_cache_);
+    this->super_blk_mem_ = NULL;
 
     // 3. 销毁同步对象
     _destroy_locks(this);

@@ -8,10 +8,14 @@
 
 #include "cache/generic_cache_manager.h"
 #include "cache/sit_nat_cache.h"
+#include "cache/super_cache.h"
 #include "fs/fs.h"
 #include "fs/fs_manager.h"
 #include "fs/super_manager.h"
 #include "uthash/utarray.h"
+
+
+void superManagerInit(super_manager *this, file_system_manager *fs_manager);
 
 
 struct file_system_manager
@@ -19,6 +23,7 @@ struct file_system_manager
     rtems_recursive_mutex fs_meta_lock_;
     pthread_rwlock_t fs_freeze_lock_;
 
+    SuperCache super_cache_;
     struct RtfsSuperBlock *super_blk_mem_;
     super_manager *sp_manager_;
     NodeBlockCache *node_cache_;
