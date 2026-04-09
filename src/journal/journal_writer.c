@@ -1,6 +1,6 @@
 #include "journal_writer.h"
-#include "journal_type.h"
 
+#include "journal/journal_type.h"
 #include "klib/kbtree.h"
 #include "klib/khash.h"
 
@@ -64,7 +64,7 @@ typedef struct SuperJournalOutputVector
     SuperBlockJournalVector *journal;
     uint8_t journalType;
 
-    // 使用 map 或 unordered_map 为 journal 去重并保留最新值，map 还可以按 journal 某字段排序。key 为特定日志条目的唯一标识。value 为日志条目在 journal 数组的下标。
+    // 使用 unordered_map 为 journal 去重并保留最新值。key 为特定日志条目的唯一标识。value 为日志条目在 journal 数组的下标。
     khash_t(khsjov) * map;
     khiter_t outputIt;
 
@@ -80,6 +80,39 @@ static void superJournalOutputVectorGenerateOutputVector(SuperJournalOutputVecto
 static void superJournalOutputVectorPrepareOutput(SuperJournalOutputVector *this);
 
 static JournalOutputState superJournalOutputVectorOutputToBuffer(SuperJournalOutputVector *this, char **pStartAddr, char *endAddr);
+
+
+// 使用 map 为 journal 去重并保留最新值，还可以按 journal 某字段排序。key 为特定日志条目的唯一标识。value 为日志条目在 journal 数组的下标。
+typedef struct NatJournalDedupEntry
+{
+    uint32_t nid; // key。
+    size_t index; // data。
+} NatJournalDedupEntry;
+
+#define KBTREE_NAT_JOURNAL_DEDUP_ENTRY_CMP(a, b) ((a).nid < (b).nid ? -1 : ((a).nid > (b).nid ? 1 : 0))
+
+KBTREE_INIT(ktnjde, NatJournalDedupEntry, KBTREE_NAT_JOURNAL_DEDUP_ENTRY_CMP)
+
+typedef struct NatJournalOutputVector
+{
+    NatJournalVector *journal;
+    uint8_t journalType;
+
+    kbtree_t(ktnjde) * map;
+    kbitr_t outputIt;
+
+    size_t restOutputNum;
+} NatJournalOutputVector;
+
+static void natJournalOutputVectorInit(NatJournalOutputVector *this, NatJournalVector *natJournal);
+
+static void natJournalOutputVectorDestroy(NatJournalOutputVector *this);
+
+static void natJournalOutputVectorGenerateOutputVector(NatJournalOutputVector *this);
+
+static void natJournalOutputVectorPrepareOutput(NatJournalOutputVector *this);
+
+static JournalOutputState natJournalOutputVectorOutputToBuffer(NatJournalOutputVector *this, char **pStartAddr, char *endAddr);
 
 
 void journalWriterInit(JournalWriter *this, struct comm_dev *dev, uint64_t journalAreaStartLpa, uint64_t journalAreaEndLpa)
@@ -180,6 +213,7 @@ void superJournalOutputVectorDestroy(SuperJournalOutputVector *this)
 void superJournalOutputVectorGenerateOutputVector(SuperJournalOutputVector *this)
 {
     kh_clear(khsjov, this->map);
+
     for (size_t i = 0; i < kv_size(*this->journal); ++i)
     {
         SuperBlockJournalEntry *p = &kv_a(SuperBlockJournalEntry, *this->journal, i);
@@ -215,6 +249,74 @@ JournalOutputState superJournalOutputVectorOutputToBuffer(SuperJournalOutputVect
     for (size_t i = 0; i < outputNum; ++i, ++this->outputIt, ++entry)
     {
         SuperBlockJournalEntry *p = &kv_a(SuperBlockJournalEntry, *this->journal, kh_value(this->map, this->outputIt));
+
+        *entry = *p;
+    }
+
+    this->restOutputNum -= outputNum;
+    *pStartAddr = (char *)(entry);
+
+
+    return JOURNAL_OUTPUT_OK;
+}
+
+
+void natJournalOutputVectorInit(NatJournalOutputVector *this, NatJournalVector *natJournal)
+{
+    this->journal = natJournal;
+    this->journalType = JOURNAL_TYPE_NATS;
+    this->map = kb_init(ktnjde, KB_DEFAULT_SIZE);
+    this->restOutputNum = 0;
+}
+
+void natJournalOutputVectorDestroy(NatJournalOutputVector *this)
+{
+    this->restOutputNum = 0;
+    this->map = NULL;
+    this->journalType = -1;
+    this->journal = NULL;
+}
+
+void natJournalOutputVectorGenerateOutputVector(NatJournalOutputVector *this)
+{
+    kb_destroy(ktnjde, this->map);
+    this->map = kb_init(ktnjde, KB_DEFAULT_SIZE);
+
+    for (size_t i = 0; i < kv_size(*this->journal); ++i)
+    {
+        NatJournalEntry *p = &kv_a(NatJournalEntry, *this->journal, i);
+        NatJournalDedupEntry t = {.nid = p->nid, .index = i};
+
+        kb_put(ktnjde, this->map, t);
+    }
+}
+
+void natJournalOutputVectorPrepareOutput(NatJournalOutputVector *this)
+{
+    kb_itr_first(ktnjde, this->map, &this->outputIt);
+    this->restOutputNum = kb_size(this->map);
+}
+
+JournalOutputState natJournalOutputVectorOutputToBuffer(NatJournalOutputVector *this, char **pStartAddr, char *endAddr)
+{
+    size_t journalEntrySize = sizeof(NatJournalEntry);
+    if (0 == this->restOutputNum) return JOURNAL_OUTPUT_REACH_END;
+
+    size_t outputNum = genericCalculateWritableEntryNum(endAddr - *pStartAddr, journalEntrySize, this->restOutputNum);
+    if (0 == outputNum) return JOURNAL_OUTPUT_NO_ENOUGH_BUFFER;
+
+    char *p = *pStartAddr;
+    MetaJournalEntry header = {
+        .len = sizeof(MetaJournalEntry) + outputNum * journalEntrySize,
+        .type = this->journalType};
+
+    memcpy(p, &header, sizeof(header));
+    NatJournalEntry *entry = (NatJournalEntry *)(p + sizeof(MetaJournalEntry));
+
+    for (size_t i = 0; i < outputNum; ++i, kb_itr_next(ktnjde, this->map, &this->outputIt), ++entry)
+    {
+        NatJournalDedupEntry *t = &kb_itr_key(NatJournalDedupEntry, &this->outputIt);
+        NatJournalEntry *p = &kv_a(NatJournalEntry, *this->journal, t->index);
 
         *entry = *p;
     }
