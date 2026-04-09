@@ -64,6 +64,7 @@ typedef struct SuperJournalOutputVector
     SuperBlockJournalVector *journal;
     uint8_t journalType;
 
+    // 使用 map 或 unordered_map 为 journal 去重并保留最新值，map 还可以按 journal 某字段排序。key 为特定日志条目的唯一标识。value 为日志条目在 journal 数组的下标。
     khash_t(khsjov) * map;
     khiter_t outputIt;
 
@@ -183,7 +184,8 @@ void superJournalOutputVectorGenerateOutputVector(SuperJournalOutputVector *this
     {
         SuperBlockJournalEntry *p = &kv_a(SuperBlockJournalEntry, *this->journal, i);
 
-        khiter_t iter = kh_get(khsjov, this->map, p->Off);
+        int res = 0;
+        khiter_t iter = kh_put(khsjov, this->map, p->Off, &res);
         kh_value(this->map, iter) = i;
     }
 }
