@@ -1,45 +1,8 @@
 #include "journal_writer.h"
 #include "journal_type.h"
 
-
-typedef enum JournalOutputState
-{
-    JOURNAL_OUTPUT_OK,
-    JOURNAL_OUTPUT_NO_ENOUGH_BUFFER,
-    JOURNAL_OUTPUT_REACH_END
-} JournalOutputState;
-
-
-/**
- * @brief 日志条目的合并与输出接口。
- */
-typedef struct JournalOutputVector
-{
-    /**
-     * @brief 生成日志项输出向量。向量中的每个元素是一个日志条目。
-     * @details 此接口内完成：
-     * 1. 修改相同目标的日志条目合并，仅保留最后一个日志条目，反应该目标的最新值。
-     * 2. 将日志条目在输出向量中按一定顺序排列，SSD 处理时能一次性处理多个目标在同一 page 内的日志条目。
-     */
-    void (*generateOutputVector)(struct JournalOutputVector *this);
-
-    /**
-     * @brief 上层即将开始输出。outputToBuffer 对调用者是无状态的，此接口内将初始化 output 状态，从输出向量头部开始。
-     */
-    void (*prepareOutput)(struct JournalOutputVector *this);
-
-    /**
-     * @brief 将日志项输出到调用者提供的缓存区域 [*pStartAddr, endAddr)。尽可能多地在缓存区域中输出，除非已经输出完毕或缓存空间不足。
-     *
-     * @return 返回值如下：
-     * OK：成功完成了输出，此时 *pStartAddr 被置为输出区域的尾后地址
-     * NO_ENOUGH_BUFFER：提供的缓存空间不足以输出一个[首部 + 日志条目]，*pStartAddr 不变。
-     * REACH_END：已经输出完毕，*pStartAddr 不变。
-     *
-     * @details 多次调用此接口，则本次调用将继续上一次调用已输出的日志条目之后，进行输出。如果缓存区域没有全部写入，此接口在尾部至少留下一个 NOP 日志项的空间，除非输入的缓存区域不足以放下 NOP。（需由调用方，即 JournalWriter 保证，提供的缓存区足够放下 NOP）。
-     */
-    JournalOutputState (*outputToBuffer)(struct JournalOutputVector *this, char **pStartAddr, char *endAddr);
-} JournalOutputVector;
+#include "klib/kbtree.h"
+#include "klib/khash.h"
 
 
 /**
@@ -51,6 +14,71 @@ typedef struct JournalOutputVector
  * @details 算法考虑日志项首部，且保证：若不是恰好把缓存写满，则在尾部留下 NOP 空间（除非输入的 bufferSize 本身无法写入 NOP）。留下 NOP 空间指至少留下一个日志项首部长度。
  */
 static uint64_t genericCalculateWritableEntryNum(uint64_t bufferSize, uint64_t entrySize, uint64_t expectedWriteNum);
+
+
+typedef enum JournalOutputState
+{
+    JOURNAL_OUTPUT_OK,
+    JOURNAL_OUTPUT_NO_ENOUGH_BUFFER,
+    JOURNAL_OUTPUT_REACH_END
+} JournalOutputState;
+
+
+// TODO 想办法为下面的接口做一套伪继承和模板的设计，实现代码复用。
+// /**
+//  * @brief 日志条目的合并与输出接口。
+//  */
+// typedef struct JournalOutputVector
+// {
+//     /**
+//      * @brief 生成日志项输出向量。向量中的每个元素是一个日志条目。
+//      * @details 此接口内完成：
+//      * 1. 修改相同目标的日志条目合并，仅保留最后一个日志条目，反应该目标的最新值。
+//      * 2. 将日志条目在输出向量中按一定顺序排列，SSD 处理时能一次性处理多个目标在同一 page 内的日志条目。
+//      */
+//     void (*generateOutputVector)(struct JournalOutputVector *this);
+
+//     /**
+//      * @brief 上层即将开始输出。outputToBuffer 对调用者是无状态的，此接口内将初始化 output 状态，从输出向量头部开始。
+//      */
+//     void (*prepareOutput)(struct JournalOutputVector *this);
+
+//     /**
+//      * @brief 将日志项输出到调用者提供的缓存区域 [*pStartAddr, endAddr)。尽可能多地在缓存区域中输出，除非已经输出完毕或缓存空间不足。
+//      *
+//      * @return 返回值如下：
+//      * OK：成功完成了输出，此时 *pStartAddr 被置为输出区域的尾后地址
+//      * NO_ENOUGH_BUFFER：提供的缓存空间不足以输出一个[首部 + 日志条目]，*pStartAddr 不变。
+//      * REACH_END：已经输出完毕，*pStartAddr 不变。
+//      *
+//      * @details 多次调用此接口，则本次调用将继续上一次调用已输出的日志条目之后，进行输出。如果缓存区域没有全部写入，此接口在尾部至少留下一个 NOP 日志项的空间，除非输入的缓存区域不足以放下 NOP。（需由调用方，即 JournalWriter 保证，提供的缓存区足够放下 NOP）。
+//      */
+//     JournalOutputState (*outputToBuffer)(struct JournalOutputVector *this, char **pStartAddr, char *endAddr);
+// } JournalOutputVector;
+
+
+KHASH_MAP_INIT_INT(khsjov, size_t)
+
+typedef struct SuperJournalOutputVector
+{
+    SuperBlockJournalVector *journal;
+    uint8_t journalType;
+
+    khash_t(khsjov) * map;
+    khiter_t outputIt;
+
+    size_t restOutputNum;
+} SuperJournalOutputVector;
+
+static void superJournalOutputVectorInit(SuperJournalOutputVector *this, SuperBlockJournalVector *superJournal);
+
+static void superJournalOutputVectorDestroy(SuperJournalOutputVector *this);
+
+static void superJournalOutputVectorGenerateOutputVector(SuperJournalOutputVector *this);
+
+static void superJournalOutputVectorPrepareOutput(SuperJournalOutputVector *this);
+
+static JournalOutputState superJournalOutputVectorOutputToBuffer(SuperJournalOutputVector *this, char **pStartAddr, char *endAddr);
 
 
 void journalWriterInit(JournalWriter *this, struct comm_dev *dev, uint64_t journalAreaStartLpa, uint64_t journalAreaEndLpa)
@@ -129,4 +157,69 @@ uint64_t genericCalculateWritableEntryNum(uint64_t bufferSize, uint64_t entrySiz
 
 
     return res;
+}
+
+
+void superJournalOutputVectorInit(SuperJournalOutputVector *this, SuperBlockJournalVector *superJournal)
+{
+    this->journal = superJournal;
+    this->journalType = JOURNAL_TYPE_SUPER_BLOCK;
+    this->map = kh_init(khsjov);
+    this->restOutputNum = 0;
+}
+
+void superJournalOutputVectorDestroy(SuperJournalOutputVector *this)
+{
+    this->restOutputNum = 0;
+    this->map = NULL;
+    this->journalType = -1;
+    this->journal = NULL;
+}
+
+void superJournalOutputVectorGenerateOutputVector(SuperJournalOutputVector *this)
+{
+    kh_clear(khsjov, this->map);
+    for (size_t i = 0; i < kv_size(*this->journal); ++i)
+    {
+        SuperBlockJournalEntry *p = &kv_a(SuperBlockJournalEntry, *this->journal, i);
+
+        khiter_t iter = kh_get(khsjov, this->map, p->Off);
+        kh_value(this->map, iter) = i;
+    }
+}
+
+void superJournalOutputVectorPrepareOutput(SuperJournalOutputVector *this)
+{
+    this->outputIt = kh_begin(this->map);
+    this->restOutputNum = kh_size(this->map);
+}
+
+JournalOutputState superJournalOutputVectorOutputToBuffer(SuperJournalOutputVector *this, char **pStartAddr, char *endAddr)
+{
+    size_t journalEntrySize = sizeof(SuperBlockJournalEntry);
+    if (0 == this->restOutputNum) return JOURNAL_OUTPUT_REACH_END;
+
+    size_t outputNum = genericCalculateWritableEntryNum(endAddr - *pStartAddr, journalEntrySize, this->restOutputNum);
+    if (0 == outputNum) return JOURNAL_OUTPUT_NO_ENOUGH_BUFFER;
+
+    char *p = *pStartAddr;
+    MetaJournalEntry header = {
+        .len = sizeof(MetaJournalEntry) + outputNum * journalEntrySize,
+        .type = this->journalType};
+
+    memcpy(p, &header, sizeof(header));
+    SuperBlockJournalEntry *entry = (SuperBlockJournalEntry *)(p + sizeof(MetaJournalEntry));
+
+    for (size_t i = 0; i < outputNum; ++i, ++this->outputIt, ++entry)
+    {
+        SuperBlockJournalEntry *p = &kv_a(SuperBlockJournalEntry, *this->journal, kh_value(this->map, this->outputIt));
+
+        *entry = *p;
+    }
+
+    this->restOutputNum -= outputNum;
+    *pStartAddr = (char *)(entry);
+
+
+    return JOURNAL_OUTPUT_OK;
 }
