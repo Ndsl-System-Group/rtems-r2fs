@@ -3,6 +3,12 @@
 #include "journal/journal_type.h"
 #include "klib/kbtree.h"
 #include "klib/khash.h"
+#include "utils/rtfs_exception.h"
+
+
+struct SuperJournalOutputVector;
+struct NatJournalOutputVector;
+struct SitJournalOutputVector;
 
 
 /**
@@ -14,6 +20,20 @@
  * @details 算法考虑日志项首部，且保证：若不是恰好把缓存写满，则在尾部留下 NOP 空间（除非输入的 bufferSize 本身无法写入 NOP）。留下 NOP 空间指至少留下一个日志项首部长度。
  */
 static uint64_t genericCalculateWritableEntryNum(uint64_t bufferSize, uint64_t entrySize, uint64_t expectedWriteNum);
+
+static void fillBufferWithNop(char *start, char *end);
+
+static struct SuperJournalOutputVector *journalWriterSuperJournalOutputVecGenerate(JournalWriter *this);
+
+static struct NatJournalOutputVector *journalWriterNatJournalOutputVecGenerate(JournalWriter *this);
+
+static struct SitJournalOutputVector *journalWriterSitJournalOutputVecGenerate(JournalWriter *this);
+
+static char *journalWriterGetIthBufferBlock(JournalWriter *this, size_t index);
+
+static void journalWriterAppendEndEntry(JournalWriter *this);
+
+// static void journalWriterAsyncWriteCallback(JournalWriter *this, comm_cmd_result res, void *arg);
 
 
 typedef enum JournalOutputState
@@ -167,11 +187,92 @@ void journalWriterSetPendingJournal(JournalWriter *this, JournalContainer *journ
     this->curJournal = journal;
 }
 
-// TODO
 uint64_t journalWriterCollectPendingJournalToWriteBuffer(JournalWriter *this)
 {
+    this->bufferTailIdx = this->bufferTailOff = 0;
+
+    SuperJournalOutputVector *superJournalVec = journalWriterSuperJournalOutputVecGenerate(this);
+    NatJournalOutputVector *natJournalVec = journalWriterNatJournalOutputVecGenerate(this);
+    SitJournalOutputVector *sitJournalVec = journalWriterSitJournalOutputVecGenerate(this);
+
+    for (int i = 0; i <= 2; ++i)
+    {
+        switch (i)
+        {
+            case 0:
+            {
+                superJournalOutputVectorGenerateOutputVector(superJournalVec);
+                superJournalOutputVectorPrepareOutput(superJournalVec);
+                break;
+            }
+            case 1:
+            {
+                natJournalOutputVectorGenerateOutputVector(natJournalVec);
+                natJournalOutputVectorPrepareOutput(natJournalVec);
+                break;
+            }
+            case 2:
+            {
+                sitJournalOutputVectorGenerateOutputVector(sitJournalVec);
+                sitJournalOutputVectorPrepareOutput(sitJournalVec);
+                break;
+            }
+        }
+
+        bool cpltWriteEntry = false;
+        while (!cpltWriteEntry)
+        {
+            char *curBufStartAddr = journalWriterGetIthBufferBlock(this, this->bufferTailIdx);
+            char *curBufEndAddr = curBufStartAddr + 4096;
+            char *outputAddr = curBufStartAddr + this->bufferTailOff;
+
+            JournalOutputState state;
+            switch (i)
+            {
+                case 0:
+                    state = superJournalOutputVectorOutputToBuffer(superJournalVec, &outputAddr, curBufEndAddr);
+                    break;
+                case 1:
+                    state = natJournalOutputVectorOutputToBuffer(natJournalVec, &outputAddr, curBufEndAddr);
+                    break;
+                case 2:
+                    state = sitJournalOutputVectorOutputToBuffer(sitJournalVec, &outputAddr, curBufEndAddr);
+                    break;
+            }
+
+            switch (state)
+            {
+                    // 成功写入 buffer，可能因缓存块空间不足只写了一部分，或已经全部写完。更新当前块内偏移到写入的尾后地址即可。
+                case JOURNAL_OUTPUT_OK:
+                    this->bufferTailOff = outputAddr - curBufStartAddr;
+                    break;
+                    // 当前 buffer block 空间不足，无法再存放日志条目。使用 NOP 进行填充。
+                case JOURNAL_OUTPUT_NO_ENOUGH_BUFFER:
+                    fillBufferWithNop(outputAddr, curBufEndAddr);
+                    this->bufferTailOff = 4096;
+                    break;
+                    // 当前日志项已经写完。
+                case JOURNAL_OUTPUT_REACH_END:
+                    cpltWriteEntry = true;
+                    break;
+            }
+
+            // 如果当前缓存块已经写满，继续使用下一个缓存块。
+            if (4096 == this->bufferTailOff)
+            {
+                this->bufferTailIdx++;
+                this->bufferTailOff = 0;
+            }
+        }
+    }
+
+    journalWriterAppendEndEntry(this);
+
+
+    return 1 + this->bufferTailIdx;
 }
 
+// TODO
 void journalWriterWriteToSsd(JournalWriter *this, uint64_t curTail)
 {
 }
@@ -227,6 +328,102 @@ uint64_t genericCalculateWritableEntryNum(uint64_t bufferSize, uint64_t entrySiz
 
     return res;
 }
+
+void fillBufferWithNop(char *start, char *end)
+{
+    uint16_t length = end - start;
+    if (length < sizeof(MetaJournalEntry)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "not enough memory to fill nop entry.");
+
+    MetaJournalEntry entry = {.len = length, .type = JOURNAL_TYPE_NOP};
+    memcpy(start, &entry, sizeof(MetaJournalEntry));
+}
+
+SuperJournalOutputVector *journalWriterSuperJournalOutputVecGenerate(JournalWriter *this)
+{
+    SuperJournalOutputVector *res = (SuperJournalOutputVector *)malloc(sizeof(SuperJournalOutputVector));
+    if (!res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal writer: error when allocating SuperJournalOutputVector");
+
+    SuperBlockJournalVector *superJournal = journalContainerGetSuperBlockJournal(this->curJournal);
+
+    if (NULL == superJournal)
+    {
+        free(res);
+        res = NULL;
+    }
+    else
+    {
+        superJournalOutputVectorInit(res, superJournal);
+    }
+
+
+    return res;
+}
+
+NatJournalOutputVector *journalWriterNatJournalOutputVecGenerate(JournalWriter *this)
+{
+    NatJournalOutputVector *res = (NatJournalOutputVector *)malloc(sizeof(NatJournalOutputVector));
+    if (!res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal writer: error when allocating NatJournalOutputVector");
+
+    NatJournalVector *natJournal = journalContainerGetNatJournal(this->curJournal);
+
+    if (NULL == natJournal)
+    {
+        free(res);
+        res = NULL;
+    }
+    else
+    {
+        natJournalOutputVectorInit(res, natJournal);
+    }
+
+
+    return res;
+}
+
+SitJournalOutputVector *journalWriterSitJournalOutputVecGenerate(JournalWriter *this)
+{
+    SitJournalOutputVector *res = (SitJournalOutputVector *)malloc(sizeof(SitJournalOutputVector));
+    if (!res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal writer: error when allocating SitJournalOutputVector");
+
+    SitJournalVector *sitJournal = journalContainerGetSitJournal(this->curJournal);
+
+    if (NULL == sitJournal)
+    {
+        free(res);
+        res = NULL;
+    }
+    else
+    {
+        sitJournalOutputVectorInit(res, sitJournal);
+    }
+
+
+    return res;
+}
+
+char *journalWriterGetIthBufferBlock(JournalWriter *this, size_t index)
+{
+    if (index >= kv_size(this->journalBuffer)) kv_resize(BlockBuffer, this->journalBuffer, 1 + index);
+
+
+    return blockBufferGetPtr(&kv_a(BlockBuffer, this->journalBuffer, index));
+}
+
+void journalWriterAppendEndEntry(JournalWriter *this)
+{
+    char *p = journalWriterGetIthBufferBlock(this, this->bufferTailIdx);
+    p += this->bufferTailOff;
+
+    MetaJournalEntry entry = {.len = sizeof(MetaJournalEntry), .type = JOURNAL_TYPE_END};
+    memcpy(p, &entry, sizeof(MetaJournalEntry));
+}
+
+// TODO
+// void journalWriterAsyncWriteCallback(JournalWriter *this, comm_cmd_result res, void *arg)
+// {
+//     async_vecio_synchronizer *syr = static_cast<async_vecio_synchronizer *>(arg);
+//     syr->cplt_once(res);
+// }
 
 
 void superJournalOutputVectorInit(SuperJournalOutputVector *this, SuperBlockJournalVector *superJournal)
