@@ -18,10 +18,10 @@ static struct timespec makeTs(long ms)
 RTFS_TEST(RtfsTimerTest)
 {
     RtfsTimer timer;
-
     TEST_ASSERT_EQUAL(0, rtfsTimerConstructor(&timer, true));
 
-    struct timespec ts = makeTs(100);
+
+    struct timespec ts = makeTs(500);
     rtfsTimerSet(&timer, &ts, 0);
 
     TEST_ASSERT_EQUAL(0, rtfsTimerStart(&timer));
@@ -31,8 +31,9 @@ RTFS_TEST(RtfsTimerTest)
     // 这里才会卡 10 秒。
     RTFS_LOG(RTFS_LOG_INFO, "start waiting for timer expired.");
     TEST_ASSERT_EQUAL(0, rtfsTimerCheckExpire(&timer, &overflow));
-    RTFS_LOG(RTFS_LOG_INFO, "timer has expired, lasting for %d ms", ts.tv_nsec / 1000000);
+    RTFS_LOG(RTFS_LOG_INFO, "timer has expired, lasting for %d ms.", ts.tv_nsec / 1000000);
 
-    rtfsTimerStop(&timer);
+
+    TEST_ASSERT_EQUAL(0, rtfsTimerStop(&timer));
     rtfsTimerDestructor(&timer);
 }

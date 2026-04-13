@@ -1,5 +1,6 @@
 #include "rtfs_timer.h"
-#include "rtfs_log.h"
+
+#include "utils/rtfs_log.h"
 
 #include <stdlib.h>
 #include <errno.h>
@@ -21,10 +22,7 @@ int rtfsTimerConstructor(RtfsTimer *this, bool isBlockCheck)
     this->ownerTask = rtems_task_self();
 
     rtems_status_code sc = rtems_timer_create(rtems_build_name('T', 'M', 'R', '0'), &this->timerId);
-
     if (RTEMS_SUCCESSFUL != sc) return EINVAL;
-
-    this->isCreated = 1;
 
 
     return 0;
@@ -32,18 +30,12 @@ int rtfsTimerConstructor(RtfsTimer *this, bool isBlockCheck)
 
 void rtfsTimerDestructor(RtfsTimer *this)
 {
-    if (!this->isCreated) return;
-
     rtems_timer_delete(this->timerId);
-
-    this->isCreated = 0;
 }
 
-void rtfsTimerSet(RtfsTimer *this, struct timespec *expirationTime, uint8_t isPeriod)
+void rtfsTimerSet(RtfsTimer *this, struct timespec *expirationTime, bool isPeriod)
 {
-    this->expirationTime = *expirationTime;
     this->isPeriod = isPeriod;
-
     this->ticks = timespecToTicks(expirationTime);
 }
 
@@ -105,12 +97,12 @@ int rtfsTimerCheckExpire(RtfsTimer *this, uint64_t *overflowTimes)
 rtems_interval timespecToTicks(struct timespec *ts)
 {
     uint64_t ns = ts->tv_sec * 1000000000ULL + ts->tv_nsec;
+    rtems_interval ticksPerSec = rtems_clock_get_ticks_per_second();
+    uint64_t ticks = (ns * ticksPerSec) / 1000000000ULL;
 
-    rtems_interval ticks_per_sec = rtems_clock_get_ticks_per_second();
+    // 至少 1 tick。
+    if (0 == ticks) ticks = 1;
 
-    uint64_t ticks = (ns * ticks_per_sec) / 1000000000ULL;
-
-    if (ticks == 0) ticks = 1; // 至少 1 tick。
 
     return (rtems_interval)ticks;
 }
