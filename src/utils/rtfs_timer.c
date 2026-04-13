@@ -66,23 +66,20 @@ int rtfsTimerStop(RtfsTimer *this)
 int rtfsTimerCheckExpire(RtfsTimer *this, uint64_t *overflowTimes)
 {
     rtems_event_set out;
+    rtems_status_code sc;
 
     if (this->isBlockCheck)
     {
-        rtems_event_receive(RTEMS_EVENT_1, RTEMS_WAIT, RTEMS_NO_TIMEOUT, &out);
+        sc = rtems_event_receive(RTEMS_EVENT_1, RTEMS_WAIT, RTEMS_NO_TIMEOUT, &out);
+
+        if (RTEMS_SUCCESSFUL != sc) return EINVAL;
     }
     else
     {
-        rtems_status_code sc = rtems_event_receive(RTEMS_EVENT_1, RTEMS_NO_WAIT, 0, &out);
+        sc = rtems_event_receive(RTEMS_EVENT_1, RTEMS_NO_WAIT, 0, &out);
 
-        if (RTEMS_UNSATISFIED == sc)
-        {
-            return EAGAIN;
-        }
-        else
-        {
-            return EINVAL;
-        }
+        if (RTEMS_UNSATISFIED == sc) return EAGAIN;
+        if (RTEMS_SUCCESSFUL != sc) return EINVAL;
     }
 
     if (overflowTimes) *overflowTimes = this->pendingExpirations;
