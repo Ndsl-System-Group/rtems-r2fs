@@ -15,9 +15,11 @@ typedef struct RtfsTimer
     uint8_t isPeriod;
     uint8_t isBlockCheck; // rtfsTimerCheckExpire 时是否阻塞直到到期。
 
-    sem_t expireSem;
     volatile uint64_t pendingExpirations;
     uint8_t isCreated;
+
+    rtems_interval ticks;
+    rtems_id ownerTask;
 } RtfsTimer;
 
 
