@@ -13,7 +13,7 @@ static rtems_interval timespecToTicks(struct timespec *ts);
 static void rtfsTimerService(rtems_id id, void *arg);
 
 
-int rtfsTimerConstructor(RtfsTimer *this, uint8_t isBlockCheck)
+int rtfsTimerConstructor(RtfsTimer *this, bool isBlockCheck)
 {
     memset(this, 0, sizeof(RtfsTimer));
 

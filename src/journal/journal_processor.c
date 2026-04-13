@@ -101,7 +101,7 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
     if (NULL == this->journalPosDmaBuffer) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: not enough DMA buffer.");
 
     // 将日志位置查询任务的定时器设置为阻塞式，到达轮询周期后，日志处理线程被唤醒并进行查询任务
-    if (0 != rtfsTimerConstructor(&this->journalPollTimer, 1)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: init timer failed.");
+    if (0 != rtfsTimerConstructor(&this->journalPollTimer, true)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: init timer failed.");
 
     // 日志位置查询任务，周期 100 us。
     struct timespec journalPollTime = {.tv_sec = 0, .tv_nsec = 100 * 1000};

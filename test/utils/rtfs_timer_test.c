@@ -19,7 +19,7 @@ RTFS_TEST(RtfsTimerTest)
 {
     RtfsTimer timer;
 
-    TEST_ASSERT_EQUAL(0, rtfsTimerConstructor(&timer, 1));
+    TEST_ASSERT_EQUAL(0, rtfsTimerConstructor(&timer, true));
 
     struct timespec ts = makeTs(100);
     rtfsTimerSet(&timer, &ts, 0);

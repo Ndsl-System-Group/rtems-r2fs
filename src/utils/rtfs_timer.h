@@ -13,7 +13,7 @@ typedef struct RtfsTimer
     rtems_id timerId;
     struct timespec expirationTime;
     uint8_t isPeriod;
-    uint8_t isBlockCheck; // rtfsTimerCheckExpire 时是否阻塞直到到期。
+    bool isBlockCheck; // rtfsTimerCheckExpire 时是否阻塞直到到期。
 
     volatile uint64_t pendingExpirations;
     uint8_t isCreated;
@@ -24,7 +24,7 @@ typedef struct RtfsTimer
 
 
 // isBlockCheck：定时器是阻塞还是非阻塞。
-int rtfsTimerConstructor(RtfsTimer *this, uint8_t isBlockCheck);
+int rtfsTimerConstructor(RtfsTimer *this, bool isBlockCheck);
 void rtfsTimerDestructor(RtfsTimer *this);
 void rtfsTimerSet(RtfsTimer *this, struct timespec *expirationTime, uint8_t isPeriod);
 int rtfsTimerStart(RtfsTimer *this);
