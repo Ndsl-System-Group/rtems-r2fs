@@ -50,7 +50,7 @@ void pageEntryDestroy(PageEntry *this)
     rtfsMutexDestroy(&this->pageLock);
     blockBufferDestroy(&this->page);
 
-    if (0 != this->refCount) RTFS_LOG(RTFS_LOG_WARNING, "page cache entry(blkoff = %u): refcount = %u while destructed.", this->blkoff, atomic_load(&this->refCount));
+    if (0 != atomic_load(&this->refCount)) RTFS_LOG(RTFS_LOG_WARNING, "page cache entry(blkoff = %u): refcount = %u while destructed.", this->blkoff, atomic_load(&this->refCount));
 
     if (false != atomic_load(&this->isDirty)) RTFS_LOG(RTFS_LOG_WARNING, "page cache entry(blkoff = %u): still dirty while destructed.", this->blkoff);
 }
@@ -180,7 +180,7 @@ PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
             PageEntry *victim = (PageEntry *)genericCacheManagerReplaceOne(&this->cacheManager);
             if (NULL != victim)
             {
-                assert(0 == victim->refCount && false == atomic_load(&victim->isDirty));
+                assert(0 == atomic_load(&victim->refCount) && false == atomic_load(&victim->isDirty));
 
                 RTFS_LOG(RTFS_LOG_INFO, "replace page cache entry, blkoff = %u", victim->blkoff);
 
@@ -221,7 +221,8 @@ PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
 
     rtfsMutexUnlock(&this->cacheLock);
 
-    PageEntryHandle res = {.cache = this, .entry = entry};
+    PageEntryHandle res;
+    pageEntryHandleInit(&res, this, entry);
 
 
     return res;
@@ -321,8 +322,8 @@ void pageCacheAddRefCount(PageCache *this, PageEntry *entry)
 {
     if (0 == atomic_fetch_add(&entry->refCount, 1))
     {
+        // 当 refCount 变为 0 时，page 必须是干净的。调用者需在释放最后一个引用前完成 dirty 页的处理（如 flush 或 clear）。
         // 先前引用计数为 0，不可能是 dirty 状态。此时 refCount 由 0 增至 1，且加了 cacheLock，assert 访问 entry 是安全的（此时只可能在此处访问）。
-        atomic_store(&entry->isDirty, false);
         assert(false == atomic_load(&entry->isDirty));
 
         // 可能出现 refCount 减到0，但减少 refCount 的线程还没来得及 unpin 的情况（见 subRefcount）。由于 GenericCacheManager 使用的 lruReplacer 允许重复调用 pin，所以不会造成影响。
@@ -340,8 +341,8 @@ void pageCacheSubRefCount(PageCache *this, PageEntry *entry)
 
         if (0 == atomic_load(&entry->refCount))
         {
+            // 同 pageCacheAddRefCount()。
             // 若引用计数减为 0，不可能是 dirty 状态。此时 refCount 由 1 减至 0，且加了 cacheLock，访问 entry 是安全的。
-            atomic_store(&entry->isDirty, false);
             assert(false == atomic_load(&entry->isDirty));
 
             genericCacheManagerUnpin(&this->cacheManager, entry->blkoff);
@@ -363,7 +364,7 @@ void pageCacheDoReplace(PageCache *this)
 
             if (NULL != entry)
             {
-                assert(0 == entry->refCount && false == atomic_load(&entry->isDirty));
+                assert(0 == atomic_load(&entry->refCount) && false == atomic_load(&entry->isDirty));
 
                 --this->curSize;
 
