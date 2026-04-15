@@ -34,7 +34,7 @@ typedef struct PageEntry
     BlockBuffer page;
 
     // 保护 page、contentState、originLpa 的锁。获得 fileOpLock 独占时，不需要再加此锁。
-    pthread_mutex_t pageLock;
+    mutex_t pageLock;
 
     // atomic_uint_least32_t：至少 32 位的最小可用无符号整数类型。位数 ≥ 32，优先占用更少内存。
     // atomic_uint_fast32_t：至少 32 位的最快整数类型。位数 ≥ 32，优先选择 CPU 最快处理的类型。
@@ -59,7 +59,7 @@ void pageEntryInit(PageEntry *this, uint32_t blkoff);
 
 void pageEntryDestroy(PageEntry *this);
 
-pthread_mutex_t *pageEntryGetLock(PageEntry *this);
+mutex_t *pageEntryGetLock(PageEntry *this);
 
 BlockBuffer *pageEntryGetBuffer(PageEntry *this);
 
@@ -106,14 +106,15 @@ typedef struct PageCache
 {
     GenericCacheManager cacheManager;
 
+    // TODO 原代码里面这两个锁均使用自旋锁 spinlock_t，但飞腾的 bsp 没有 POSIX 标准的自旋锁实现，因此使用 mutex 替代。
     // 保护 cacheManager。
-    spinlock_t cacheLock;
+    mutex_t cacheLock;
 
     // 由于 dirtyPages 有范围 remove 需求，所以用类似 C++ 中的 map<blkoff, PageEntryHandle> 维护。
     // kbtree_t(ktdpn) * 类型不能定义在头文件中，因此这里用 void * 代替。
     void *dirtyPages;
 
-    spinlock_t dirtyPagesLock;
+    mutex_t dirtyPagesLock;
 
     size_t expectSize, curSize;
 } PageCache;

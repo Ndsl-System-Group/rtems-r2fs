@@ -64,12 +64,32 @@ RTFS_TEST(PageEntryHandleRefCountTest)
     pageEntryHandleCopy(&h2, &h1);
 
     TEST_ASSERT_EQUAL(2, atomic_load(&h1.entry->refCount));
-
     pageEntryHandleDestroy(&h1);
-    TEST_ASSERT_EQUAL(1, atomic_load(&h2.entry->refCount));
 
+    TEST_ASSERT_EQUAL(1, atomic_load(&h2.entry->refCount));
     pageEntryHandleDestroy(&h2);
 
 
+    pageCacheDestroy(&cache);
+}
+
+RTFS_TEST(PageEntryDirtyMarkTest)
+{
+    PageCache cache;
+    pageCacheInit(&cache, 10);
+
+
+    PageEntryHandle handle = pageCacheGet(&cache, 2);
+
+    TEST_ASSERT_FALSE(atomic_load(&handle.entry->isDirty));
+    pageEntryHandleMakeDirty(&handle);
+    TEST_ASSERT_TRUE(atomic_load(&handle.entry->isDirty));
+
+    // 再次标记，不应重复插入 dirty。
+    pageEntryHandleMakeDirty(&handle);
+    TEST_ASSERT_TRUE(atomic_load(&handle.entry->isDirty));
+
+
+    pageEntryHandleDestroy(&handle);
     pageCacheDestroy(&cache);
 }

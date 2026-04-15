@@ -4,8 +4,8 @@
 #include "journal/journal_container.h"
 
 #include "utils/declare_utils.h"
+#include "utils/rtfs_multithread.h"
 
-#include <pthread.h>
 #include <stdatomic.h>
 
 
@@ -36,7 +36,7 @@ typedef struct JournalProcessEnv
 
     bool exitReq; // 日志处理线程退出请求标志。
 
-    pthread_mutex_t mtx; // 保护提交队列的互斥锁。
+    mutex_t mtx;         // 保护提交队列的互斥锁。
     pthread_cond_t cond; // 用于唤醒日志处理线程的条件变量。
 
     pthread_t processThreadHandle; // 日志处理线程句柄。

@@ -27,51 +27,51 @@ int rtfsMutexDestroy(mutex_t *self)
 }
 
 
-int rtfsSpinInit(spinlock_t *self)
-{
-    return pthread_spin_init(self, PTHREAD_PROCESS_PRIVATE);
-}
+// int rtfsSpinInit(spinlock_t *self)
+// {
+//     return pthread_spin_init(self, PTHREAD_PROCESS_PRIVATE);
+// }
 
-int rtfsSpinLock(spinlock_t *self)
-{
-    return pthread_spin_lock(self);
-}
+// int rtfsSpinLock(spinlock_t *self)
+// {
+//     return pthread_spin_lock(self);
+// }
 
-int rtfsSpinUnlock(spinlock_t *self)
-{
-    return pthread_spin_unlock(self);
-}
+// int rtfsMutexUnlock(spinlock_t *self)
+// {
+//     return pthread_spin_unlock(self);
+// }
 
-int rtfsSpinDestroy(spinlock_t *self)
-{
-    return pthread_spin_destroy(self);
-}
+// int rtfsSpinDestroy(spinlock_t *self)
+// {
+//     return pthread_spin_destroy(self);
+// }
 
 
-int rtfsRwlockInit(rwlock_t *self)
-{
-    return pthread_rwlock_init(self, NULL);
-}
+// int rtfsRwlockInit(rwlock_t *self)
+// {
+//     return pthread_rwlock_init(self, NULL);
+// }
 
-int rtfsRwlockRdlock(rwlock_t *self)
-{
-    return pthread_rwlock_rdlock(self);
-}
+// int rtfsRwlockRdlock(rwlock_t *self)
+// {
+//     return pthread_rwlock_rdlock(self);
+// }
 
-int rtfsRwlockWrlock(rwlock_t *self)
-{
-    return pthread_rwlock_wrlock(self);
-}
+// int rtfsRwlockWrlock(rwlock_t *self)
+// {
+//     return pthread_rwlock_wrlock(self);
+// }
 
-int rtfsRwlockUnlock(rwlock_t *self)
-{
-    return pthread_rwlock_unlock(self);
-}
+// int rtfsRwlockUnlock(rwlock_t *self)
+// {
+//     return pthread_rwlock_unlock(self);
+// }
 
-int rtfsRwlockDestroy(rwlock_t *self)
-{
-    return pthread_rwlock_destroy(self);
-}
+// int rtfsRwlockDestroy(rwlock_t *self)
+// {
+//     return pthread_rwlock_destroy(self);
+// }
 
 
 int rtfsCondInit(cond_t *self)
