@@ -11,7 +11,7 @@ RTFS_TEST(PageEntryInitTest)
 
 
     TEST_ASSERT_EQUAL_UINT32(123, pageEntryGetBlkoff(&entry));
-    TEST_ASSERT_EQUAL_UINT32(INVALID_LPA, pageEntryGetLpaRef(&entry));
+    TEST_ASSERT_EQUAL_UINT32(INVALID_LPA, pageEntryGetLpa(&entry));
     TEST_ASSERT_EQUAL(PAGE_INVALID, pageEntryGetState(&entry));
 
     TEST_ASSERT_NOT_NULL(pageEntryGetLock(&entry));
@@ -47,7 +47,7 @@ RTFS_TEST(PageEntryLpaTest)
 
 
     pageEntrySetLpa(&entry, 999);
-    TEST_ASSERT_EQUAL_UINT32(999, pageEntryGetLpaRef(&entry));
+    TEST_ASSERT_EQUAL_UINT32(999, pageEntryGetLpa(&entry));
 
 
     pageEntryDestroy(&entry);

@@ -80,7 +80,7 @@ uint32_t pageEntryGetBlkoff(const PageEntry *this)
     return this->blkoff;
 }
 
-uint32_t pageEntryGetLpaRef(PageEntry *this)
+uint32_t pageEntryGetLpa(PageEntry *this)
 {
     return this->lpa;
 }
