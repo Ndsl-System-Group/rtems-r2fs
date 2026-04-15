@@ -200,7 +200,9 @@ PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
         // 到此处，说明要么缓存容量充足，要么找不到能置换的缓存项，则直接增加一项。
         if (NULL == entry)
         {
+            RTFS_LOG(RTFS_LOG_DEBUG, "sizeof PageEntry: %d", sizeof(PageEntry));
             PageEntry *newEntry = (PageEntry *)malloc(sizeof(PageEntry));
+            RTFS_LOG(RTFS_LOG_DEBUG, "newEntry by malloc: %p", newEntry);
             assert(NULL != newEntry);
 
             pageEntryInit(newEntry, blkoff);
