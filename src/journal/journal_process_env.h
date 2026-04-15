@@ -70,6 +70,11 @@ typedef struct JournalProcessEnv
 JournalProcessEnv *journalProcessEnvGetInstance();
 
 /**
+ * @brief 初始化日志处理环境。创建日志处理线程，并指定日志区域参数。
+ */
+void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos);
+
+/**
  * @brief 销毁日志处理环境。
  *
  * 释放内部资源：
@@ -88,11 +93,6 @@ uint64_t journalProcessEnvAllocTxId(JournalProcessEnv *this);
  * @brief 提交一个日志容器到日志处理队列。应在 journalProcessEnvAllocTxId 之后调用，调用者负责使用 journalProcessEnvAllocTxId 为 journal 分配事务号。
  */
 void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *journal);
-
-/**
- * @brief 初始化日志处理环境。创建日志处理线程，并指定日志区域参数。
- */
-void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos);
 
 /**
  * @brief 向日志处理线程发送停止命令，并等待其停止后返回。日志处理线程在处理完所有已经提交的日志后将会停止。

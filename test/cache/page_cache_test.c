@@ -4,7 +4,7 @@
 #include "fs/fs.h"
 
 
-RTFS_TEST(PageEntryInitTest)
+RTFS_TEST(PeInitTest)
 {
     PageEntry entry;
     pageEntryInit(&entry, 123);
@@ -24,7 +24,7 @@ RTFS_TEST(PageEntryInitTest)
     pageEntryDestroy(&entry);
 }
 
-RTFS_TEST(PageEntryStateTransitionTest)
+RTFS_TEST(PeStateTest)
 {
     PageEntry entry;
     pageEntryInit(&entry, 1);
@@ -40,7 +40,7 @@ RTFS_TEST(PageEntryStateTransitionTest)
     pageEntryDestroy(&entry);
 }
 
-RTFS_TEST(PageEntryLpaTest)
+RTFS_TEST(PeLpaTest)
 {
     PageEntry entry;
     pageEntryInit(&entry, 10);
@@ -53,7 +53,7 @@ RTFS_TEST(PageEntryLpaTest)
     pageEntryDestroy(&entry);
 }
 
-RTFS_TEST(PageEntryHandleRefCountTest)
+RTFS_TEST(PehRefCountTest)
 {
     PageCache cache;
     pageCacheInit(&cache, 10);
@@ -76,7 +76,7 @@ RTFS_TEST(PageEntryHandleRefCountTest)
     pageCacheDestroy(&cache);
 }
 
-RTFS_TEST(PageEntryDirtyMarkTest)
+RTFS_TEST(PehMarkDirtyTest)
 {
     PageCache cache;
     pageCacheInit(&cache, 10);
@@ -100,7 +100,7 @@ RTFS_TEST(PageEntryDirtyMarkTest)
     pageCacheDestroy(&cache);
 }
 
-RTFS_TEST(PageCacheGetSameEntryTest)
+RTFS_TEST(PcGetSameEntryTest)
 {
     PageCache cache;
     pageCacheInit(&cache, 10);
@@ -120,7 +120,7 @@ RTFS_TEST(PageCacheGetSameEntryTest)
     pageCacheDestroy(&cache);
 }
 
-RTFS_TEST(PageCacheReplaceTest)
+RTFS_TEST(PcReplaceTest)
 {
     PageCache cache;
     pageCacheInit(&cache, 2);
@@ -149,7 +149,7 @@ RTFS_TEST(PageCacheReplaceTest)
     pageCacheDestroy(&cache);
 }
 
-RTFS_TEST(PageCacheClearDirtyPagesTest)
+RTFS_TEST(PcClearDirtyPagesTest)
 {
     PageCache cache;
     pageCacheInit(&cache, 10);
@@ -176,7 +176,7 @@ RTFS_TEST(PageCacheClearDirtyPagesTest)
     pageCacheDestroy(&cache);
 }
 
-RTFS_TEST(PageCacheTruncateTest)
+RTFS_TEST(PcTruncateTest)
 {
     PageCache cache;
     pageCacheInit(&cache, 10);

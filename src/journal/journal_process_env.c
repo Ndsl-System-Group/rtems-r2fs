@@ -40,6 +40,26 @@ JournalProcessEnv *journalProcessEnvGetInstance()
     return &gEnv;
 }
 
+void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos)
+{
+    rtfsMutexInit(&this->mtx);
+    rtfsCondInit(&this->cond);
+
+    this->commitQueueHead = NULL;
+    this->exitReq = false;
+
+    atomic_init(&this->txIdToAlloc, 0);
+
+    JournalProcessThreadArgs *args = malloc(sizeof(*args));
+
+    args->dev = dev;
+    args->start = journalStartLpa;
+    args->end = journalEndLpa;
+    args->fifo = journalFifoPos;
+
+    pthread_create(&this->processThreadHandle, NULL, journalProcessThreadEntry, args);
+}
+
 void journalProcessEnvDestroy(JournalProcessEnv *this)
 {
     if (!this) return;
@@ -53,6 +73,23 @@ void journalProcessEnvDestroy(JournalProcessEnv *this)
     rtfsCondBroadcast(&this->cond);
 
     pthread_join(this->processThreadHandle, NULL);
+
+    // 清理 commit queue。
+    {
+        rtfsMutexLock(&this->mtx);
+
+        JournalCommitNode *el = NULL, *tmp = NULL;
+        DL_FOREACH_SAFE(this->commitQueueHead, el, tmp)
+        {
+            DL_DELETE(this->commitQueueHead, el);
+            free(el);
+        }
+
+        this->commitQueueHead = NULL;
+
+        rtfsMutexUnlock(&this->mtx);
+    }
+
 
     rtfsMutexDestroy(&this->mtx);
     rtfsCondDestroy(&this->cond);
@@ -82,26 +119,6 @@ void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *j
     }
 
     if (needNotify) rtfsCondBroadcast(&this->cond);
-}
-
-void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos)
-{
-    rtfsMutexInit(&this->mtx);
-    rtfsCondInit(&this->cond);
-
-    this->commitQueueHead = NULL;
-    this->exitReq = false;
-
-    atomic_init(&this->txIdToAlloc, 0);
-
-    JournalProcessThreadArgs *args = malloc(sizeof(*args));
-
-    args->dev = dev;
-    args->start = journalStartLpa;
-    args->end = journalEndLpa;
-    args->fifo = journalFifoPos;
-
-    pthread_create(&this->processThreadHandle, NULL, journalProcessThreadEntry, args);
 }
 
 void journalProcessEnvStopProcessThread(JournalProcessEnv *this)
