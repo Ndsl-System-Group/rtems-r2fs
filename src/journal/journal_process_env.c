@@ -45,17 +45,17 @@ void journalProcessEnvDestroy(JournalProcessEnv *this)
     if (!this) return;
 
     {
-        pthread_mutex_lock(&this->mtx);
+        rtfsMutexLock(&this->mtx);
         this->exitReq = true;
-        pthread_mutex_unlock(&this->mtx);
+        rtfsMutexUnlock(&this->mtx);
     }
 
-    pthread_cond_broadcast(&this->cond);
+    rtfsCondBroadcast(&this->cond);
 
     pthread_join(this->processThreadHandle, NULL);
 
-    pthread_mutex_destroy(&this->mtx);
-    pthread_cond_destroy(&this->cond);
+    rtfsMutexDestroy(&this->mtx);
+    rtfsCondDestroy(&this->cond);
 }
 
 // 同时超过 UNIT64_MAX 个事务运行则会分配重复 txId，暂不考虑这种情况。
@@ -69,7 +69,7 @@ void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *j
     bool needNotify = false;
 
     {
-        pthread_mutex_lock(&this->mtx);
+        rtfsMutexLock(&this->mtx);
 
         needNotify = (this->commitQueueHead == NULL);
 
@@ -78,16 +78,16 @@ void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *j
 
         DL_APPEND(this->commitQueueHead, node);
 
-        pthread_mutex_unlock(&this->mtx);
+        rtfsMutexUnlock(&this->mtx);
     }
 
-    if (needNotify) pthread_cond_broadcast(&this->cond);
+    if (needNotify) rtfsCondBroadcast(&this->cond);
 }
 
 void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos)
 {
-    pthread_mutex_init(&this->mtx, NULL);
-    pthread_cond_init(&this->cond, NULL);
+    rtfsMutexInit(&this->mtx);
+    rtfsCondInit(&this->cond);
 
     this->commitQueueHead = NULL;
     this->exitReq = false;
@@ -107,12 +107,12 @@ void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64
 void journalProcessEnvStopProcessThread(JournalProcessEnv *this)
 {
     {
-        pthread_mutex_lock(&this->mtx);
+        rtfsMutexLock(&this->mtx);
         this->exitReq = true;
-        pthread_mutex_unlock(&this->mtx);
+        rtfsMutexUnlock(&this->mtx);
     }
 
-    pthread_cond_broadcast(&this->cond);
+    rtfsCondBroadcast(&this->cond);
 
     pthread_join(this->processThreadHandle, NULL);
 }

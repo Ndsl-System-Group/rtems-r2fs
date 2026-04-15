@@ -158,13 +158,13 @@ void journalProcessorFetchNewJournal(JournalProcessor *this)
 {
     JournalProcessEnv *processEnv = journalProcessEnvGetInstance();
 
-    pthread_mutex_lock(&processEnv->mtx);
+    rtfsMutexLock(&processEnv->mtx);
 
     if (journalProcessorIsWorking(this))
     {
         if (NULL == processEnv->commitQueueHead)
         {
-            pthread_mutex_unlock(&processEnv->mtx);
+            rtfsMutexUnlock(&processEnv->mtx);
 
 
             return;
@@ -178,11 +178,11 @@ void journalProcessorFetchNewJournal(JournalProcessor *this)
             if (processEnv->exitReq)
             {
                 processEnv->exitReq = 0;
-                pthread_mutex_unlock(&processEnv->mtx);
+                rtfsMutexUnlock(&processEnv->mtx);
                 Throw(THREAD_INTERRUPTED_ID);
             }
 
-            pthread_cond_wait(&processEnv->cond, &processEnv->mtx);
+            rtfsCondWait(&processEnv->cond, &processEnv->mtx);
         }
     }
 
@@ -195,7 +195,7 @@ void journalProcessorFetchNewJournal(JournalProcessor *this)
         processEnv->commitQueueHead = NULL;
     }
 
-    pthread_mutex_unlock(&processEnv->mtx);
+    rtfsMutexUnlock(&processEnv->mtx);
 }
 
 void journalProcessorProcessPendingJournal(JournalProcessor *this)

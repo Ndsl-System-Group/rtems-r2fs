@@ -27,6 +27,32 @@ int rtfsMutexDestroy(mutex_t *self)
 }
 
 
+int rtfsCondInit(cond_t *self)
+{
+    return pthread_cond_init(self, NULL);
+}
+
+int rtfsCondWait(cond_t *self, mutex_t *mtx)
+{
+    return pthread_cond_wait(self, mtx);
+}
+
+int rtfsCondSignal(cond_t *self)
+{
+    return pthread_cond_signal(self);
+}
+
+int rtfsCondBroadcast(cond_t *self)
+{
+    return pthread_cond_broadcast(self);
+}
+
+int rtfsCondDestroy(cond_t *self)
+{
+    return pthread_cond_destroy(self);
+}
+
+
 // int rtfsSpinInit(spinlock_t *self)
 // {
 //     return pthread_spin_init(self, PTHREAD_PROCESS_PRIVATE);
@@ -72,29 +98,3 @@ int rtfsMutexDestroy(mutex_t *self)
 // {
 //     return pthread_rwlock_destroy(self);
 // }
-
-
-int rtfsCondInit(cond_t *self)
-{
-    return pthread_cond_init(self, NULL);
-}
-
-int rtfsCondWait(cond_t *self, mutex_t *mtx)
-{
-    return pthread_cond_wait(self, mtx);
-}
-
-int rtfsCondSignal(cond_t *self)
-{
-    return pthread_cond_signal(self);
-}
-
-int rtfsCondBroadcast(cond_t *self)
-{
-    return pthread_cond_broadcast(self);
-}
-
-int rtfsCondDestroy(cond_t *self)
-{
-    return pthread_cond_destroy(self);
-}

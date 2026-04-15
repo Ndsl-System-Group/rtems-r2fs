@@ -24,24 +24,43 @@ DEFINE_UTLIST_NODE(
 /**
  * @brief 日志处理环境。包含日志管理层的日志提交队列，以及保护该队列的锁，用于通知日志处理线程的条件变量。
  *
- * 负责管理：
- * - 日志提交队列。
- * - 日志处理线程。
- * - 线程同步原语。
- * - 事务号分配。
+ * @details 负责管理
+ * 1. 日志提交队列。
+ * 2. 日志处理线程。
+ * 3. 线程同步原语。
+ * 4. 事务号分配。
  */
 typedef struct JournalProcessEnv
 {
-    JournalCommitNode *commitQueueHead; // 日志提交队列头节点。
+    /**
+     * @brief 日志提交队列头节点。
+     */
+    JournalCommitNode *commitQueueHead;
 
-    bool exitReq; // 日志处理线程退出请求标志。
+    /**
+     * @brief 日志处理线程退出请求标志。
+     */
+    bool exitReq;
 
-    mutex_t mtx;         // 保护提交队列的互斥锁。
-    pthread_cond_t cond; // 用于唤醒日志处理线程的条件变量。
+    /**
+     * @brief 保护提交队列的互斥锁。
+     */
+    mutex_t mtx;
 
-    pthread_t processThreadHandle; // 日志处理线程句柄。
+    /**
+     * @brief 用于唤醒日志处理线程的条件变量。
+     */
+    cond_t cond;
 
-    atomic_uint_fast64_t txIdToAlloc; // 下一个待分配的事务号。
+    /**
+     * @brief 日志处理线程句柄。
+     */
+    pthread_t processThreadHandle;
+
+    /**
+     * @brief 下一个待分配的事务号。
+     */
+    atomic_uint_fast64_t txIdToAlloc;
 } JournalProcessEnv;
 
 
