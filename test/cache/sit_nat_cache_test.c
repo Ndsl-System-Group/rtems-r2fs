@@ -15,8 +15,7 @@ RTFS_TEST(SnceInitDestroyTest)
     sitNatCacheEntryDestroy(&entry);
 }
 
-
-RTFS_TEST(SnceHInitDestroy)
+RTFS_TEST(SnceHInitDestroyTest)
 {
     SitNatCache cache;
     SitNatCacheEntry entry;
@@ -39,7 +38,7 @@ RTFS_TEST(SnceHInitDestroy)
     sitNatCacheDestroy(&cache);
 }
 
-RTFS_TEST(SnceHCopy)
+RTFS_TEST(SnceHCopyTest)
 {
     SitNatCache cache;
     SitNatCacheEntry entry;
@@ -63,7 +62,7 @@ RTFS_TEST(SnceHCopy)
     sitNatCacheDestroy(&cache);
 }
 
-RTFS_TEST(SncGet)
+RTFS_TEST(SncGetTest)
 {
     SitNatCache cache;
 
@@ -81,7 +80,7 @@ RTFS_TEST(SncGet)
     sitNatCacheDestroy(&cache);
 }
 
-RTFS_TEST(SncGetSameLpa)
+RTFS_TEST(SncGetSameLpaTest)
 {
     SitNatCache cache;
 
@@ -99,22 +98,24 @@ RTFS_TEST(SncGetSameLpa)
     sitNatCacheDestroy(&cache);
 }
 
-// TODO 该部分逻辑等 replacer 的 pin 功能加上以后一起测试。
-// RTFS_TEST(SncReplace)
-// {
-//     SitNatCache cache;
+RTFS_TEST(SncReplaceTest)
+{
+    SitNatCache cache;
 
-//     sitNatCacheInit(&cache, NULL, 2);
+    sitNatCacheInit(&cache, NULL, 2);
 
-//     SitNatCacheEntryHandle h1 = sitNatCacheGet(&cache, 1);
-//     SitNatCacheEntryHandle h2 = sitNatCacheGet(&cache, 2);
-//     SitNatCacheEntryHandle h3 = sitNatCacheGet(&cache, 3);
 
-//     TEST_ASSERT(cache.curSize <= cache.expectSize);
+    SitNatCacheEntryHandle h1 = sitNatCacheGet(&cache, 1);
+    SitNatCacheEntryHandle h2 = sitNatCacheGet(&cache, 2);
+    // TODO 缓存不命中会从 SSD 中读取，目前 sitNatCacheReadLpa() 接口留空，因此程序运行到这里会卡死，目前无法正常测试。
+    // SitNatCacheEntryHandle h3 = sitNatCacheGet(&cache, 3);
 
-//     sitNatCacheEntryHandleDestroy(&h1);
-//     sitNatCacheEntryHandleDestroy(&h2);
-//     sitNatCacheEntryHandleDestroy(&h3);
+    TEST_ASSERT(cache.curSize <= cache.expectSize);
 
-//     sitNatCacheDestroy(&cache);
-// }
+    // sitNatCacheEntryHandleDestroy(&h3);
+    sitNatCacheEntryHandleDestroy(&h2);
+    sitNatCacheEntryHandleDestroy(&h1);
+
+
+    sitNatCacheDestroy(&cache);
+}
