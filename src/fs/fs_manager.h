@@ -38,3 +38,4 @@ SitNatCache *fileSystemManagerGetNatCache(file_system_manager *this);
 SrmapUtils *fileSystemManagerGetSrmapUtils(file_system_manager *this);
 fd_array *fileSystemManagerGetFdArray(file_system_manager *this);
 JournalContainer *fileSystemManagerGetCurJournal(file_system_manager *this);
+comm_dev *fileSystemManagerGetDevice(file_system_manager *this);

@@ -221,3 +221,4 @@ SitNatCache *fileSystemManagerGetNatCache(file_system_manager *this) { return th
 SrmapUtils *fileSystemManagerGetSrmapUtils(file_system_manager *this) { return this ? this->srmap_utils_ : NULL; };
 fd_array *fileSystemManagerGetFdArray(file_system_manager *this) { return this ? this->fd_arr_ : NULL; };
 JournalContainer *fileSystemManagerGetCurJournal(file_system_manager *this) { return this ? this->cur_journal_ : NULL; };
+comm_dev *fileSystemManagerGetDevice(file_system_manager *this) { return this ? this->dev_ : NULL; }

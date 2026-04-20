@@ -245,8 +245,7 @@ void nodeBlockCacheHelperInit(NodeBlockCacheHelper *this, struct file_system_man
     this->fsManager = fsManager;
     this->natCache = fileSystemManagerGetNatCache(fsManager);
     this->nodeBlockCache = fileSystemManagerGetNodeCache(fsManager);
-    // TODO
-    // dev = fs_manager->get_device();
+    this->dev = fileSystemManagerGetDevice(fsManager);
 }
 
 void nodeBlockCacheHelperDestroy(NodeBlockCacheHelper *this)

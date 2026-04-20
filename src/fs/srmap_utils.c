@@ -92,8 +92,7 @@ void srmapUtilsWriteDirtySrmapSync(SrmapUtils *this)
 
         BlockBuffer *blk = &kh_value(this->srmapCache, ck);
 
-        // TODO
-        // blockBufferWriteToLpaAsync(blk, this->fs_manager->get_device(), lpa, asyncVecioSynchronizerGenericCallback, &syn);
+        blockBufferWriteToLpaAsync(blk, fileSystemManagerGetDevice(this->fsManager), lpa, asyncVecioSynchronizerGenericCallback, &syn);
     }
 
     asyncVecioSynchronizerDestroy(&syn);
