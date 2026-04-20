@@ -4,6 +4,8 @@
 #include "klib/kbtree.h"
 #include "klib/khash.h"
 #include "utils/rtfs_exception.h"
+#include "utils/io_utils.h"
+#include "communication/comm_api.h"
 
 
 struct SuperJournalOutputVector;
@@ -33,7 +35,7 @@ static char *journalWriterGetIthBufferBlock(JournalWriter *this, size_t index);
 
 static void journalWriterAppendEndEntry(JournalWriter *this);
 
-// static void journalWriterAsyncWriteCallback(JournalWriter *this, comm_cmd_result res, void *arg);
+static void journalWriterAsyncWriteCallback(comm_cmd_result res, void *arg);
 
 
 typedef enum JournalOutputState
@@ -272,9 +274,26 @@ uint64_t journalWriterCollectPendingJournalToWriteBuffer(JournalWriter *this)
     return 1 + this->bufferTailIdx;
 }
 
-// TODO
 void journalWriterWriteToSsd(JournalWriter *this, uint64_t curTail)
 {
+    uint64_t ioNum = 1 + this->bufferTailIdx;
+    AsyncVecioSynchronizer syr;
+    asyncVecioSynchronizerInit(&syr, ioNum);
+
+    for (size_t i = 0; i <= this->bufferTailIdx; ++i, ++curTail)
+    {
+        if (curTail == this->endLpa) curTail = this->startLpa;
+
+        // TODO Print Debug
+
+        int res = comm_submit_async_rw_request(this->dev, blockBufferGetPtr(&kv_a(BlockBuffer, this->journalBuffer, i)), LPA_TO_LBA(curTail), LBA_PER_LPA, journalWriterAsyncWriteCallback, &syr, COMM_IO_WRITE);
+        if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal writer: submit async write failed.");
+    }
+
+    comm_cmd_result result = asyncVecioSynchronizerWaitCplt(&syr);
+    if (COMM_CMD_SUCCESS != result) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal writer: error occurred in async write process.");
+
+    asyncVecioSynchronizerDestroy(&syr);
 }
 
 
@@ -418,12 +437,10 @@ void journalWriterAppendEndEntry(JournalWriter *this)
     memcpy(p, &entry, sizeof(MetaJournalEntry));
 }
 
-// TODO
-// void journalWriterAsyncWriteCallback(JournalWriter *this, comm_cmd_result res, void *arg)
-// {
-//     async_vecio_synchronizer *syr = static_cast<async_vecio_synchronizer *>(arg);
-//     syr->cplt_once(res);
-// }
+void journalWriterAsyncWriteCallback(comm_cmd_result res, void *arg)
+{
+    asyncVecioSynchronizerGenericCallback(res, arg);
+}
 
 
 void superJournalOutputVectorInit(SuperJournalOutputVector *this, SuperBlockJournalVector *superJournal)
