@@ -4,6 +4,7 @@
 #include "utils/rtfs_log.h"
 #include "utils/io_utils.h"
 #include "utils/rtfs_exception.h"
+#include "communication/comm_api.h"
 
 #include <assert.h>
 
@@ -246,7 +247,6 @@ void sitNatCacheDoReplace(SitNatCache *this)
 
 void sitNatCacheReadLpa(SitNatCache *this, SitNatCacheEntry *entry)
 {
-    // TODO
-    // int res = comm_submit_sync_rw_request(dev, entry->cache.get_ptr(), LPA_TO_LBA(entry->lpa_), LBA_PER_LPA, COMM_IO_READ);
-    // if (res != 0) throw io_error("SIT/NAT cache entry: read lpa failed.");
+    int res = comm_submit_sync_rw_request(this->dev, blockBufferGetPtr(&entry->cache), LPA_TO_LBA(entry->lpa), LBA_PER_LPA, COMM_IO_READ);
+    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "SIT/NAT cache entry: read lpa failed.");
 }

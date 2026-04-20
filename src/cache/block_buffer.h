@@ -2,6 +2,7 @@
 #define _BLOCK_BUFFER_H_
 
 #include "utils/types.h"
+#include "communication/comm_api.h"
 
 
 struct comm_dev;
@@ -43,22 +44,22 @@ char *blockBufferGetPtr(BlockBuffer *this);
 /**
  * @brief 将外部缓冲区中的 4KB 数据拷贝到 blockBuffer 中。
  */
-void blockBufferCopyContentFromBuf(BlockBuffer *this, const char *src);
+void blockBufferCopyContentFromBuf(BlockBuffer *this, const char *buf);
 
 /**
  * @brief 从块设备读取指定 LPA 的数据到 blockBuffer（同步）。
  */
-int blockBufferReadFromLpa(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa);
+void blockBufferReadFromLpa(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa);
 
 /**
  * @brief 将 blockBuffer 中的数据写入指定 LPA（同步）。
  */
-int blockBufferWriteToLpaSync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa);
+void blockBufferWriteToLpaSync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa);
 
 /**
  * @brief 将 blockBuffer 中的数据写入指定 LPA（异步）。
  */
-// int blockBufferWriteToLpaAsync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa, comm_async_cb_func cbFunc, void *cbArg);
+void blockBufferWriteToLpaAsync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa, comm_async_cb_func cbFunc, void *cbArg);
 
 
 #endif
