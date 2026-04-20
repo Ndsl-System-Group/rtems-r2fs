@@ -3,6 +3,7 @@
 #include "utils/rtfs_log.h"
 #include "utils/rtfs_exception.h"
 #include "uthash/utlist.h"
+#include "communication/memory.h"
 
 #include <pthread.h>
 
@@ -96,8 +97,7 @@ static void journalProcessorProcessTxRecord(JournalProcessor *this);
 
 void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos)
 {
-    // TODO
-    // this->journalPosDmaBuffer = static_cast<uint64_t *>(comm_alloc_dma_mem(16));
+    this->journalPosDmaBuffer = (uint64_t *)commAllocDmaMem(16);
     if (NULL == this->journalPosDmaBuffer) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: not enough DMA buffer.");
 
     // 将日志位置查询任务的定时器设置为阻塞式，到达轮询周期后，日志处理线程被唤醒并进行查询任务
@@ -122,8 +122,7 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
 
 void journalProcessorDestroy(JournalProcessor *this)
 {
-    // TODO
-    // comm_free_dma_mem(journal_pos_dma_buffer);
+    commFreeDmaMem(this->journalPosDmaBuffer);
     rtfsTimerStop(&this->journalPollTimer);
     rtfsTimerDestructor(&this->journalPollTimer);
 }
