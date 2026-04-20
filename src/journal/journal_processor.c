@@ -4,6 +4,7 @@
 #include "utils/rtfs_exception.h"
 #include "uthash/utlist.h"
 #include "communication/memory.h"
+#include "communication/comm_api.h"
 
 #include <pthread.h>
 
@@ -247,9 +248,8 @@ bool journalProcessorWriteJournalToSsd(JournalProcessor *this)
     {
         journalWriterWriteToSsd(&this->journalWriter, this->tailLpa);
 
-        // TODO
-        // int res = comm_submit_sync_update_metajournal_tail_request(dev, tail_lpa, cur_journal_block_num);
-        // if (res != 0) throw io_error("journal processor: update SSD journal tail failed.");
+        int res = comm_submit_sync_update_metajournal_tail_request(this->dev, this->tailLpa, this->curJournalBlockNum);
+        if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: update SSD journal tail failed.");
 
         this->curJournalStartLpa = this->tailLpa;
         this->tailLpa += this->curJournalBlockNum;
@@ -323,8 +323,7 @@ void journalProcessorWaitPollTimer(JournalProcessor *this)
 
 bool journalProcessorSyncWithSsdJournalPos(JournalProcessor *this)
 {
-    // TODO
-    // if (comm_submit_sync_get_metajournal_head_request(dev, journal_pos_dma_buffer) != 0) throw io_error("journal processor: submit get journal pos failed.");
+    if (0 != comm_submit_sync_get_metajournal_head_request(this->dev, this->journalPosDmaBuffer)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: submit get journal pos failed.");
 
     uint64_t newHeadLpa = this->journalPosDmaBuffer[0];
     uint64_t newAvailLpa = newHeadLpa >= this->headLpa ? newHeadLpa - this->headLpa : newHeadLpa + this->endLpa - this->startLpa - this->headLpa;
