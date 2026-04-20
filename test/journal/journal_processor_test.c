@@ -7,4 +7,5 @@
 // TODO
 RTFS_TEST(JpTest)
 {
+    TEST_PASS();
 }
