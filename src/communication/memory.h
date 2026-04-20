@@ -5,9 +5,9 @@
 #include "utils/rtfs_log.h"
 
 
-__attribute__((unused)) void *commAllocDmaMem(size_t size);
+__attribute__((unused)) void *comm_alloc_dma_mem(size_t size);
 
-__attribute__((unused)) void commFreeDmaMem(void *buf);
+__attribute__((unused)) void comm_free_dma_mem(void *buf);
 
 
 #endif
