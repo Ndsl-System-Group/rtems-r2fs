@@ -5,7 +5,7 @@
 #include <memory.h>
 
 
-RTFS_TEST(BlockBufferInitTest)
+RTFS_TEST(BbInitTest)
 {
     BlockBuffer buf;
     blockBufferInit(&buf);
@@ -17,7 +17,7 @@ RTFS_TEST(BlockBufferInitTest)
     blockBufferDestroy(&buf);
 }
 
-RTFS_TEST(BlockBufferGetPtrTest)
+RTFS_TEST(BbGetPtrTest)
 {
     BlockBuffer buf;
     blockBufferInit(&buf);
@@ -32,7 +32,7 @@ RTFS_TEST(BlockBufferGetPtrTest)
     blockBufferDestroy(&buf);
 }
 
-RTFS_TEST(BlockBufferCopyContentFromBufTest)
+RTFS_TEST(BbCopyContentFromBufTest)
 {
     BlockBuffer buf;
     char src[BLOCK_BUFFER_SIZE];
@@ -49,7 +49,7 @@ RTFS_TEST(BlockBufferCopyContentFromBufTest)
     blockBufferDestroy(&buf);
 }
 
-RTFS_TEST(BlockBufferCopyTest)
+RTFS_TEST(BbCopyTest)
 {
     BlockBuffer src;
     BlockBuffer dst;
@@ -70,7 +70,7 @@ RTFS_TEST(BlockBufferCopyTest)
     blockBufferDestroy(&src);
 }
 
-RTFS_TEST(BlockBufferPatternTest)
+RTFS_TEST(BbPatternTest)
 {
     BlockBuffer buf;
     uint32_t *p;
@@ -90,7 +90,7 @@ RTFS_TEST(BlockBufferPatternTest)
 }
 
 // TODO 后续完成 communication 模块后测试 comm_dev 相关接口。
-RTFS_TEST(BlockBufferDevTest)
+RTFS_TEST(BbDevTest)
 {
     TEST_PASS();
 }
