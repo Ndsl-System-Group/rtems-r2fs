@@ -24,8 +24,8 @@ typedef enum comm_io_direction
 } comm_io_direction;
 
 
-int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lba_count, comm_io_direction dir);
-int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lba_count, comm_async_cb_func cb_func, void *cb_arg, comm_io_direction dir);
+int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_io_direction dir);
+int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_async_cb_func cb_func, void *cb_arg, comm_io_direction dir);
 
 // int comm_submit_sync_migrate_request(struct comm_dev *dev, migrate_task *task);
 // int comm_submit_async_migrate_request(struct comm_dev *dev, migrate_task *task, comm_async_cb_func cb_func, void *cb_arg);

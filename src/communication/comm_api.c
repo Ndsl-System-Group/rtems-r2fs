@@ -26,87 +26,61 @@ static void comm_sync_rw_done(rtems_blkdev_request *req, rtems_status_code statu
 
 
 // TODO
-int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lba_count, comm_io_direction dir)
+int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_io_direction dir)
 {
-    int ret = 0;
-    rtems_status_code sc;
-    rtems_blkdev_request *req = NULL;
+    if (NULL == dev || NULL == buffer) return EINVAL;
+    if (NULL == dev->diskDevice) return ENODEV;
+    if (0 == dev->blockSize || 0 == dev->blockCount) return EINVAL;
+    if (COMM_IO_READ != dir && COMM_IO_WRITE != dir) return EINVAL;
+    if (0 == lbaCount) return 0;
+
+    uint64_t endLba = lba + (uint64_t)lbaCount;
+    if (endLba < lba) return EOVERFLOW; // 加法溢出。
+
+    if (lba >= dev->blockCount || endLba > dev->blockCount) return EINVAL;
+
+    uint64_t totalBytes64 = (uint64_t)lbaCount * (uint64_t)dev->blockSize;
+    if (0 != dev->blockSize && totalBytes64 / (uint64_t)dev->blockSize != (uint64_t)lbaCount) return EOVERFLOW;
+
+    if (totalBytes64 > UINT32_MAX) return EOVERFLOW;
+
+    size_t reqSize = sizeof(rtems_blkdev_request) + sizeof(rtems_blkdev_sg_buffer);
+
+    rtems_blkdev_request *req = (rtems_blkdev_request *)malloc(reqSize);
+    if (NULL == req) return ENOMEM;
+    memset(req, 0, reqSize);
+
     comm_sync_rw_ctx ctx;
-    uint64_t total_bytes64;
-    uint64_t end_lba;
-    size_t req_size;
-
-    if (dev == NULL || buffer == NULL)
-        return EINVAL;
-
-    if (dev->diskDevice == NULL)
-        return ENODEV;
-
-    if (dev->blockSize == 0 || dev->blockCount == 0)
-        return EINVAL;
-
-    if (dir != COMM_IO_READ && dir != COMM_IO_WRITE)
-        return EINVAL;
-
-    if (lba_count == 0)
-        return 0;
-
-    end_lba = lba + (uint64_t)lba_count;
-    if (end_lba < lba) /* 加法溢出 */
-        return EOVERFLOW;
-
-    if (lba >= dev->blockCount || end_lba > dev->blockCount)
-        return EINVAL;
-
-    total_bytes64 = (uint64_t)lba_count * (uint64_t)dev->blockSize;
-    if (dev->blockSize != 0 && total_bytes64 / (uint64_t)dev->blockSize != (uint64_t)lba_count)
-        return EOVERFLOW;
-
-    if (total_bytes64 > UINT32_MAX)
-        return EOVERFLOW;
-
-    req_size = sizeof(*req) + sizeof(rtems_blkdev_sg_buffer);
-    req = (rtems_blkdev_request *)malloc(req_size);
-    if (req == NULL)
-        return ENOMEM;
-
-    memset(req, 0, req_size);
-
-    sc = rtems_semaphore_create(
-        rtems_build_name('C', 'R', 'W', '0'),
-        0,
-        RTEMS_SIMPLE_BINARY_SEMAPHORE,
-        0,
-        &ctx.sem);
-    if (sc != RTEMS_SUCCESSFUL)
+    rtems_status_code sc = rtems_semaphore_create(rtems_build_name('C', 'R', 'W', '0'), 0, RTEMS_SIMPLE_BINARY_SEMAPHORE, 0, &ctx.sem);
+    if (RTEMS_SUCCESSFUL != sc)
     {
         free(req);
+
+
         return EIO;
     }
 
     ctx.status = RTEMS_IO_ERROR;
 
-    req->req = (dir == COMM_IO_READ) ? RTEMS_BLKDEV_REQ_READ : RTEMS_BLKDEV_REQ_WRITE;
+    req->req = (COMM_IO_READ == dir) ? RTEMS_BLKDEV_REQ_READ : RTEMS_BLKDEV_REQ_WRITE;
     req->done = comm_sync_rw_done;
     req->done_arg = &ctx;
     req->io_task = rtems_task_self();
     req->bufnum = 1;
 
     req->bufs[0].block = (rtems_blkdev_bnum)lba;
-    req->bufs[0].length = (uint32_t)total_bytes64;
+    req->bufs[0].length = (uint32_t)totalBytes64;
     req->bufs[0].buffer = buffer;
     req->bufs[0].user = NULL;
 
-    /*
-     * 向 RTEMS 块设备提交请求。
-     * 这里返回值主要看“是否成功把请求送出去”，
-     * 真正的传输结果在 done callback 里拿。
-     */
-    ret = rtems_blkdev_ioctl(dev->diskDevice, RTEMS_BLKIO_REQUEST, req);
-    if (ret != 0)
+    // 向 RTEMS 块设备提交请求。这里返回值主要看“是否成功把请求送出去”，真正的传输结果在 done callback 里拿。
+    int res = rtems_blkdev_ioctl(dev->diskDevice, RTEMS_BLKIO_REQUEST, req);
+    if (0 != res)
     {
         rtems_semaphore_delete(ctx.sem);
         free(req);
+
+
         return EIO;
     }
 
@@ -114,12 +88,13 @@ int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba
     rtems_semaphore_delete(ctx.sem);
     free(req);
 
-    if (sc != RTEMS_SUCCESSFUL) return EIO;
+    if (RTEMS_SUCCESSFUL != sc) return EIO;
 
-    return (ctx.status == RTEMS_SUCCESSFUL) ? 0 : EIO;
+
+    return (RTEMS_SUCCESSFUL == ctx.status) ? 0 : EIO;
 }
 
-int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lba_count, comm_async_cb_func cb_func, void *cb_arg, comm_io_direction dir)
+int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_async_cb_func cb_func, void *cb_arg, comm_io_direction dir)
 {
 }
 
