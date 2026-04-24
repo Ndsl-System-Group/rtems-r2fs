@@ -36,7 +36,7 @@ int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba
     RTFS_LOG(RTFS_LOG_DEBUG, "comm_submit_sync_rw_request res: %d", res);
     if (0 != res) return res;
 
-    rtems_semaphore_obtain(syncCtx.sem, RTEMS_WAIT, RTEMS_NO_TIMEOUT);
+    rtems_semaphore_obtain(syncCtx.sem, RTEMS_WAIT, RTEMS_MILLISECONDS_TO_TICKS(5000));
     rtems_semaphore_delete(syncCtx.sem);
 
 
@@ -273,6 +273,9 @@ void comm_sync_rw_done(rtems_blkdev_request *req, rtems_status_code status)
         ctx->status = status;
         rtems_semaphore_release(ctx->sem);
     }
+
+    // request 已完成，释放申请的内存。
+    free(req);
 }
 
 void comm_async_rw_done(rtems_blkdev_request *req, rtems_status_code status)
@@ -293,6 +296,9 @@ void comm_async_rw_done(rtems_blkdev_request *req, rtems_status_code status)
 
         free(ctx); // 回调后释放资源。
     }
+
+    // request 已完成，释放申请的内存。
+    free(req);
 }
 
 int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_io_direction dir, comm_sync_rw_ctx *syncCtx, comm_async_ctx **asyncCtx)
