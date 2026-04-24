@@ -44,7 +44,8 @@ int comm_submit_async_update_metajournal_tail_request(struct comm_dev *dev, uint
 int comm_submit_sync_get_metajournal_head_request(struct comm_dev *dev, uint64_t *headLpa);
 int comm_submit_async_get_metajournal_head_request(struct comm_dev *dev, uint64_t *headLpa, comm_async_cb_func cbFunc, void *cbArg);
 
-// 文件系统模块初始化，此接口为同步接口。
+// 文件系统模块初始化，此接口为同步接口，作为文件系统模块运行态启动入口。
+// commDevInit 需用户自己调用此函数前完成对象初始化。
 int comm_submit_fs_module_init_request(struct comm_dev *dev);
 
 // 文件系统 SSD DB 区域初始化，同步接口。

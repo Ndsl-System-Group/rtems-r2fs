@@ -182,29 +182,85 @@ int comm_submit_async_get_metajournal_head_request(struct comm_dev *dev, uint64_
     return res;
 }
 
-// TODO
-int comm_submit_fs_module_init_request(struct comm_dev *dev)
+int comm_submit_fs_module_init_request(comm_dev *dev)
 {
+    if (NULL == dev) return EINVAL;
+    if (NULL == dev->diskDevice) return ENODEV;
+    if (0 == dev->blockSize) return EINVAL;
+    if (0 == dev->blockCount) return EINVAL;
+
+    if (dev->metaJournalStartLpa >= dev->metaJournalEndLpa) return EINVAL;
+    if (dev->metaJournalEndLpa > dev->blockCount) return EINVAL;
+
+
+    return 0;
 }
 
-int comm_submit_fs_db_init_request(struct comm_dev *dev)
+int comm_submit_fs_db_init_request(comm_dev *dev)
 {
+    if (NULL == dev) return EINVAL;
+    if (NULL == dev->diskDevice) return ENODEV;
+
+    // 初始化元数据数据库。
+    // 简化版实现为重置 meta journal 状态。
+    int res = rtfsMutexLock(&dev->metaJournalMutex);
+    if (0 != res) return res;
+
+    dev->metaJournalHeadLpa = dev->metaJournalStartLpa;
+    dev->metaJournalTailLpa = dev->metaJournalStartLpa;
+
+    res = rtfsMutexUnlock(&dev->metaJournalMutex);
+    if (0 != res) return res;
+
+    return 0;
 }
 
-int comm_submit_fs_recover_from_db_request(struct comm_dev *dev)
+int comm_submit_fs_recover_from_db_request(comm_dev *dev)
 {
+    if (NULL == dev) return EINVAL;
+    if (NULL == dev->diskDevice) return ENODEV;
+
+    // 简化版暂无真实数据库恢复逻辑。
+    // 后续可在此处增加 journal 扫描与回放流程。
+    return 0;
 }
 
-int comm_submit_clear_metajournal_request(struct comm_dev *dev)
+int comm_submit_clear_metajournal_request(comm_dev *dev)
 {
+    if (NULL == dev) return EINVAL;
+    if (NULL == dev->diskDevice) return ENODEV;
+
+    // 清空 meta journal：head/tail 回到起始位置。
+    int res = rtfsMutexLock(&dev->metaJournalMutex);
+    if (0 != res) return res;
+
+    dev->metaJournalHeadLpa = dev->metaJournalStartLpa;
+    dev->metaJournalTailLpa = dev->metaJournalStartLpa;
+
+    res = rtfsMutexUnlock(&dev->metaJournalMutex);
+    if (0 != res) return res;
+
+    return 0;
 }
 
-int comm_submit_start_apply_journal_request(struct comm_dev *dev)
+int comm_submit_start_apply_journal_request(comm_dev *dev)
 {
+    if (NULL == dev) return EINVAL;
+    if (NULL == dev->diskDevice) return ENODEV;
+
+    // 简化版暂无后台 apply journal 线程。
+    // 保留接口供后续扩展。
+    return 0;
 }
 
-int comm_submit_stop_apply_journal_request(struct comm_dev *dev)
+int comm_submit_stop_apply_journal_request(comm_dev *dev)
 {
+    if (NULL == dev) return EINVAL;
+    if (NULL == dev->diskDevice) return ENODEV;
+
+    // 简化版暂无后台 apply journal 线程。
+    // 保留接口供后续扩展。
+    return 0;
 }
 
 
