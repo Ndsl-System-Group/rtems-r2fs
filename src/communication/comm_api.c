@@ -43,13 +43,13 @@ int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba
     return (RTEMS_SUCCESSFUL == syncCtx.status) ? 0 : EIO;
 }
 
-int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_async_cb_func cb_func, void *cb_arg, comm_io_direction dir)
+int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_async_cb_func cbFunc, void *cbArg, comm_io_direction dir)
 {
     comm_async_ctx *ctx = (comm_async_ctx *)malloc(sizeof(comm_async_ctx));
     if (NULL == ctx) return ENOMEM;
 
-    ctx->user_cb = cb_func;
-    ctx->user_arg = cb_arg;
+    ctx->user_cb = cbFunc;
+    ctx->user_arg = cbArg;
 
     int res = comm_submit_rw_request_common(dev, buffer, lba, lbaCount, dir, NULL, &ctx);
     RTFS_LOG(RTFS_LOG_DEBUG, "comm_submit_async_rw_request res: %d", res);
@@ -69,7 +69,7 @@ int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lb
 // {
 // }
 
-// int comm_submit_async_migrate_request(struct comm_dev *dev, migrate_task *task, comm_async_cb_func cb_func, void *cb_arg)
+// int comm_submit_async_migrate_request(struct comm_dev *dev, migrate_task *task, comm_async_cb_func cbFunc, void *cbArg)
 // {
 // }
 
@@ -77,7 +77,7 @@ int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lb
 // {
 // }
 
-// int comm_submit_async_path_lookup_request(struct comm_dev *dev, path_lookup_task *task, size_t task_length, path_lookup_result *res, comm_async_cb_func cb_func, void *cb_arg)
+// int comm_submit_async_path_lookup_request(struct comm_dev *dev, path_lookup_task *task, size_t task_length, path_lookup_result *res, comm_async_cb_func cbFunc, void *cbArg)
 // {
 // }
 
@@ -85,27 +85,104 @@ int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lb
 // {
 // }
 
-// int comm_submit_async_filemapping_search_request(struct comm_dev *dev, filemapping_search_task *task, void *res, uint32_t res_len, comm_async_cb_func cb_func, void *cb_arg)
+// int comm_submit_async_filemapping_search_request(struct comm_dev *dev, filemapping_search_task *task, void *res, uint32_t res_len, comm_async_cb_func cbFunc, void *cbArg)
 // {
 // }
 
+int comm_submit_sync_update_metajournal_tail_request(struct comm_dev *dev, uint64_t originLpa, uint32_t writeBlockNum)
+{
+    if (NULL == dev) return EINVAL;
+    if (NULL == dev->diskDevice) return ENODEV;
+    if (0 == writeBlockNum) return 0;
+    if (dev->metaJournalEndLpa <= dev->metaJournalStartLpa) return EINVAL;
+
+    int res = rtfsMutexLock(&dev->metaJournalMutex);
+    if (0 != res) return res;
+
+    int result = 0;
+
+    // 这里要求 originLpa 必须等于当前 tail。也就是说，调用者提交的这批 journal 必须紧跟着当前尾部写入。
+    // 先检查 originLpa 是否落在 journal 合法范围内。
+    if (originLpa < dev->metaJournalStartLpa || originLpa >= dev->metaJournalEndLpa)
+    {
+        result = EINVAL;
+        goto out;
+    }
+
+    // 再检查它是否等于当前 tail。
+    if (originLpa != dev->metaJournalTailLpa)
+    {
+        result = EINVAL;
+        goto out;
+    }
+
+    // journal 区间长度，按环形缓冲区处理。
+    uint64_t journalSize = dev->metaJournalEndLpa - dev->metaJournalStartLpa;
+    if (0 == journalSize)
+    {
+        result = EINVAL;
+        goto out;
+    }
+
+    // 计算 tail 前移后的新位置。
+    uint64_t offset = originLpa - dev->metaJournalStartLpa;
+    uint64_t step = (uint64_t)writeBlockNum % journalSize;
+    uint64_t newOffset = offset + step;
+
+    // 环形回绕。
+    if (newOffset >= journalSize) newOffset -= journalSize;
+
+    dev->metaJournalTailLpa = dev->metaJournalStartLpa + newOffset;
+
+out:
+    res = rtfsMutexUnlock(&dev->metaJournalMutex);
+    if (0 == result && 0 != res) result = res;
+
+
+    return result;
+}
+
+int comm_submit_async_update_metajournal_tail_request(struct comm_dev *dev, uint64_t originLpa, uint32_t writeBlockNum, comm_async_cb_func cbFunc, void *cbArg)
+{
+    // 简化版异步：先同步完成状态更新，再立刻触发回调。
+    int res = comm_submit_sync_update_metajournal_tail_request(dev, originLpa, writeBlockNum);
+
+    if (NULL != cbFunc) cbFunc((0 == res) ? COMM_CMD_SUCCESS : COMM_CMD_CQE_ERROR, cbArg);
+
+
+    return res;
+}
+
+int comm_submit_sync_get_metajournal_head_request(struct comm_dev *dev, uint64_t *headLpa)
+{
+    if (NULL == dev || NULL == headLpa) return EINVAL;
+    if (NULL == dev->diskDevice) return ENODEV;
+
+    // 读取 head 时同样加锁，避免并发更新导致状态不一致。
+    int res = rtfsMutexLock(&dev->metaJournalMutex);
+    if (0 != res) return res;
+
+    *headLpa = dev->metaJournalHeadLpa;
+
+    res = rtfsMutexUnlock(&dev->metaJournalMutex);
+    if (0 != res) return res;
+
+
+    return 0;
+}
+
+int comm_submit_async_get_metajournal_head_request(struct comm_dev *dev, uint64_t *headLpa, comm_async_cb_func cbFunc, void *cbArg)
+{
+    // 简化版异步：先读 head，再立即回调。
+    int res = comm_submit_sync_get_metajournal_head_request(dev, headLpa);
+
+    if (NULL != cbFunc) cbFunc((0 == res) ? COMM_CMD_SUCCESS : COMM_CMD_CQE_ERROR, cbArg);
+
+
+    return res;
+}
+
 // TODO
-int comm_submit_sync_update_metajournal_tail_request(struct comm_dev *dev, uint64_t origin_lpa, uint32_t write_block_num)
-{
-}
-
-int comm_submit_async_update_metajournal_tail_request(struct comm_dev *dev, uint64_t origin_lpa, uint32_t write_block_num, comm_async_cb_func cb_func, void *cb_arg)
-{
-}
-
-int comm_submit_sync_get_metajournal_head_request(struct comm_dev *dev, uint64_t *head_lpa)
-{
-}
-
-int comm_submit_async_get_metajournal_head_request(struct comm_dev *dev, uint64_t *head_lpa, comm_async_cb_func cb_func, void *cb_arg)
-{
-}
-
 int comm_submit_fs_module_init_request(struct comm_dev *dev)
 {
 }

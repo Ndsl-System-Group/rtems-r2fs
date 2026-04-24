@@ -25,24 +25,24 @@ typedef enum comm_io_direction
 
 
 int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_io_direction dir);
-int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_async_cb_func cb_func, void *cb_arg, comm_io_direction dir);
+int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_async_cb_func cbFunc, void *cbArg, comm_io_direction dir);
 
 // int comm_submit_sync_migrate_request(struct comm_dev *dev, migrate_task *task);
-// int comm_submit_async_migrate_request(struct comm_dev *dev, migrate_task *task, comm_async_cb_func cb_func, void *cb_arg);
+// int comm_submit_async_migrate_request(struct comm_dev *dev, migrate_task *task, comm_async_cb_func cbFunc, void *cbArg);
 
 // int comm_submit_sync_path_lookup_request(struct comm_dev *dev, path_lookup_task *task, size_t task_length, path_lookup_result *res);
-// int comm_submit_async_path_lookup_request(struct comm_dev *dev, path_lookup_task *task, size_t task_length, path_lookup_result *res, comm_async_cb_func cb_func, void *cb_arg);
+// int comm_submit_async_path_lookup_request(struct comm_dev *dev, path_lookup_task *task, size_t task_length, path_lookup_result *res, comm_async_cb_func cbFunc, void *cbArg);
 
 // int comm_submit_sync_filemapping_search_request(struct comm_dev *dev, filemapping_search_task *task, void *res, uint32_t res_len);
-// int comm_submit_async_filemapping_search_request(struct comm_dev *dev, filemapping_search_task *task, void *res, uint32_t res_len, comm_async_cb_func cb_func, void *cb_arg);
+// int comm_submit_async_filemapping_search_request(struct comm_dev *dev, filemapping_search_task *task, void *res, uint32_t res_len, comm_async_cb_func cbFunc, void *cbArg);
 
-// 更新元数据日志尾指针命令。原位置是 origin_lpa，新写入了 write_block_num 个 block 的日志。
-int comm_submit_sync_update_metajournal_tail_request(struct comm_dev *dev, uint64_t origin_lpa, uint32_t write_block_num);
-int comm_submit_async_update_metajournal_tail_request(struct comm_dev *dev, uint64_t origin_lpa, uint32_t write_block_num, comm_async_cb_func cb_func, void *cb_arg);
+// 更新元数据日志尾指针命令。原位置是 originLpa，新写入了 writeBlockNum 个 block 的日志。
+int comm_submit_sync_update_metajournal_tail_request(struct comm_dev *dev, uint64_t originLpa, uint32_t writeBlockNum);
+int comm_submit_async_update_metajournal_tail_request(struct comm_dev *dev, uint64_t originLpa, uint32_t writeBlockNum, comm_async_cb_func cbFunc, void *cbArg);
 
-// 获取元数据日志头指针命令。结果存放在 head_lpa 中，head_lpa 必须是可 DMA 的内存。需要修改，实际上用此命令同时获取头尾指针，不仅是头指针。
-int comm_submit_sync_get_metajournal_head_request(struct comm_dev *dev, uint64_t *head_lpa);
-int comm_submit_async_get_metajournal_head_request(struct comm_dev *dev, uint64_t *head_lpa, comm_async_cb_func cb_func, void *cb_arg);
+// 获取元数据日志头指针命令。结果存放在 headLpa 中，head_lpa 必须是可 DMA 的内存。需要修改，实际上用此命令同时获取头尾指针，不仅是头指针。
+int comm_submit_sync_get_metajournal_head_request(struct comm_dev *dev, uint64_t *headLpa);
+int comm_submit_async_get_metajournal_head_request(struct comm_dev *dev, uint64_t *headLpa, comm_async_cb_func cbFunc, void *cbArg);
 
 // 文件系统模块初始化，此接口为同步接口。
 int comm_submit_fs_module_init_request(struct comm_dev *dev);
