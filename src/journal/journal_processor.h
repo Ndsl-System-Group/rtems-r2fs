@@ -18,18 +18,41 @@ struct comm_dev;
  */
 typedef struct TransactionJournalRecord
 {
+    /**
+     * @brief 事务唯一编号。
+     */
     uint64_t txId;
+
+    /**
+     * @brief 该事务日志起始位置（包含）。
+     */
     uint64_t startLpa;
+
+    /**
+     * @brief 该事务日志结束位置（不包含）。
+     */
     uint64_t endLpa;
 } TransactionJournalRecord;
 
 
+/**
+ * @brief 初始化事务日志记录对象。
+ */
 void transactionJournalRecordInit(TransactionJournalRecord *this, uint64_t txId, uint64_t startLpa, uint64_t endLpa);
 
+/**
+ * @brief 获取事务编号。
+ */
 uint64_t transactionJournalRecordGetTxId(TransactionJournalRecord *this);
 
+/**
+ * @brief 获取事务日志起始位置。
+ */
 uint64_t transactionJournalRecordGetStartLpa(TransactionJournalRecord *this);
 
+/**
+ * @brief 获取事务日志结束位置。
+ */
 uint64_t transactionJournalRecordGetEndLpa(TransactionJournalRecord *this);
 
 /**
