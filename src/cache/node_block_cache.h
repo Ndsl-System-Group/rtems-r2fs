@@ -13,46 +13,103 @@ struct file_system_manager;
 struct comm_dev;
 
 
+/**
+ * @brief Node Block 缓存项状态。
+ */
 typedef enum NodeBlockCacheEntryState
 {
-    NODE_BLOCK_CACHE_ENTRY_UPTODATE,
-    NODE_BLOCK_CACHE_ENTRY_DIRTY,
-    NODE_BLOCK_CACHE_ENTRY_DELETED,
+    NODE_BLOCK_CACHE_ENTRY_UPTODATE, /**< 数据与 SSD 一致，可直接读取。 */
+    NODE_BLOCK_CACHE_ENTRY_DIRTY,    /**< 数据已被修改，尚未回写到 SSD。 */
+    NODE_BLOCK_CACHE_ENTRY_DELETED,  /**< 已逻辑删除，待引用计数归零后释放资源。 */
 } NodeBlockCacheEntryState;
 
 
+/**
+ * @brief Node Block 缓存项。
+ */
 typedef struct NodeBlockCacheEntry
 {
+    /**
+     * @brief 当前 node 的 nid。
+     */
     uint32_t nid;
+
+    /**
+     * @brief 父 node 的 nid，inode 时为 INVALID_NID。
+     */
     uint32_t parentNid;
+
+    /**
+     * @brief 当前 node 在 SSD 上的位置。
+     */
     uint32_t lpa;
 
+    /**
+     * @brief node block 数据缓冲区。
+     */
     BlockBuffer node;
 
+    /**
+     * @brief 引用计数，同时承担 pin/淘汰保护作用。
+     */
     uint32_t refCount;
+
+    /**
+     * @brief 当前状态。
+     */
     NodeBlockCacheEntryState state;
 } NodeBlockCacheEntry;
 
 
+/**
+ * @brief 初始化缓存项。
+ */
 void nodeBlockCacheEntryInit(NodeBlockCacheEntry *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa);
 
+/**
+ * @brief 销毁缓存项并释放内部资源。
+ */
 void nodeBlockCacheEntryDestroy(NodeBlockCacheEntry *this);
 
+/**
+ * @brief 获取缓存项对应的 lpa。
+ */
 uint32_t nodeBlockCacheEntryGetLpa(NodeBlockCacheEntry *this);
 
+/**
+ * @brief 设置缓存项对应的 lpa。
+ */
 void nodeBlockCacheEntrySetLpa(NodeBlockCacheEntry *this, uint32_t lpa);
 
+/**
+ * @brief 获取缓存项状态。
+ */
 NodeBlockCacheEntryState nodeBlockCacheEntryGetState(NodeBlockCacheEntry *this);
 
+/**
+ * @brief 设置缓存项状态。
+ */
 void nodeBlockCacheEntrySetState(NodeBlockCacheEntry *this, NodeBlockCacheEntryState state);
 
+/**
+ * @brief 获取 node block 数据结构指针。
+ */
 struct RtfsNode *nodeBlockCacheEntryGetNodeBlockPtr(NodeBlockCacheEntry *this);
 
+/**
+ * @brief 获取底层缓冲区对象。
+ */
 BlockBuffer *nodeBlockCacheEntryGetNodeBuffer(NodeBlockCacheEntry *this);
 
+/**
+ * @brief 获取缓存项 nid。
+ */
 uint32_t nodeBlockCacheEntryGetNid(NodeBlockCacheEntry *this);
 
 
+/**
+ * @brief 缓存项句柄，负责缓存项引用计数的生命周期管理。
+ */
 typedef struct NodeBlockCacheEntryHandle
 {
     struct NodeBlockCache *cache;
@@ -60,23 +117,50 @@ typedef struct NodeBlockCacheEntryHandle
 } NodeBlockCacheEntryHandle;
 
 
+/**
+ * @brief 初始化句柄。
+ */
 void nodeBlockCacheEntryHandleInit(NodeBlockCacheEntryHandle *this, struct NodeBlockCache *cache, NodeBlockCacheEntry *entry);
 
+/**
+ * @brief 销毁句柄，并减少引用计数。
+ */
 void nodeBlockCacheEntryHandleDestroy(NodeBlockCacheEntryHandle *this);
 
+/**
+ * @brief 复制句柄，并增加引用计数。
+ */
 void nodeBlockCacheEntryHandleCopy(NodeBlockCacheEntryHandle *this, const NodeBlockCacheEntryHandle *other);
 
+/**
+ * @brief 判断句柄是否为空。
+ */
 bool nodeBlockCacheEntryHandleIsEmpty(NodeBlockCacheEntryHandle *this);
 
+/**
+ * @brief 增加 host 侧引用版本。
+ */
 void nodeBlockCacheEntryHandleAddHostVersion(NodeBlockCacheEntryHandle *this);
 
+/**
+ * @brief 增加 SSD 侧版本（等价释放一个引用）。
+ */
 void nodeBlockCacheEntryHandleAddSsdVersion(NodeBlockCacheEntryHandle *this);
 
+/**
+ * @brief 将缓存项标记为 dirty。
+ */
 void nodeBlockCacheEntryHandleMarkDirty(NodeBlockCacheEntryHandle *this);
 
+/**
+ * @brief 删除当前缓存项对应 node。
+ */
 void nodeBlockCacheEntryHandleDeleteNode(NodeBlockCacheEntryHandle *this);
 
 
+/**
+ * @brief dirty 链表节点。
+ */
 typedef struct NodeBlockCacheDirtyNode
 {
     NodeBlockCacheEntryHandle handle;
@@ -88,23 +172,52 @@ typedef struct NodeBlockCacheDirtyNode
 
 KHASH_MAP_INIT_PTR(khdp, NodeBlockCacheDirtyNode *)
 
+
+/**
+ * @brief Node block 缓存管理器。
+ */
 typedef struct NodeBlockCache
 {
+    /**
+     * @brief 通用缓存替换管理器。
+     */
     GenericCacheManager cacheManager;
 
+    /**
+     * @brief 期望缓存大小。
+     */
     size_t expectSize;
+
+    /**
+     * @brief 当前缓存项数量。
+     */
     size_t curSize;
 
+    /**
+     * @brief dirty 链表头。
+     */
     NodeBlockCacheDirtyNode *dirtyListHead;
 
+    /**
+     * @brief dirty 项快速定位表。
+     */
     khash_t(khdp) * dirtyPos;
 
+    /**
+     * @brief 全局文件系统管理器。
+     */
     struct file_system_manager *fsManager;
 } NodeBlockCache;
 
 
+/**
+ * @brief 初始化 node block cache。
+ */
 void nodeBlockCacheInit(NodeBlockCache *this, struct file_system_manager *fsManager, size_t expectSize);
 
+/**
+ * @brief 销毁 node block cache。
+ */
 void nodeBlockCacheDestroy(NodeBlockCache *this);
 
 /**
@@ -122,9 +235,15 @@ NodeBlockCacheEntryHandle nodeBlockCacheGet(NodeBlockCache *this, uint32_t nid);
  */
 NodeBlockCacheDirtyNode *nodeBlockCacheGetAndClearDirtyList(NodeBlockCache *this);
 
+/**
+ * @brief 强制执行一次缓存替换。
+ */
 void nodeBlockCacheForceReplace(NodeBlockCache *this);
 
 
+/**
+ * @brief Node block cache 辅助操作器。封装 NAT 查询、SSD 读取、nid 分配等流程。
+ */
 typedef struct NodeBlockCacheHelper
 {
     struct comm_dev *dev;
@@ -134,8 +253,14 @@ typedef struct NodeBlockCacheHelper
 } NodeBlockCacheHelper;
 
 
+/**
+ * @brief 初始化辅助操作器。
+ */
 void nodeBlockCacheHelperInit(NodeBlockCacheHelper *this, struct file_system_manager *fsManager);
 
+/**
+ * @brief 销毁辅助操作器。
+ */
 void nodeBlockCacheHelperDestroy(NodeBlockCacheHelper *this);
 
 /**
