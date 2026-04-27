@@ -135,3 +135,126 @@ RTFS_TEST(NbceNodeBlockPtrTest)
     nodeBlockCacheEntryDestroy(&entry);
     blockBufferDestroy(&buffer);
 }
+
+RTFS_TEST(NbcehInitTest)
+{
+    BlockBuffer buffer;
+    blockBufferInit(&buffer);
+
+    NodeBlockCache cache;
+    nodeBlockCacheInit(&cache, NULL, 16);
+
+    NodeBlockCacheEntry entry;
+    NodeBlockCacheEntryHandle handle;
+
+    nodeBlockCacheEntryInit(&entry, &buffer, 1, 2, 3);
+    nodeBlockCacheEntryHandleInit(&handle, &cache, &entry);
+
+
+    TEST_ASSERT_EQUAL_PTR(&cache, handle.cache);
+    TEST_ASSERT_EQUAL_PTR(&entry, handle.entry);
+
+
+    nodeBlockCacheEntryHandleDestroy(&handle);
+    nodeBlockCacheEntryDestroy(&entry);
+    nodeBlockCacheDestroy(&cache);
+    blockBufferDestroy(&buffer);
+}
+
+RTFS_TEST(NbcehIsEmptyTrueTest)
+{
+    NodeBlockCacheEntryHandle handle;
+
+    nodeBlockCacheEntryHandleInit(&handle, NULL, NULL);
+
+    TEST_ASSERT_TRUE(nodeBlockCacheEntryHandleIsEmpty(&handle));
+
+    nodeBlockCacheEntryHandleDestroy(&handle);
+}
+
+RTFS_TEST(NbcehIsEmptyFalseTest)
+{
+    BlockBuffer buffer;
+    blockBufferInit(&buffer);
+
+    NodeBlockCache cache;
+    nodeBlockCacheInit(&cache, NULL, 16);
+
+    NodeBlockCacheEntry entry;
+    NodeBlockCacheEntryHandle handle;
+
+    nodeBlockCacheEntryInit(&entry, &buffer, 1, 2, 3);
+    nodeBlockCacheEntryHandleInit(&handle, &cache, &entry);
+
+
+    TEST_ASSERT_FALSE(nodeBlockCacheEntryHandleIsEmpty(&handle));
+
+
+    nodeBlockCacheEntryHandleDestroy(&handle);
+    nodeBlockCacheEntryDestroy(&entry);
+    nodeBlockCacheDestroy(&cache);
+    blockBufferDestroy(&buffer);
+}
+
+RTFS_TEST(NbcehDestroyEmptyTest)
+{
+    NodeBlockCacheEntryHandle handle;
+
+    nodeBlockCacheEntryHandleInit(&handle, NULL, NULL);
+    nodeBlockCacheEntryHandleDestroy(&handle);
+
+    TEST_PASS();
+}
+
+RTFS_TEST(NbcehCopyEmptyTest)
+{
+    NodeBlockCacheEntryHandle src;
+    NodeBlockCacheEntryHandle dst;
+
+    nodeBlockCacheEntryHandleInit(&src, NULL, NULL);
+    memset(&dst, 0xAA, sizeof(dst));
+
+    nodeBlockCacheEntryHandleCopy(&dst, &src);
+
+
+    TEST_ASSERT_EQUAL_PTR(NULL, dst.cache);
+    TEST_ASSERT_EQUAL_PTR(NULL, dst.entry);
+    TEST_ASSERT_TRUE(nodeBlockCacheEntryHandleIsEmpty(&dst));
+
+
+    nodeBlockCacheEntryHandleDestroy(&src);
+    nodeBlockCacheEntryHandleDestroy(&dst);
+}
+
+RTFS_TEST(NbcehCopyBasicTest)
+{
+    BlockBuffer buffer;
+    blockBufferInit(&buffer);
+
+    NodeBlockCache cache;
+    nodeBlockCacheInit(&cache, NULL, 16);
+
+    NodeBlockCacheEntry entry;
+    NodeBlockCacheEntryHandle src;
+    NodeBlockCacheEntryHandle dst;
+
+    nodeBlockCacheEntryInit(&entry, &buffer, 1, 2, 3);
+
+    entry.refCount = 0;
+
+    nodeBlockCacheEntryHandleInit(&src, &cache, &entry);
+    nodeBlockCacheEntryHandleCopy(&dst, &src);
+
+
+    TEST_ASSERT_EQUAL_PTR(&cache, dst.cache);
+    TEST_ASSERT_EQUAL_PTR(&entry, dst.entry);
+    TEST_ASSERT_EQUAL_UINT32(1, entry.refCount);
+
+
+    nodeBlockCacheEntryHandleDestroy(&dst);
+    nodeBlockCacheEntryHandleDestroy(&src);
+
+    nodeBlockCacheEntryDestroy(&entry);
+    nodeBlockCacheDestroy(&cache);
+    blockBufferDestroy(&buffer);
+}
