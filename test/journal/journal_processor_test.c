@@ -87,3 +87,100 @@ RTFS_TEST(TjrNotAppliedWrapRangeQueueWrapTest)
 
     TEST_ASSERT_FALSE(transactionJournalRecordIsApplied(&record, 20, 5));
 }
+
+// 正常初始化：totalAvailLpa = end - start - 1，curAvailLpa = totalAvailLpa，head/tail = fifoPos。
+RTFS_TEST(JpInitBasicTest)
+{
+    JournalProcessor jp;
+
+    memset(&jp, 0, sizeof(JournalProcessor));
+
+    journalProcessorInit(&jp, NULL, 100, 200, 150);
+
+    TEST_ASSERT_EQUAL_UINT64(100, jp.startLpa);
+    TEST_ASSERT_EQUAL_UINT64(200, jp.endLpa);
+
+    TEST_ASSERT_EQUAL_UINT64(150, jp.headLpa);
+    TEST_ASSERT_EQUAL_UINT64(150, jp.tailLpa);
+
+    TEST_ASSERT_EQUAL_UINT64(99, jp.totalAvailLpa);
+    TEST_ASSERT_EQUAL_UINT64(99, jp.curAvailLpa);
+
+    TEST_ASSERT_NULL(jp.curJournal);
+
+    TEST_ASSERT_FALSE(jp.isPollTimerEnabled);
+
+    TEST_ASSERT_NOT_NULL(jp.journalPosDmaBuffer);
+
+    journalProcessorDestroy(&jp);
+}
+
+// fifoPos 在起点。
+RTFS_TEST(JpInitFifoAtStartTest)
+{
+    JournalProcessor jp;
+
+    memset(&jp, 0, sizeof(JournalProcessor));
+
+    journalProcessorInit(&jp, NULL, 10, 20, 10);
+
+    TEST_ASSERT_EQUAL_UINT64(10, jp.headLpa);
+    TEST_ASSERT_EQUAL_UINT64(10, jp.tailLpa);
+
+    TEST_ASSERT_EQUAL_UINT64(9, jp.totalAvailLpa);
+    TEST_ASSERT_EQUAL_UINT64(9, jp.curAvailLpa);
+
+    journalProcessorDestroy(&jp);
+}
+
+// fifoPos 在末尾附近。
+RTFS_TEST(JpInitFifoNearEndTest)
+{
+    JournalProcessor jp;
+
+    memset(&jp, 0, sizeof(JournalProcessor));
+
+    journalProcessorInit(&jp, NULL, 50, 80, 79);
+
+    TEST_ASSERT_EQUAL_UINT64(79, jp.headLpa);
+    TEST_ASSERT_EQUAL_UINT64(79, jp.tailLpa);
+
+    TEST_ASSERT_EQUAL_UINT64(29, jp.totalAvailLpa);
+    TEST_ASSERT_EQUAL_UINT64(29, jp.curAvailLpa);
+
+    journalProcessorDestroy(&jp);
+}
+
+// destroy 可重复调用前提：重新 init 后 destroy 不崩溃。
+RTFS_TEST(JpDestroyAfterInitTest)
+{
+    JournalProcessor jp;
+
+    memset(&jp, 0, sizeof(JournalProcessor));
+
+    journalProcessorInit(&jp, NULL, 0, 100, 0);
+
+    journalProcessorDestroy(&jp);
+
+    TEST_PASS();
+}
+
+// 多次创建销毁。
+RTFS_TEST(JpMultiInitDestroyTest)
+{
+    JournalProcessor jp;
+
+    for (int i = 0; i < 10; ++i)
+    {
+        memset(&jp, 0, sizeof(JournalProcessor));
+
+        journalProcessorInit(&jp, NULL, 1000, 1100, 1000 + i);
+
+        TEST_ASSERT_EQUAL_UINT64((uint64_t)(1000 + i), jp.headLpa);
+        TEST_ASSERT_EQUAL_UINT64((uint64_t)(1000 + i), jp.tailLpa);
+
+        journalProcessorDestroy(&jp);
+    }
+}
+
+// TODO 目前不单独测试 journalProcessorProcessJournal 函数。该函数主要作为线程主循环调度入口，自身逻辑较少且依赖线程同步、定时器与 I/O 协作，当前优先测试其内部核心处理函数，后续再通过集成测试覆盖整体行为。
