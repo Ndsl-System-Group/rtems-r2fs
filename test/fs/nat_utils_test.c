@@ -32,13 +32,13 @@ typedef struct file_system_manager
 } file_system_manager;
 
 
-static void initFsForNat(file_system_manager *fs, struct RtfsSuperBlock *sb, uint32_t nat_blkaddr, uint32_t segment_count_nat)
+static void initFsForNat(file_system_manager *fs, struct RtfsSuperBlock *sb, uint32_t natBlkaddr, uint32_t segmentCountNat)
 {
     memset(fs, 0, sizeof(*fs));
     memset(sb, 0, sizeof(*sb));
 
-    sb->nat_blkaddr = nat_blkaddr;
-    sb->segment_count_nat = segment_count_nat;
+    sb->nat_blkaddr = natBlkaddr;
+    sb->segment_count_nat = segmentCountNat;
 
     fs->super_blk_mem_ = sb;
 }
