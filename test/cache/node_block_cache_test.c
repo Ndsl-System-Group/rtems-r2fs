@@ -258,3 +258,129 @@ RTFS_TEST(NbcehCopyBasicTest)
     nodeBlockCacheDestroy(&cache);
     blockBufferDestroy(&buffer);
 }
+
+RTFS_TEST(NbcInitTest)
+{
+    NodeBlockCache cache;
+    nodeBlockCacheInit(&cache, NULL, 8);
+
+
+    TEST_ASSERT_EQUAL_UINT32(8, cache.expectSize);
+    TEST_ASSERT_EQUAL_UINT32(0, cache.curSize);
+    TEST_ASSERT_EQUAL_PTR(NULL, cache.fsManager);
+    TEST_ASSERT_EQUAL_PTR(NULL, cache.dirtyListHead);
+    TEST_ASSERT_NOT_NULL(cache.dirtyPos);
+
+
+    nodeBlockCacheDestroy(&cache);
+}
+
+RTFS_TEST(NbcDestroyTest)
+{
+    NodeBlockCache cache;
+
+    nodeBlockCacheInit(&cache, NULL, 8);
+    nodeBlockCacheDestroy(&cache);
+
+    TEST_ASSERT_EQUAL_UINT32(0, cache.expectSize);
+    TEST_ASSERT_EQUAL_UINT32(0, cache.curSize);
+    TEST_ASSERT_EQUAL_PTR(NULL, cache.fsManager);
+    TEST_ASSERT_EQUAL_PTR(NULL, cache.dirtyListHead);
+    TEST_ASSERT_EQUAL_PTR(NULL, cache.dirtyPos);
+}
+
+RTFS_TEST(NbcAddTest)
+{
+    BlockBuffer buffer;
+    blockBufferInit(&buffer);
+
+    NodeBlockCache cache;
+    nodeBlockCacheInit(&cache, NULL, 8);
+
+
+    NodeBlockCacheEntryHandle handle = nodeBlockCacheAdd(&cache, &buffer, 100, INVALID_NID, 200);
+
+    TEST_ASSERT_FALSE(nodeBlockCacheEntryHandleIsEmpty(&handle));
+    TEST_ASSERT_EQUAL_UINT32(1, cache.curSize);
+
+    TEST_ASSERT_EQUAL_UINT32(100, handle.entry->nid);
+    TEST_ASSERT_EQUAL_UINT32(INVALID_NID, handle.entry->parentNid);
+    TEST_ASSERT_EQUAL_UINT32(200, handle.entry->lpa);
+    TEST_ASSERT_EQUAL_UINT32(1, handle.entry->refCount);
+    TEST_ASSERT_EQUAL(NODE_BLOCK_CACHE_ENTRY_UPTODATE, handle.entry->state);
+
+
+    nodeBlockCacheEntryHandleDestroy(&handle);
+    nodeBlockCacheDestroy(&cache);
+    blockBufferDestroy(&buffer);
+}
+
+RTFS_TEST(NbcGetHitTest)
+{
+    BlockBuffer buffer;
+    blockBufferInit(&buffer);
+
+    NodeBlockCache cache;
+    nodeBlockCacheInit(&cache, NULL, 8);
+
+
+    NodeBlockCacheEntryHandle h1 = nodeBlockCacheAdd(&cache, &buffer, 123, INVALID_NID, 456);
+
+    NodeBlockCacheEntryHandle h2 = nodeBlockCacheGet(&cache, 123);
+
+    TEST_ASSERT_FALSE(nodeBlockCacheEntryHandleIsEmpty(&h2));
+    TEST_ASSERT_EQUAL_PTR(h1.entry, h2.entry);
+    TEST_ASSERT_EQUAL_UINT32(2, h1.entry->refCount);
+
+
+    nodeBlockCacheEntryHandleDestroy(&h1);
+    nodeBlockCacheEntryHandleDestroy(&h2);
+
+    nodeBlockCacheDestroy(&cache);
+    blockBufferDestroy(&buffer);
+}
+
+RTFS_TEST(NbcGetMissTest)
+{
+    NodeBlockCache cache;
+    nodeBlockCacheInit(&cache, NULL, 8);
+
+
+    NodeBlockCacheEntryHandle handle = nodeBlockCacheGet(&cache, 999);
+
+    TEST_ASSERT_TRUE(nodeBlockCacheEntryHandleIsEmpty(&handle));
+
+
+    nodeBlockCacheDestroy(&cache);
+}
+
+RTFS_TEST(NbcForceReplaceNoopTest)
+{
+    NodeBlockCache cache;
+    nodeBlockCacheInit(&cache, NULL, 8);
+
+
+    nodeBlockCacheForceReplace(&cache);
+
+    TEST_ASSERT_EQUAL_UINT32(0, cache.curSize);
+
+
+    nodeBlockCacheDestroy(&cache);
+}
+
+RTFS_TEST(NbcGetAndClearDirtyListEmptyTest)
+{
+    NodeBlockCache cache;
+    nodeBlockCacheInit(&cache, NULL, 8);
+
+
+    NodeBlockCacheDirtyNode *list = nodeBlockCacheGetAndClearDirtyList(&cache);
+
+    TEST_ASSERT_EQUAL_PTR(NULL, list);
+    TEST_ASSERT_EQUAL_PTR(NULL, cache.dirtyListHead);
+
+
+    nodeBlockCacheDestroy(&cache);
+}
+
+// TODO 后续测试 NodeBlockCacheHelper。
