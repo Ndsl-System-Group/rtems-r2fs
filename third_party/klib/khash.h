@@ -128,6 +128,7 @@ int main() {
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <stdint.h>
 
 /* compiler specific configuration */
 
@@ -409,6 +410,10 @@ static kh_inline khint_t __ac_X31_hash_string(const char *s)
  */
 #define kh_str_hash_equal(a, b) (strcmp(a, b) == 0)
 
+#define kh_ptr_hash_func(key) ((khint_t)(uintptr_t)(key))
+
+#define kh_ptr_hash_equal(a, b) ((a) == (b))
+
 static kh_inline khint_t __ac_Wang_hash(khint_t key)
 {
     key += ~(key << 15);
@@ -623,5 +628,9 @@ typedef const char *kh_cstr_t;
  */
 #define KHASH_MAP_INIT_STR(name, khval_t)								\
 	KHASH_INIT(name, kh_cstr_t, khval_t, 1, kh_str_hash_func, kh_str_hash_equal)
+
+#define KHASH_MAP_INIT_PTR(name, khval_t)								\
+    KHASH_INIT(name, void *, khval_t, 1, kh_ptr_hash_func, kh_ptr_hash_equal)
+
 
 #endif /* __AC_KHASH_H */

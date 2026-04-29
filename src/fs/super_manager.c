@@ -34,6 +34,16 @@ typedef struct super_manager
     UT_array *uncommit_node_segs, *uncommit_data_segs;
 } super_manager;
 
+
+void superManagerInit(super_manager *this, file_system_manager *fs_manager)
+{
+    this->fs_manager_ = fs_manager;
+    this->super_block_ = fileSystemManagerGetSuperBlkMem(fs_manager);
+    UT_icd int_icd = {sizeof(int), NULL, NULL, NULL};
+    utarray_new(this->uncommit_node_segs, &int_icd);
+    utarray_new(this->uncommit_data_segs, &int_icd);
+}
+
 super_manager *superManagerCreate(file_system_manager *fs_manager)
 {
     super_manager *this = calloc(1, sizeof(*this));
@@ -44,15 +54,6 @@ super_manager *superManagerCreate(file_system_manager *fs_manager)
 
     superManagerInit(this, fs_manager);
     return this;
-}
-
-void superManagerInit(super_manager *this, file_system_manager *fs_manager)
-{
-    this->fs_manager_ = fs_manager;
-    this->super_block_ = fileSystemManagerGetSuperBlkMem(fs_manager);
-    UT_icd int_icd = {sizeof(int), NULL, NULL, NULL};
-    utarray_new(this->uncommit_node_segs, &int_icd);
-    utarray_new(this->uncommit_data_segs, &int_icd);
 }
 
 void superManagerDestroy(super_manager *this)
@@ -191,6 +192,8 @@ uint32_t superManagerAllocSegment(super_manager *this)
 
 uint32_t superManagerAllocLpaInner(super_manager *this, LpaAllocContext *ctx)
 {
+    uint32_t cur_seg_off;
+
     // TODO：开启日志容器
     if (*ctx->cur_seg_off_ >= BLOCK_PER_SEGMENT)
     {
@@ -203,7 +206,9 @@ uint32_t superManagerAllocLpaInner(super_manager *this, LpaAllocContext *ctx)
 
     SitOperator sit_operator;
     sitOperatorInit(&sit_operator, this->fs_manager_);
-    uint32_t lpa = sitGetFirstLpaOfSegId(&sit_operator, *ctx->cur_seg_id_);
+    cur_seg_off = *ctx->cur_seg_off_;
+    uint32_t lpa = sitGetFirstLpaOfSegId(&sit_operator, *ctx->cur_seg_id_) + cur_seg_off;
+    *ctx->cur_seg_off_ = cur_seg_off + 1;
 
     // TODO: 添加超级块日志
 

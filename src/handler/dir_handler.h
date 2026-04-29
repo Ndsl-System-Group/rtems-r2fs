@@ -14,5 +14,6 @@ ssize_t rtfsDirRead(rtems_libio_t *iop, void *buffer, size_t count);
 
 int rtfsDirFstat(const rtems_filesystem_location_info_t *pathloc, struct stat *buf);
 
+extern const rtems_filesystem_file_handlers_r rtfsDirhandlers;
 
 #endif

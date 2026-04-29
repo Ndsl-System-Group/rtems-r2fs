@@ -3,6 +3,8 @@
 #include "utils/rtfs_log.h"
 #include "utils/rtfs_exception.h"
 #include "uthash/utlist.h"
+#include "communication/memory.h"
+#include "communication/comm_api.h"
 
 #include <pthread.h>
 
@@ -96,12 +98,11 @@ static void journalProcessorProcessTxRecord(JournalProcessor *this);
 
 void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos)
 {
-    // TODO
-    // this->journalPosDmaBuffer = static_cast<uint64_t *>(comm_alloc_dma_mem(16));
+    this->journalPosDmaBuffer = (uint64_t *)comm_alloc_dma_mem(16);
     if (NULL == this->journalPosDmaBuffer) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: not enough DMA buffer.");
 
     // 将日志位置查询任务的定时器设置为阻塞式，到达轮询周期后，日志处理线程被唤醒并进行查询任务
-    if (0 != rtfsTimerConstructor(&this->journalPollTimer, 1)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: init timer failed.");
+    if (0 != rtfsTimerConstructor(&this->journalPollTimer, true)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: init timer failed.");
 
     // 日志位置查询任务，周期 100 us。
     struct timespec journalPollTime = {.tv_sec = 0, .tv_nsec = 100 * 1000};
@@ -122,8 +123,7 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
 
 void journalProcessorDestroy(JournalProcessor *this)
 {
-    // TODO
-    // comm_free_dma_mem(journal_pos_dma_buffer);
+    comm_free_dma_mem(this->journalPosDmaBuffer);
     rtfsTimerStop(&this->journalPollTimer);
     rtfsTimerDestructor(&this->journalPollTimer);
 }
@@ -158,13 +158,13 @@ void journalProcessorFetchNewJournal(JournalProcessor *this)
 {
     JournalProcessEnv *processEnv = journalProcessEnvGetInstance();
 
-    pthread_mutex_lock(&processEnv->mtx);
+    rtfsMutexLock(&processEnv->mtx);
 
     if (journalProcessorIsWorking(this))
     {
         if (NULL == processEnv->commitQueueHead)
         {
-            pthread_mutex_unlock(&processEnv->mtx);
+            rtfsMutexUnlock(&processEnv->mtx);
 
 
             return;
@@ -178,11 +178,11 @@ void journalProcessorFetchNewJournal(JournalProcessor *this)
             if (processEnv->exitReq)
             {
                 processEnv->exitReq = 0;
-                pthread_mutex_unlock(&processEnv->mtx);
+                rtfsMutexUnlock(&processEnv->mtx);
                 Throw(THREAD_INTERRUPTED_ID);
             }
 
-            pthread_cond_wait(&processEnv->cond, &processEnv->mtx);
+            rtfsCondWait(&processEnv->cond, &processEnv->mtx);
         }
     }
 
@@ -195,7 +195,7 @@ void journalProcessorFetchNewJournal(JournalProcessor *this)
         processEnv->commitQueueHead = NULL;
     }
 
-    pthread_mutex_unlock(&processEnv->mtx);
+    rtfsMutexUnlock(&processEnv->mtx);
 }
 
 void journalProcessorProcessPendingJournal(JournalProcessor *this)
@@ -248,9 +248,8 @@ bool journalProcessorWriteJournalToSsd(JournalProcessor *this)
     {
         journalWriterWriteToSsd(&this->journalWriter, this->tailLpa);
 
-        // TODO
-        // int res = comm_submit_sync_update_metajournal_tail_request(dev, tail_lpa, cur_journal_block_num);
-        // if (res != 0) throw io_error("journal processor: update SSD journal tail failed.");
+        int res = comm_submit_sync_update_metajournal_tail_request(this->dev, this->tailLpa, this->curJournalBlockNum);
+        if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: update SSD journal tail failed.");
 
         this->curJournalStartLpa = this->tailLpa;
         this->tailLpa += this->curJournalBlockNum;
@@ -324,8 +323,7 @@ void journalProcessorWaitPollTimer(JournalProcessor *this)
 
 bool journalProcessorSyncWithSsdJournalPos(JournalProcessor *this)
 {
-    // TODO
-    // if (comm_submit_sync_get_metajournal_head_request(dev, journal_pos_dma_buffer) != 0) throw io_error("journal processor: submit get journal pos failed.");
+    if (0 != comm_submit_sync_get_metajournal_head_request(this->dev, this->journalPosDmaBuffer)) THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal processor: submit get journal pos failed.");
 
     uint64_t newHeadLpa = this->journalPosDmaBuffer[0];
     uint64_t newAvailLpa = newHeadLpa >= this->headLpa ? newHeadLpa - this->headLpa : newHeadLpa + this->endLpa - this->startLpa - this->headLpa;

@@ -4,8 +4,8 @@
 #include "journal/journal_container.h"
 
 #include "utils/declare_utils.h"
+#include "utils/rtfs_multithread.h"
 
-#include <pthread.h>
 #include <stdatomic.h>
 
 
@@ -24,24 +24,43 @@ DEFINE_UTLIST_NODE(
 /**
  * @brief 日志处理环境。包含日志管理层的日志提交队列，以及保护该队列的锁，用于通知日志处理线程的条件变量。
  *
- * 负责管理：
- * - 日志提交队列。
- * - 日志处理线程。
- * - 线程同步原语。
- * - 事务号分配。
+ * @details 负责管理
+ * 1. 日志提交队列。
+ * 2. 日志处理线程。
+ * 3. 线程同步原语。
+ * 4. 事务号分配。
  */
 typedef struct JournalProcessEnv
 {
-    JournalCommitNode *commitQueueHead; // 日志提交队列头节点。
+    /**
+     * @brief 日志提交队列头节点。
+     */
+    JournalCommitNode *commitQueueHead;
 
-    bool exitReq; // 日志处理线程退出请求标志。
+    /**
+     * @brief 日志处理线程退出请求标志。
+     */
+    bool exitReq;
 
-    pthread_mutex_t mtx; // 保护提交队列的互斥锁。
-    pthread_cond_t cond; // 用于唤醒日志处理线程的条件变量。
+    /**
+     * @brief 保护提交队列的互斥锁。
+     */
+    mutex_t mtx;
 
-    pthread_t processThreadHandle; // 日志处理线程句柄。
+    /**
+     * @brief 用于唤醒日志处理线程的条件变量。
+     */
+    cond_t cond;
 
-    atomic_uint_fast64_t txIdToAlloc; // 下一个待分配的事务号。
+    /**
+     * @brief 日志处理线程句柄。
+     */
+    pthread_t processThreadHandle;
+
+    /**
+     * @brief 下一个待分配的事务号。
+     */
+    atomic_uint_fast64_t txIdToAlloc;
 } JournalProcessEnv;
 
 
@@ -49,6 +68,11 @@ typedef struct JournalProcessEnv
  * @brief 获取全局唯一的 JournalProcessEnv 单例。
  */
 JournalProcessEnv *journalProcessEnvGetInstance();
+
+/**
+ * @brief 初始化日志处理环境。创建日志处理线程，并指定日志区域参数。
+ */
+void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos);
 
 /**
  * @brief 销毁日志处理环境。
@@ -69,11 +93,6 @@ uint64_t journalProcessEnvAllocTxId(JournalProcessEnv *this);
  * @brief 提交一个日志容器到日志处理队列。应在 journalProcessEnvAllocTxId 之后调用，调用者负责使用 journalProcessEnvAllocTxId 为 journal 分配事务号。
  */
 void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *journal);
-
-/**
- * @brief 初始化日志处理环境。创建日志处理线程，并指定日志区域参数。
- */
-void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos);
 
 /**
  * @brief 向日志处理线程发送停止命令，并等待其停止后返回。日志处理线程在处理完所有已经提交的日志后将会停止。

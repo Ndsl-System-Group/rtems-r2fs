@@ -21,7 +21,7 @@ typedef struct file_system_manager
     SuperCache super_cache_;               // 超级块缓存
     struct RtfsSuperBlock *super_blk_mem_; // 超级块内存镜像
     super_manager *sp_manager_;            // 超级块管理器
-    node_block_cache *node_cache_;         // 节点块缓存
+    NodeBlockCache *node_cache_;           // 节点块缓存
     dir_data_block_cache *dir_data_cache_; // 目录数据块缓存
 
     SrmapUtils *srmap_utils_; // SRMAP
@@ -214,10 +214,11 @@ void fileSystemManagerFreezeUnLock(file_system_manager *this)
 
 RtfsSuperBlock *fileSystemManagerGetSuperBlkMem(file_system_manager *this) { return this ? this->super_blk_mem_ : NULL; };
 super_manager *fileSystemManagerGetSuperManager(file_system_manager *this) { return this ? this->sp_manager_ : NULL; };
-node_block_cache *fileSystemManagerGetNodeCache(file_system_manager *this) { return this ? this->node_cache_ : NULL; };
+NodeBlockCache *fileSystemManagerGetNodeCache(file_system_manager *this) { return this ? this->node_cache_ : NULL; };
 dir_data_block_cache *fileSystemManagerGetDirDataCache(file_system_manager *this) { return this ? this->dir_data_cache_ : NULL; };
 SitNatCache *fileSystemManagerGetSitCache(file_system_manager *this) { return this ? this->sit_cache_ : NULL; }
 SitNatCache *fileSystemManagerGetNatCache(file_system_manager *this) { return this ? this->nat_cache_ : NULL; }
 SrmapUtils *fileSystemManagerGetSrmapUtils(file_system_manager *this) { return this ? this->srmap_utils_ : NULL; };
 fd_array *fileSystemManagerGetFdArray(file_system_manager *this) { return this ? this->fd_arr_ : NULL; };
 JournalContainer *fileSystemManagerGetCurJournal(file_system_manager *this) { return this ? this->cur_journal_ : NULL; };
+comm_dev *fileSystemManagerGetDevice(file_system_manager *this) { return this ? this->dev_ : NULL; }

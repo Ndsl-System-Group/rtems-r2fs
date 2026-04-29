@@ -22,5 +22,6 @@ int rtfsFileFdatasync(rtems_libio_t *iop);
 
 int rtfsFileFstat(const rtems_filesystem_location_info_t *pathloc, struct stat *buf);
 
+extern const rtems_filesystem_file_handlers_r rtfsFilehandlers;
 
 #endif

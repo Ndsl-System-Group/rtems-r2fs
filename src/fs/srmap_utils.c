@@ -3,6 +3,9 @@
 #include "fs/fs.h"
 #include "fs/fs_manager.h"
 #include "utils/rtfs_log.h"
+#include "utils/io_utils.h"
+
+#include <assert.h>
 
 
 typedef struct
@@ -74,7 +77,25 @@ void srmapUtilsWriteSrmapOfNode(SrmapUtils *this, uint32_t nodeLpa, uint32_t nid
 
 void srmapUtilsWriteDirtySrmapSync(SrmapUtils *this)
 {
-    // TODO
+    AsyncVecioSynchronizer syn;
+    asyncVecioSynchronizerInit(&syn, kh_size(this->dirtyBlks));
+
+    khiter_t k;
+    for (k = kh_begin(this->dirtyBlks); k != kh_end(this->dirtyBlks); ++k)
+    {
+        if (!kh_exist(this->dirtyBlks, k)) continue;
+
+        uint32_t lpa = kh_key(this->dirtyBlks, k);
+
+        khiter_t ck = kh_get(khsc, this->srmapCache, lpa);
+        assert(kh_end(this->srmapCache) != ck);
+
+        BlockBuffer *blk = &kh_value(this->srmapCache, ck);
+
+        blockBufferWriteToLpaAsync(blk, fileSystemManagerGetDevice(this->fsManager), lpa, asyncVecioSynchronizerGenericCallback, &syn);
+    }
+
+    asyncVecioSynchronizerDestroy(&syn);
 }
 
 void srmapUtilsClearCache(SrmapUtils *this)

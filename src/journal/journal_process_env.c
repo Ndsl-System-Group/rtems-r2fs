@@ -40,54 +40,10 @@ JournalProcessEnv *journalProcessEnvGetInstance()
     return &gEnv;
 }
 
-void journalProcessEnvDestroy(JournalProcessEnv *this)
-{
-    if (!this) return;
-
-    {
-        pthread_mutex_lock(&this->mtx);
-        this->exitReq = true;
-        pthread_mutex_unlock(&this->mtx);
-    }
-
-    pthread_cond_broadcast(&this->cond);
-
-    pthread_join(this->processThreadHandle, NULL);
-
-    pthread_mutex_destroy(&this->mtx);
-    pthread_cond_destroy(&this->cond);
-}
-
-// 同时超过 UNIT64_MAX 个事务运行则会分配重复 txId，暂不考虑这种情况。
-uint64_t journalProcessEnvAllocTxId(JournalProcessEnv *this)
-{
-    return atomic_fetch_add_explicit(&this->txIdToAlloc, 1, memory_order_relaxed);
-}
-
-void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *journal)
-{
-    bool needNotify = false;
-
-    {
-        pthread_mutex_lock(&this->mtx);
-
-        needNotify = (this->commitQueueHead == NULL);
-
-        JournalCommitNode *node = malloc(sizeof(*node));
-        node->journal = journal;
-
-        DL_APPEND(this->commitQueueHead, node);
-
-        pthread_mutex_unlock(&this->mtx);
-    }
-
-    if (needNotify) pthread_cond_broadcast(&this->cond);
-}
-
 void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos)
 {
-    pthread_mutex_init(&this->mtx, NULL);
-    pthread_cond_init(&this->cond, NULL);
+    rtfsMutexInit(&this->mtx);
+    rtfsCondInit(&this->cond);
 
     this->commitQueueHead = NULL;
     this->exitReq = false;
@@ -104,15 +60,76 @@ void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64
     pthread_create(&this->processThreadHandle, NULL, journalProcessThreadEntry, args);
 }
 
+void journalProcessEnvDestroy(JournalProcessEnv *this)
+{
+    if (!this) return;
+
+    {
+        rtfsMutexLock(&this->mtx);
+        this->exitReq = true;
+        rtfsMutexUnlock(&this->mtx);
+    }
+
+    rtfsCondBroadcast(&this->cond);
+
+    pthread_join(this->processThreadHandle, NULL);
+
+    // 清理 commit queue。
+    {
+        rtfsMutexLock(&this->mtx);
+
+        JournalCommitNode *el = NULL, *tmp = NULL;
+        DL_FOREACH_SAFE(this->commitQueueHead, el, tmp)
+        {
+            DL_DELETE(this->commitQueueHead, el);
+            free(el);
+        }
+
+        this->commitQueueHead = NULL;
+
+        rtfsMutexUnlock(&this->mtx);
+    }
+
+
+    rtfsMutexDestroy(&this->mtx);
+    rtfsCondDestroy(&this->cond);
+}
+
+// 同时超过 UNIT64_MAX 个事务运行则会分配重复 txId，暂不考虑这种情况。
+uint64_t journalProcessEnvAllocTxId(JournalProcessEnv *this)
+{
+    return atomic_fetch_add_explicit(&this->txIdToAlloc, 1, memory_order_relaxed);
+}
+
+void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *journal)
+{
+    bool needNotify = false;
+
+    {
+        rtfsMutexLock(&this->mtx);
+
+        needNotify = (this->commitQueueHead == NULL);
+
+        JournalCommitNode *node = malloc(sizeof(*node));
+        node->journal = journal;
+
+        DL_APPEND(this->commitQueueHead, node);
+
+        rtfsMutexUnlock(&this->mtx);
+    }
+
+    if (needNotify) rtfsCondBroadcast(&this->cond);
+}
+
 void journalProcessEnvStopProcessThread(JournalProcessEnv *this)
 {
     {
-        pthread_mutex_lock(&this->mtx);
+        rtfsMutexLock(&this->mtx);
         this->exitReq = true;
-        pthread_mutex_unlock(&this->mtx);
+        rtfsMutexUnlock(&this->mtx);
     }
 
-    pthread_cond_broadcast(&this->cond);
+    rtfsCondBroadcast(&this->cond);
 
     pthread_join(this->processThreadHandle, NULL);
 }

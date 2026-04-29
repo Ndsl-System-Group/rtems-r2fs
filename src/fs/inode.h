@@ -15,15 +15,6 @@
  */
 #define RTFS_GET_FSMANAGER_STRUCTURE(_loc) ((file_system_manager *)((_loc)->mt_entry->fs_info))
 
-/**
- * Get the ino from the I/O pointer.
- *
- * @param[in] _iop is the I/O pointer.
- * @return ino
- */
-#define RTFS_GET_IOP_INO(_iop) ((intptr_t)(_iop)->pathinfo.node_access)
-
-
 // The inode number or ino.
 typedef uint64_t rtfs_ino;
 
@@ -39,6 +30,16 @@ void rtfsRuntimeInodeViewInit(
     rtfs_ino ino,
     rtfs_ino parent_ino,
     uint8_t file_type
+);
+
+RtfsRuntimeInodeView *rtfsRuntimeInodeViewCreate(
+    rtfs_ino ino,
+    rtfs_ino parent_ino,
+    uint8_t file_type
+);
+
+RtfsRuntimeInodeView *rtfsRuntimeInodeViewClone(
+    const RtfsRuntimeInodeView *source
 );
 
 bool rtfsInodeIsDirectoryType(uint8_t file_type);

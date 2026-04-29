@@ -18,18 +18,41 @@ struct comm_dev;
  */
 typedef struct TransactionJournalRecord
 {
+    /**
+     * @brief 事务唯一编号。
+     */
     uint64_t txId;
+
+    /**
+     * @brief 该事务日志起始位置（包含）。
+     */
     uint64_t startLpa;
+
+    /**
+     * @brief 该事务日志结束位置（不包含）。
+     */
     uint64_t endLpa;
 } TransactionJournalRecord;
 
 
+/**
+ * @brief 初始化事务日志记录对象。
+ */
 void transactionJournalRecordInit(TransactionJournalRecord *this, uint64_t txId, uint64_t startLpa, uint64_t endLpa);
 
+/**
+ * @brief 获取事务编号。
+ */
 uint64_t transactionJournalRecordGetTxId(TransactionJournalRecord *this);
 
+/**
+ * @brief 获取事务日志起始位置。
+ */
 uint64_t transactionJournalRecordGetStartLpa(TransactionJournalRecord *this);
 
+/**
+ * @brief 获取事务日志结束位置。
+ */
 uint64_t transactionJournalRecordGetEndLpa(TransactionJournalRecord *this);
 
 /**
@@ -57,33 +80,98 @@ DEFINE_UTLIST_NODE(TxRecordNode, TransactionJournalRecord record)
  */
 typedef struct JournalProcessor
 {
+    /**
+     * @brief 底层通讯设备对象。
+     */
     struct comm_dev *dev;
 
-    uint64_t headLpa, tailLpa;           // 当前日志区域 FIFO 的首尾 LPA：[headLpa, tailLpa)。
-    uint64_t startLpa, endLpa;           // SSD 日志区域起止 LPA：[startLpa, endLpa)。
-    uint64_t *journalPosDmaBuffer;       // 从 SSD 获取日志头尾指针的 DMA 缓存区。
-    uint64_t curAvailLpa, totalAvailLpa; // 当前可用 lpa 数量与总共可用 lpa 数量。
+    /**
+     * @brief 当前日志区域 FIFO 的首尾 LPA：[headLpa, tailLpa)。
+     */
+    uint64_t headLpa, tailLpa;
 
-    JournalCommitNode *pendingJournalListHead; // 日志提交列表，从 JournalProcessEnv 中取到此处。
+    /**
+     * @brief SSD 日志区域起止 LPA：[startLpa, endLpa)。
+     */
+    uint64_t startLpa, endLpa;
 
+    /**
+     * @brief 从 SSD 获取日志头尾指针的 DMA 缓存区。
+     */
+    uint64_t *journalPosDmaBuffer;
+
+    /**
+     * @brief 当前可用 lpa 数量与总共可用 lpa 数量。
+     */
+    uint64_t curAvailLpa, totalAvailLpa;
+
+    /**
+     * @brief 日志提交列表，从 JournalProcessEnv 中取到此处。
+     */
+    JournalCommitNode *pendingJournalListHead;
+
+    /**
+     * @brief 已写入 SSD、等待完成应用的事务记录链表头。
+     */
     TxRecordNode *txRecordHead;
 
+    /**
+     * @brief Journal 写入器，负责将事务日志整理到写缓存并写入 SSD。
+     */
     JournalWriter journalWriter;
 
-    uint64_t curJournalBlockNum;                   // 当前日志记录占用的 SSD block 数目。
-    JournalContainer *curJournal;                  // 当前正在处理的日志记录。
-    JournalProcessState curProcState;              // 当前日志记录处理状态。
-    uint64_t curJournalStartLpa, curJournalEndLpa; // 当前日志记录的持久化区域。
+    /**
+     * @brief 当前日志记录占用的 SSD block 数目。
+     */
+    uint64_t curJournalBlockNum;
 
-    RtfsTimer journalPollTimer; // 控制日志位置查询的定时器。
+    /**
+     * @brief 当前正在处理的日志记录。
+     */
+    JournalContainer *curJournal;
+
+    /**
+     * @brief 当前日志记录处理状态。
+     */
+    JournalProcessState curProcState;
+
+    /**
+     * @brief 当前日志记录的持久化区域。
+     */
+    uint64_t curJournalStartLpa, curJournalEndLpa;
+
+    /**
+     * @brief 控制日志位置查询的定时器。
+     */
+    RtfsTimer journalPollTimer;
+
+    /**
+     * @brief 轮询定时器是否已启动。
+     */
     bool isPollTimerEnabled;
 } JournalProcessor;
 
 
+/**
+ * @brief 初始化日志处理器对象。
+ */
 void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t journalStartLpa, uint64_t journalEndLpa, uint64_t journalFifoPos);
 
+/**
+ * @brief 销毁日志处理器对象。
+ */
 void journalProcessorDestroy(JournalProcessor *this);
 
+/**
+ * @brief 日志处理线程主循环。
+ *
+ * @details 该函数通常作为日志后台线程入口逻辑调用。循环执行以下任务：
+ * 1. 获取新提交事务日志；
+ * 2. 将日志写入 SSD Journal；
+ * 3. 轮询 SSD Journal 应用进度；
+ * 4. 回收已完成事务对应日志空间；
+ * 5. 收到退出请求后结束线程。
+ */
 void journalProcessorProcessJournal(JournalProcessor *this);
 
 

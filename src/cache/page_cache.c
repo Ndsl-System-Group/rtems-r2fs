@@ -50,12 +50,12 @@ void pageEntryDestroy(PageEntry *this)
     rtfsMutexDestroy(&this->pageLock);
     blockBufferDestroy(&this->page);
 
-    if (0 != this->refCount) RTFS_LOG(RTFS_LOG_WARNING, "page cache entry(blkoff = %u): refcount = %u while destructed.", this->blkoff, atomic_load(&this->refCount));
+    if (0 != atomic_load(&this->refCount)) RTFS_LOG(RTFS_LOG_WARNING, "page cache entry(blkoff = %u): refcount = %u while destructed.", this->blkoff, atomic_load(&this->refCount));
 
-    if (0 != this->isDirty) RTFS_LOG(RTFS_LOG_WARNING, "page cache entry(blkoff = %u): still dirty while destructed.", this->blkoff);
+    if (false != atomic_load(&this->isDirty)) RTFS_LOG(RTFS_LOG_WARNING, "page cache entry(blkoff = %u): still dirty while destructed.", this->blkoff);
 }
 
-pthread_mutex_t *pageEntryGetLock(PageEntry *this)
+mutex_t *pageEntryGetLock(PageEntry *this)
 {
     return &this->pageLock;
 }
@@ -80,7 +80,7 @@ uint32_t pageEntryGetBlkoff(const PageEntry *this)
     return this->blkoff;
 }
 
-uint32_t pageEntryGetLpaRef(PageEntry *this)
+uint32_t pageEntryGetLpa(PageEntry *this)
 {
     return this->lpa;
 }
@@ -132,12 +132,12 @@ void pageEntryHandleMakeDirty(PageEntryHandle *this)
 
 void pageCacheInit(PageCache *this, size_t expectSize)
 {
-    int res = rtfsSpinInit(&this->cacheLock);
-    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "page cache: init cache spin failed.");
+    int res = rtfsMutexInit(&this->cacheLock);
+    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "page cache: init cache mutex failed.");
 
     // 任意对锁初始化失败的异常均为 panic，上层应该捕获异常并终止程序，故此处不再释放成功初始化的锁。
-    res = rtfsSpinInit(&this->dirtyPagesLock);
-    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "page cache: init dirty page set spin failed.");
+    res = rtfsMutexInit(&this->dirtyPagesLock);
+    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "page cache: init dirty page set mutex failed.");
 
     genericCacheManagerInit(&this->cacheManager);
 
@@ -161,13 +161,13 @@ void pageCacheDestroy(PageCache *this)
 
     genericCacheManagerDestroy(&this->cacheManager);
 
-    rtfsSpinDestroy(&this->dirtyPagesLock);
-    rtfsSpinDestroy(&this->cacheLock);
+    rtfsMutexDestroy(&this->dirtyPagesLock);
+    rtfsMutexDestroy(&this->cacheLock);
 }
 
 PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
 {
-    rtfsSpinLock(&this->cacheLock);
+    rtfsMutexLock(&this->cacheLock);
 
     PageEntry *entry = (PageEntry *)genericCacheManagerGet(&this->cacheManager, blkoff, true);
 
@@ -180,7 +180,7 @@ PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
             PageEntry *victim = (PageEntry *)genericCacheManagerReplaceOne(&this->cacheManager);
             if (NULL != victim)
             {
-                assert(0 == victim->refCount && false == atomic_load(&victim->isDirty));
+                assert(0 == atomic_load(&victim->refCount) && false == atomic_load(&victim->isDirty));
 
                 RTFS_LOG(RTFS_LOG_INFO, "replace page cache entry, blkoff = %u", victim->blkoff);
 
@@ -200,7 +200,9 @@ PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
         // 到此处，说明要么缓存容量充足，要么找不到能置换的缓存项，则直接增加一项。
         if (NULL == entry)
         {
+            RTFS_LOG(RTFS_LOG_DEBUG, "sizeof PageEntry: %d", sizeof(PageEntry));
             PageEntry *newEntry = (PageEntry *)malloc(sizeof(PageEntry));
+            RTFS_LOG(RTFS_LOG_DEBUG, "newEntry by malloc: %p", newEntry);
             assert(NULL != newEntry);
 
             pageEntryInit(newEntry, blkoff);
@@ -217,9 +219,10 @@ PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
         pageCacheAddRefCount(this, entry);
     }
 
-    rtfsSpinUnlock(&this->cacheLock);
+    rtfsMutexUnlock(&this->cacheLock);
 
-    PageEntryHandle res = {.cache = this, .entry = entry};
+    PageEntryHandle res;
+    pageEntryHandleInit(&res, this, entry);
 
 
     return res;
@@ -252,7 +255,7 @@ void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff)
         uint32_t k = node.blkoff;
 
         // 将范围外的所有 page 的 dirty 标记清除，标记为 invalid。
-        node.handle.entry->isDirty = false;
+        atomic_store(&node.handle.entry->isDirty, false);
         node.handle.entry->contentState = PAGE_INVALID;
 
         // 范围外的 page 将被移除，所以递减 curSize。
@@ -274,21 +277,21 @@ void *pageCacheGetDirtyPages(PageCache *this)
 
 void pageCacheClearDirtyPages(PageCache *this)
 {
-    rtfsSpinLock(&this->dirtyPagesLock);
+    rtfsMutexLock(&this->dirtyPagesLock);
 
     kbitr_t itr;
     for (kb_itr_first(ktdpn, getDirtyPagesTree(this), &itr); kb_itr_valid(&itr); kb_itr_next(ktdpn, getDirtyPagesTree(this), &itr))
     {
         DirtyPagesNode *node = &kb_itr_key(DirtyPagesNode, &itr);
 
-        node->handle.entry->isDirty = false;
+        atomic_store(&node->handle.entry->isDirty, false);
     }
 
     // kbtree 未提供 clear 接口。用销毁加重建模拟。
     kb_destroy(ktdpn, getDirtyPagesTree(this));
     this->dirtyPages = kb_init(ktdpn, KB_DEFAULT_SIZE);
 
-    rtfsSpinUnlock(&this->dirtyPagesLock);
+    rtfsMutexUnlock(&this->dirtyPagesLock);
 }
 
 
@@ -319,6 +322,7 @@ void pageCacheAddRefCount(PageCache *this, PageEntry *entry)
 {
     if (0 == atomic_fetch_add(&entry->refCount, 1))
     {
+        // 当 refCount 变为 0 时，page 必须是干净的。调用者需在释放最后一个引用前完成 dirty 页的处理（如 flush 或 clear）。
         // 先前引用计数为 0，不可能是 dirty 状态。此时 refCount 由 0 增至 1，且加了 cacheLock，assert 访问 entry 是安全的（此时只可能在此处访问）。
         assert(false == atomic_load(&entry->isDirty));
 
@@ -333,10 +337,11 @@ void pageCacheSubRefCount(PageCache *this, PageEntry *entry)
     if (1 == atomic_fetch_sub(&entry->refCount, 1))
     {
         // 加 cacheLock，再次检查引用计数。成功获取锁后，如果 refCount 仍为 0，则不可能有其它线程能够修改 refCount，因为 refCount 从 0 增加到 1，一定是通过调用 PageCache 的 get 方法，而该方法在加 refCount 前需要加 cacheLock。此时将其 unpin，然后解锁。
-        rtfsSpinLock(&this->cacheLock);
+        rtfsMutexLock(&this->cacheLock);
 
         if (0 == atomic_load(&entry->refCount))
         {
+            // 同 pageCacheAddRefCount()。
             // 若引用计数减为 0，不可能是 dirty 状态。此时 refCount 由 1 减至 0，且加了 cacheLock，访问 entry 是安全的。
             assert(false == atomic_load(&entry->isDirty));
 
@@ -345,7 +350,7 @@ void pageCacheSubRefCount(PageCache *this, PageEntry *entry)
 
         // 如果 refCount 此时不为 0，说明加锁前有其它线程再次通过 get 获取引用计数，所以放弃 unpin。
 
-        rtfsSpinUnlock(&this->cacheLock);
+        rtfsMutexUnlock(&this->cacheLock);
     }
 }
 
@@ -359,7 +364,7 @@ void pageCacheDoReplace(PageCache *this)
 
             if (NULL != entry)
             {
-                assert(0 == entry->refCount && false == atomic_load(&entry->isDirty));
+                assert(0 == atomic_load(&entry->refCount) && false == atomic_load(&entry->isDirty));
 
                 --this->curSize;
 
@@ -373,7 +378,7 @@ void pageCacheDoReplace(PageCache *this)
 
 void pageCacheAddToDirtyPages(PageCache *this, PageEntryHandle *page)
 {
-    rtfsSpinLock(&this->dirtyPagesLock);
+    rtfsMutexLock(&this->dirtyPagesLock);
 
     assert(atomic_load(&page->entry->refCount) >= 1);
 
@@ -381,5 +386,5 @@ void pageCacheAddToDirtyPages(PageCache *this, PageEntryHandle *page)
 
     kb_put(ktdpn, getDirtyPagesTree(this), node);
 
-    rtfsSpinUnlock(&this->dirtyPagesLock);
+    rtfsMutexUnlock(&this->dirtyPagesLock);
 }
