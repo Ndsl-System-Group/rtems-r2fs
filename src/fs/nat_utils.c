@@ -53,21 +53,26 @@ uint32_t natGetLpaOfNid(NatLpaMapping *this, uint32_t nid)
 
 void natSetLpaOfNid(NatLpaMapping *this, uint32_t nid, uint32_t newLpa)
 {
-    // 设置 Nat 表项。
-    NatNidPos pos = natGetNidPos(this, nid);
+    struct RtfsNatBlock *nat_block;
+    struct RtfsNatEntry *nat_entry;
+    struct RtfsNatEntry new_value;
+    JournalContainer *curJournal;
 
+    NatNidPos pos = natGetNidPos(this, nid);
     uint32_t natBlockLpa = pos.lpa;
     uint32_t natEntryIdx = pos.idx;
 
     SitNatCacheEntryHandle natHandle = sitNatCacheGet(fileSystemManagerGetNatCache(this->fsManager), natBlockLpa);
-    struct RtfsNatEntry natEntry = sitNatCacheEntryHandleGetNatBlockPtr(&natHandle)->entries[natEntryIdx];
+    nat_block = sitNatCacheEntryHandleGetNatBlockPtr(&natHandle);
+    nat_entry = &nat_block->entries[natEntryIdx];
 
-    natEntry.block_addr = newLpa;
+    nat_entry->block_addr = newLpa;
     RTFS_LOG(RTFS_LOG_DEBUG, "set nid(%u)'s lpa to %u.", nid, newLpa);
 
-    // 记录 NAT 日志。
-    JournalContainer *curJournal = fileSystemManagerGetCurJournal(this->fsManager);
-    NatJournalEntry natJournal = {.nid = nid, .newValue = natEntry};
+    new_value = *nat_entry;
+    curJournal = fileSystemManagerGetCurJournal(this->fsManager);
+    NatJournalEntry natJournal = {.nid = nid, .newValue = new_value};
     journalContainerAppendNatJournalEntry(curJournal, &natJournal);
     sitNatCacheEntryHandleAddHostVersion(&natHandle);
+    sitNatCacheEntryHandleDestroy(&natHandle);
 }

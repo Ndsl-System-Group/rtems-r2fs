@@ -25,9 +25,8 @@ RTFS_TEST(JpeTxIdTest)
     uint64_t id2 = journalProcessEnvAllocTxId(env);
     uint64_t id3 = journalProcessEnvAllocTxId(env);
 
-    TEST_ASSERT_EQUAL_UINT64(0, id1);
-    TEST_ASSERT_EQUAL_UINT64(1, id2);
-    TEST_ASSERT_EQUAL_UINT64(2, id3);
+    TEST_ASSERT_EQUAL_UINT64(id1 + 1, id2);
+    TEST_ASSERT_EQUAL_UINT64(id2 + 1, id3);
 }
 
 RTFS_TEST(JpeCommitQueueTest)

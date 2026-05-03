@@ -1,11 +1,14 @@
 #include "dir_handler.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <rtems/libio_.h>
 #include <string.h>
 
-#include "fs/dir_inode.h"
-#include "fs/inode.h"
+#include "fs/dir_inode/dir_inode.h"
+#include "fs/dir_inode/dir_inode_resolver.h"
+#include "fs/fs_manager.h"
+#include "fs/inode/inode.h"
 
 
 static RtfsRuntimeInodeView *rtfsDirGetNodeView(
@@ -34,8 +37,12 @@ ssize_t rtfsDirRead(rtems_libio_t *iop, void *buffer, size_t count)
 {
     RtfsRuntimeInodeView *view;
     RtfsDirInode *dir_inode;
+    RtfsDirInodeBuildRequest request;
+    file_system_manager *fs_manager;
     off_t offset;
     ssize_t bytes_read;
+    ssize_t total_bytes_read;
+    int ret;
 
     if (iop == NULL || buffer == NULL) {
         errno = EINVAL;
@@ -48,16 +55,51 @@ ssize_t rtfsDirRead(rtems_libio_t *iop, void *buffer, size_t count)
         return -1;
     }
 
-    dir_inode = rtfsDirInodeGet(NULL, view->ino);
-    if (dir_inode == NULL) {
-        errno = ENOMEM;
+    fs_manager = (file_system_manager *)iop->pathinfo.mt_entry->fs_info;
+    request.ino = view->ino;
+    request.mode = RTFS_DIR_BUILD_ON_DEMAND;
+
+    ret = rtfsDirInodeResolve(fs_manager, NULL, &request, &dir_inode);
+    if (ret != 0) {
+        errno = ret;
         return -1;
     }
 
     offset = iop->offset;
-    bytes_read = rtfsDirInodeReadEntries(dir_inode, &offset, buffer, count);
+    total_bytes_read = 0;
+
+    do {
+        bytes_read = rtfsDirInodeReadEntries(
+            dir_inode,
+            &offset,
+            (char *)buffer + total_bytes_read,
+            count - (size_t)total_bytes_read
+        );
+        if (bytes_read < 0) {
+            break;
+        }
+
+        total_bytes_read += bytes_read;
+        if ((size_t)total_bytes_read >= count || bytes_read > 0) {
+            break;
+        }
+
+        if (count - (size_t)total_bytes_read < sizeof(struct dirent) ||
+            rtfsDirInodeIsFullyLoaded(dir_inode)) {
+            break;
+        }
+
+        ret = rtfsDirInodeResolveNext(fs_manager, view->ino, dir_inode);
+        if (ret != 0) {
+            errno = ret;
+            bytes_read = -1;
+            break;
+        }
+    } while (true);
+
     if (bytes_read >= 0) {
         iop->offset = offset;
+        bytes_read = total_bytes_read;
     }
 
     rtfsDirInodePut(dir_inode);

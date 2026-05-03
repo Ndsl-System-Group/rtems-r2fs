@@ -8,8 +8,10 @@
 
 #include "sit_utils.h"
 #include "nat_utils.h"
+#include "cache/node_block_cache.h"
 #include "cache/sit_nat_cache.h"
 #include "cache/super_cache.h"
+#include "cow_reclaim_registry.h"
 #include "super_manager.h"
 #include "srmap_utils.h"
 
@@ -52,6 +54,8 @@ static rtems_recursive_mutex g_fs_manager_init_lock = RTEMS_RECURSIVE_MUTEX_INIT
 
 // ==================== 内部辅助函数 ====================
 
+static void _internal_destroy(file_system_manager *this);
+
 static int _init_locks(file_system_manager *this)
 {
     int ret;
@@ -78,76 +82,105 @@ static void _destroy_locks(file_system_manager *this)
 static file_system_manager *_internal_create(struct comm_dev *dev)
 {
     file_system_manager *this = (file_system_manager *)calloc(1, sizeof(file_system_manager));
+    bool locks_inited = false;
+
     if (!this) return NULL;
 
     int ret = _init_locks(this);
     if (ret != 0)
     {
-        free(this);
-        return NULL;
+        goto fail_before_init;
     }
+    locks_inited = true;
 
     this->dev_ = dev;
-    // this->is_unrecoverable_ = false;
 
     // super block 由 fs_manager 统一装配并持有，后续由 super_manager 消费其内存镜像。
     superCacheInit(&this->super_cache_, dev, super_block_lpa);
     superCacheReadSuperBlock(&this->super_cache_);
     this->super_blk_mem_ = superCacheGet(&this->super_cache_);
-
-    // TODO: 初始化各个子模块
-
-    // SIT
-    // this->sit_operator_ = malloc(sizeof(SitOperator));
-    // sitOperatorInit(this->sit_operator_, this, super_block_lpa, seg0StartLpa, sitStartLpa, sitSegmentCnt);
-
-    // NAT
-    // this->nat_lpa_mapping_ = malloc(sizeof(NatLpaMapping));
-    // natLpaMappingInit(this->nat_lpa_mapping_, this, natStartLpa, natSegmentCnt);
-
-    // SRMAP
-    // TODO 这里目前有一个 bug，这个函数里面会调用 fileSystemManagerGetSuperBlkMem(fsManager)->srmap_blkaddr 语句，目前上面的 TODO super_blk_mem 是 NULL，因此会空指针越界，导致程序崩溃。对上面的 sit nat utils 同理。
-    // this->srmap_utils_ = malloc(sizeof(SrmapUtils));
-    // srmapUtilsInit(this->srmap_utils_, this);
-
-    // TODO(): 创建SIT_NAT缓存数量如何配置？
     this->sit_cache_ = malloc(sizeof(SitNatCache));
+    if (this->sit_cache_ == NULL)
+    {
+        goto fail_after_init;
+    }
     sitNatCacheInit(this->sit_cache_, dev, 100);
+
     this->nat_cache_ = malloc(sizeof(SitNatCache));
+    if (this->nat_cache_ == NULL)
+    {
+        goto fail_after_init;
+    }
     sitNatCacheInit(this->nat_cache_, dev, 100);
+
+    this->node_cache_ = malloc(sizeof(NodeBlockCache));
+    if (this->node_cache_ == NULL)
+    {
+        goto fail_after_init;
+    }
+    nodeBlockCacheInit(this->node_cache_, this, 100);
+
     this->sp_manager_ = superManagerCreate(this);
+    if (this->sp_manager_ == NULL)
+    {
+        goto fail_after_init;
+    }
+
+    cowReclaimRegistryInit(this);
 
     return this;
+
+fail_after_init:
+    _internal_destroy(this);
+    return NULL;
+
+fail_before_init:
+    if (locks_inited)
+    {
+        _destroy_locks(this);
+    }
+    free(this);
+    return NULL;
 }
 
 static void _internal_destroy(file_system_manager *this)
 {
     if (!this) return;
 
-    // 1. 销毁子模块 (按依赖逆序)
-    // TODO: 添加子模块销毁调用
-    sitNatCacheDestroy(this->sit_cache_);
-    sitNatCacheDestroy(this->nat_cache_);
-    srmapUtilsDestroy(this->srmap_utils_);
-    // DestroyReplaceProtectManager(this->rp_manager);
-    // DestroyJournalContainer(this->cur_journal);
-    // DestroyFdArray(this->fd_arr);
-    // DestroySrmapUtils(this->srmap_util);
-    // DestroyNatCache(this->nat_cache);
-    // DestroySitCache(this->sit_cache);
-    // DestroyDirDataCache(this->dir_data_cache);
-    // DestroyNodeCache(this->node_cache);
+    if (this->node_cache_ != NULL)
+    {
+        nodeBlockCacheDestroy(this->node_cache_);
+        free(this->node_cache_);
+        this->node_cache_ = NULL;
+    }
+    if (this->sit_cache_ != NULL)
+    {
+        sitNatCacheDestroy(this->sit_cache_);
+        free(this->sit_cache_);
+        this->sit_cache_ = NULL;
+    }
+    if (this->nat_cache_ != NULL)
+    {
+        sitNatCacheDestroy(this->nat_cache_);
+        free(this->nat_cache_);
+        this->nat_cache_ = NULL;
+    }
+    if (this->srmap_utils_ != NULL)
+    {
+        srmapUtilsDestroy(this->srmap_utils_);
+        free(this->srmap_utils_);
+        this->srmap_utils_ = NULL;
+    }
     superManagerDestroy(this->sp_manager_);
     this->sp_manager_ = NULL;
 
-    // 2. 释放超级块缓存及其持有的内存镜像
+    cowReclaimRegistryDestroy();
+
     superCacheDestroy(&this->super_cache_);
     this->super_blk_mem_ = NULL;
 
-    // 3. 销毁同步对象
     _destroy_locks(this);
 
-    // 4. 释放主结构体
     free(this);
 }
 

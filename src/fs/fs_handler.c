@@ -7,12 +7,14 @@
 #include <string.h>
 #include <sys/statvfs.h>
 
-#include "dir_inode.h"
+#include "dir_inode/dir_inode.h"
+#include "dir_inode/dir_inode_resolver.h"
 #include "fs_manager.h"
 #include "handler/dir_handler.h"
 #include "handler/file_handler.h"
-#include "inode.h"
+#include "inode/inode.h"
 #include "nat_utils.h"
+#include "super_manager.h"
 #include "utils/rtfs_log.h"
 
 
@@ -163,19 +165,19 @@ int r2fsInitialize(
     const void *data
 )
 {
+    comm_dev *dev;
     file_system_manager *fs_manager;
     RtfsRuntimeInodeView *root_view;
     rtfs_ino root_ino;
     int ret;
-
-    (void)data;
 
     if (mt_entry == NULL || mt_entry->mt_fs_root == NULL) {
         errno = EINVAL;
         return -1;
     }
 
-    ret = fileSystemManagerSetup(mt_entry->dev);
+    dev = (comm_dev *)(data != NULL ? data : mt_entry->dev);
+    ret = fileSystemManagerSetup(dev);
     if (ret != 0) {
         errno = ret == -ENOMEM ? ENOMEM : EBUSY;
         return -1;
@@ -219,7 +221,7 @@ void r2fsUnlock(const rtems_filesystem_mount_table_entry_t *mt_entry)
     fileSystemManagerMetaUnlock(fs_manager);
 }
 
-static int r2fsAreNodesEqual(
+static bool r2fsAreNodesEqual(
     const rtems_filesystem_location_info_t *a,
     const rtems_filesystem_location_info_t *b
 )
@@ -269,6 +271,8 @@ static rtems_filesystem_eval_path_generic_status r2fsFsEvalToken(
     rtems_filesystem_location_info_t *currentloc;
     RtfsRuntimeInodeView *current_view;
     RtfsDirInode *dir_inode;
+    RtfsDirInodeBuildRequest request;
+    file_system_manager *fs_manager;
     RtfsDirLookupResult lookup_result;
     int ret;
 
@@ -276,6 +280,7 @@ static rtems_filesystem_eval_path_generic_status r2fsFsEvalToken(
 
     currentloc = rtems_filesystem_eval_path_get_currentloc(ctx);
     current_view = r2fsGetNodeView(currentloc);
+    fs_manager = r2fsGetFsManagerFromLoc(currentloc);
 
     if (current_view == NULL) {
         rtems_filesystem_eval_path_error(ctx, EIO);
@@ -287,13 +292,29 @@ static rtems_filesystem_eval_path_generic_status r2fsFsEvalToken(
         return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_CONTINUE;
     }
 
-    dir_inode = rtfsDirInodeGet(NULL, current_view->ino);
-    if (dir_inode == NULL) {
-        rtems_filesystem_eval_path_error(ctx, ENOMEM);
+    request.ino = current_view->ino;
+    request.mode = RTFS_DIR_BUILD_ON_DEMAND;
+
+    ret = rtfsDirInodeResolve(fs_manager, NULL, &request, &dir_inode);
+    if (ret != 0) {
+        rtems_filesystem_eval_path_error(ctx, ret);
         return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_DONE;
     }
 
-    ret = rtfsDirInodeLookup(dir_inode, token, tokenlen, &lookup_result);
+    do {
+        ret = rtfsDirInodeLookup(dir_inode, token, tokenlen, &lookup_result);
+        if (ret != ENOENT || rtfsDirInodeIsFullyLoaded(dir_inode)) {
+            break;
+        }
+
+        ret = rtfsDirInodeResolveNext(fs_manager, current_view->ino, dir_inode);
+        if (ret != 0) {
+            rtfsDirInodePut(dir_inode);
+            rtems_filesystem_eval_path_error(ctx, ret);
+            return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_DONE;
+        }
+    } while (true);
+
     rtfsDirInodePut(dir_inode);
 
     if (ret == ENOENT) {
@@ -388,8 +409,6 @@ int r2fsMknod(
     }
 
     natLpaMappingInit(&nat_mapping, fs_manager);
-    // TODO: natSetLpaOfNid() 当前实现位于 nat_utils，且已知存在“修改局部副本、未稳定回写缓存块”的缺陷。
-    // TODO: 按模块边界约束，这个问题应由 nat_utils/cache/journal 侧修复，这里只保留主流程接线与提醒。
     natSetLpaOfNid(&nat_mapping, new_ino, new_lpa);
 
     RTFS_LOG(
@@ -413,7 +432,6 @@ int r2fsMknod(
         new_ino,
         new_lpa
     );
-    // TODO: natSetLpaOfNid() 回滚同样受当前 nat_utils 接口缺陷影响，不能把它视为稳定持久化语义。
     natSetLpaOfNid(&nat_mapping, new_ino, INVALID_LPA);
     superManagerFreeNid(sp_manager, new_ino);
 

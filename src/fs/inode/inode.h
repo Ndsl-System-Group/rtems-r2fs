@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <sys/endian.h>
 
-#include "fs.h"
+#include "fs/fs.h"
 
 
 /* Return the file system structure given a path location.
