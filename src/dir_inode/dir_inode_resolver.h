@@ -1,7 +1,7 @@
 #ifndef _DIR_INODE_RESOLVER_H_
 #define _DIR_INODE_RESOLVER_H_
 
-#include "fs/dir_inode/dir_inode.h"
+#include "dir_inode/dir_inode.h"
 #include "fs/fs_manager.h"
 
 typedef enum RtfsDirInodeBuildMode

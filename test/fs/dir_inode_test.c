@@ -6,7 +6,7 @@
 
 #include "cache/block_buffer.h"
 #include "cache/node_block_cache.h"
-#include "fs/dir_inode/dir_inode.h"
+#include "dir_inode/dir_inode.h"
 
 
 static RtfsRuntimeInodeView makeChildView(rtfs_ino ino, rtfs_ino parent_ino, uint8_t file_type)

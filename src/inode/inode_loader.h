@@ -5,7 +5,7 @@
 
 #include "fs/fs.h"
 #include "fs/fs_manager.h"
-#include "fs/inode/inode.h"
+#include "inode/inode.h"
 
 /**
  * @brief 确保指定 ino 的 inode block 已经位于 NodeBlockCache 中。

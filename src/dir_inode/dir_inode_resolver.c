@@ -3,7 +3,7 @@
 #include "cache/block_buffer.h"
 #include "cache/node_block_cache.h"
 #include "communication/comm_api.h"
-#include "fs/inode/inode_loader.h"
+#include "inode/inode_loader.h"
 #include "utils/io_utils.h"
 
 #include <stdbool.h>

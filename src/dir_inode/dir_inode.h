@@ -8,7 +8,7 @@
 #include <errno.h>
 
 #include "fs/fs.h"
-#include "fs/inode/inode.h"
+#include "inode/inode.h"
 
 typedef struct file_system_manager file_system_manager;
 typedef struct comm_dev comm_dev;

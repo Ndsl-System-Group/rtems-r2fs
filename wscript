@@ -30,6 +30,13 @@ def options(opt):
         help='Enable Unit Tests'
     )
 
+    opt.add_option(
+        '--enable-coverage',
+        action='store_true',
+        default=False,
+        help='Enable gcov coverage instrumentation'
+    )
+
 def configure(conf):
     rtems.configure(conf, bsp_configure=bsp_configure)
 
@@ -39,6 +46,12 @@ def configure(conf):
     else:
         conf.msg('Checking for Unit Test', 'Disabled')
 
+    if conf.options.enable_coverage:
+        conf.define('ENABLE_COVERAGE', True)
+        conf.msg('Checking for Coverage', 'Enabled')
+    else:
+        conf.msg('Checking for Coverage', 'Disabled')
+
     conf.write_config_header('rtfs_config.h')
 
 def build(bld):
@@ -46,6 +59,8 @@ def build(bld):
 
     all_sources = bld.path.ant_glob('src/**/*.c', excl='**/test_*.c **/*_test.c') + bld.path.ant_glob('third_party/**/*.c')
     cflags = ['-g']
+    linkflags = []
+    libs = []
 
     # 这个做法太丑陋了，但是目前没找到合适的解法。conf 级别的配置和变量无法同步到 build 级别，我不知道为什么。
     with open('build/rtfs_config.h') as f:
@@ -53,6 +68,14 @@ def build(bld):
     if '#define ENABLE_UNIT_TEST 1' in text:
         all_sources += bld.path.ant_glob('test/**/*.c')
         cflags.append('-DUNITY_SUPPORT_64')
+    if '#define ENABLE_COVERAGE 1' in text:
+        cflags += [
+            '--coverage',
+            '-fprofile-info-section=.rtemsroset.gcov_info.content',
+            '-fprofile-update=atomic',
+            '-DRTEMS_GCOV_COVERAGE'
+        ]
+        libs += ['rtemstest', 'gcov']
 
     include_paths = [
         bld.path.find_dir('build').abspath(),
@@ -64,6 +87,8 @@ def build(bld):
     bld(features = 'c cprogram',
         target = 'main.exe',
         cflags = cflags,
+        linkflags = linkflags,
+        lib = libs,
         includes = include_paths,
         source = all_sources
     )

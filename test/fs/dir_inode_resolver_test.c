@@ -5,7 +5,7 @@
 #include "cache/sit_nat_cache.h"
 #include "cache/super_cache.h"
 #include "communication/dev.h"
-#include "fs/dir_inode/dir_inode_resolver.h"
+#include "dir_inode/dir_inode_resolver.h"
 #include "fs/cow_reclaim_registry.h"
 #include "fs/super_manager.h"
 #include "journal/journal_container.h"
@@ -1095,6 +1095,83 @@ RTFS_TEST(DirInodeAddEntry_WhenRegularBlockIsFull_ShouldGrowDirectBlock)
     new_lpa = cached_inode_node->i.i_addr[1];
     TEST_ASSERT_NOT_EQUAL(INVALID_LPA, new_lpa);
     TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)SIZE_TO_BLOCK(cached_inode_node->i.i_size));
+    nodeBlockCacheEntryHandleDestroy(&inode_handle);
+
+    rtfsDirInodePut(dir_inode);
+    dirResolverFixtureFini(&fixture);
+}
+
+RTFS_TEST(DirInodeAddEntry_WhenInlineCapacityIsExhausted_ShouldConvertToRegularAndKeepEntriesMutable)
+{
+    DirResolverFixture fixture;
+    RtfsDirInode *dir_inode = NULL;
+    RtfsDirInodeBuildRequest request = {
+        .ino = 2000,
+        .mode = RTFS_DIR_BUILD_METADATA_ONLY
+    };
+    RtfsRuntimeInodeView child_view;
+    RtfsDirLookupResult result;
+    NodeBlockCacheEntryHandle inode_handle;
+    struct RtfsNode *cached_inode_node;
+    struct RtfsInlineDentry *inline_dentry;
+    char existing_name[9];
+    int i;
+
+    dirResolverFixtureInit(&fixture);
+
+    memset(&fixture.inode_node, 0, sizeof(fixture.inode_node));
+    fixture.inode_node.i.i_inline = RTFS_INLINE_DENTRY;
+    fixture.inode_node.i.i_type = RTFS_FT_DIR;
+    fixture.inode_node.i.i_pino = 1999;
+    fixture.inode_node.i.i_size = BLOCK_BUFFER_SIZE;
+    fixture.inode_node.i.i_dentry_num = NR_INLINE_DENTRY;
+    fixture.inode_node.i.i_mtime = 777;
+    fixture.inode_node.footer.nid = 2000;
+    fixture.inode_node.footer.ino = 2000;
+    inline_dentry = (struct RtfsInlineDentry *)fixture.inode_node.i.i_addr;
+
+    for (i = 0; i < NR_INLINE_DENTRY; ++i) {
+        char name[9];
+
+        snprintf(name, sizeof(name), "e%03d", i);
+        addInlineDentry(
+            inline_dentry,
+            (size_t)i,
+            (rtfs_ino)(6000 + i),
+            RTFS_FT_REG_FILE,
+            name
+        );
+    }
+    snprintf(existing_name, sizeof(existing_name), "e%03d", 0);
+
+    dirResolverFixtureSyncCachedNode(&fixture, 2000, &fixture.inode_node);
+
+    TEST_ASSERT_EQUAL(0, rtfsDirInodeResolve(&fixture.fs_manager, NULL, &request, &dir_inode));
+    TEST_ASSERT_NOT_NULL(dir_inode);
+
+    rtfsRuntimeInodeViewInit(&child_view, 3600, 2000, RTFS_FT_REG_FILE);
+    TEST_ASSERT_EQUAL(0, rtfsDirInodeAddEntry(dir_inode, "z", &child_view));
+    TEST_ASSERT_EQUAL(0, rtfsDirInodeLookup(dir_inode, "z", 1, &result));
+    TEST_ASSERT_EQUAL(3600u, result.inode_view.ino);
+
+    TEST_ASSERT_EQUAL(
+        0,
+        rtfsDirInodeLookup(dir_inode, existing_name, strlen(existing_name), &result)
+    );
+    TEST_ASSERT_EQUAL(0, rtfsDirInodeRemoveEntry(dir_inode, existing_name));
+    TEST_ASSERT_EQUAL(
+        ENOENT,
+        rtfsDirInodeLookup(dir_inode, existing_name, strlen(existing_name), &result)
+    );
+    TEST_ASSERT_EQUAL(0, rtfsDirInodeRemoveEntry(dir_inode, "z"));
+    TEST_ASSERT_EQUAL(ENOENT, rtfsDirInodeLookup(dir_inode, "z", 1, &result));
+
+    inode_handle = nodeBlockCacheGet(&fixture.node_cache, 2000);
+    TEST_ASSERT_NOT_NULL(inode_handle.entry);
+    cached_inode_node = nodeBlockCacheEntryGetNodeBlockPtr(inode_handle.entry);
+    TEST_ASSERT_FALSE((cached_inode_node->i.i_inline & RTFS_INLINE_DENTRY) != 0);
+    TEST_ASSERT_NOT_EQUAL(INVALID_LPA, cached_inode_node->i.i_addr[0]);
+    TEST_ASSERT_EQUAL_UINT64(BLOCK_BUFFER_SIZE, cached_inode_node->i.i_size);
     nodeBlockCacheEntryHandleDestroy(&inode_handle);
 
     rtfsDirInodePut(dir_inode);

@@ -198,6 +198,9 @@ static int rtfsDirInodeAddInlineBacking(
     rtfs_ino child_ino,
     uint8_t child_type
 );
+static int rtfsDirInodeConvertInlineToRegular(
+    RtfsDirInode *dir_inode
+);
 
 static void rtfsDirInodeSetDentryBit(
     uint8_t *bitmap,
@@ -1747,7 +1750,13 @@ static int rtfsDirInodeAddInlineBacking(
     }
 
     if (start_slot == NR_INLINE_DENTRY) {
-        return ENOSPC;
+        int convert_ret = rtfsDirInodeConvertInlineToRegular(dir_inode);
+
+        if (convert_ret != 0) {
+            return convert_ret;
+        }
+
+        return rtfsDirInodeAddRegularBacking(dir_inode, name, child_ino, child_type);
     }
 
     dir_inode->inline_dentry->dentry[start_slot].ino = child_ino;
@@ -1775,6 +1784,127 @@ static int rtfsDirInodeAddInlineBacking(
     dir_inode->entries[dir_inode->entry_count - 1].source_block_index = 0;
     dir_inode->entries[dir_inode->entry_count - 1].source_slot_index = (uint16_t)start_slot;
     rtfsDirInodeTouchMetadata(dir_inode);
+    return 0;
+}
+
+static int rtfsDirInodeConvertInlineToRegular(
+    RtfsDirInode *dir_inode
+)
+{
+    RtfsDirInodeNodeHandle *owned_handle;
+    struct RtfsDentryBlock regular_block;
+    RtfsLoadedDirBlock *loaded_block;
+    uint8_t old_i_inline;
+    uint64_t old_i_size;
+    uint32_t old_i_addr[DEF_ADDRS_PER_INODE];
+    uint32_t old_i_nid[DEF_NIDS_PER_INODE];
+    uint16_t slot_map[NR_INLINE_DENTRY];
+    size_t old_total_block_count;
+    size_t old_loaded_block_count;
+    bool old_is_fully_loaded;
+    size_t regular_slot = 0;
+    size_t i;
+    int ret;
+
+    if (dir_inode == NULL || dir_inode->disk_inode == NULL || dir_inode->inline_dentry == NULL) {
+        return EINVAL;
+    }
+
+    if (dir_inode->backing_kind != RTFS_DIR_BACKING_INLINE || dir_inode->cache_handle == NULL) {
+        return EINVAL;
+    }
+
+    memset(&regular_block, 0, sizeof(regular_block));
+    memset(slot_map, 0xff, sizeof(slot_map));
+    old_i_inline = dir_inode->disk_inode->i_inline;
+    old_i_size = dir_inode->disk_inode->i_size;
+    memcpy(old_i_addr, dir_inode->disk_inode->i_addr, sizeof(old_i_addr));
+    memcpy(old_i_nid, dir_inode->disk_inode->i_nid, sizeof(old_i_nid));
+    old_total_block_count = dir_inode->total_block_count;
+    old_loaded_block_count = dir_inode->loaded_block_count;
+    old_is_fully_loaded = dir_inode->is_fully_loaded;
+
+    for (i = 0; i < NR_INLINE_DENTRY; ++i) {
+        const struct RtfsDirEntry *src_entry;
+        size_t slot_count;
+        size_t slot;
+
+        if (!rtfsDirIsBitmapBitSet(dir_inode->inline_dentry->dentry_bitmap, i)) {
+            continue;
+        }
+
+        src_entry = &dir_inode->inline_dentry->dentry[i];
+        if (src_entry->name_len == 0 || src_entry->name_len > RTFS_NAME_LEN) {
+            return EINVAL;
+        }
+
+        slot_count = GET_DENTRY_SLOTS(src_entry->name_len);
+        if (i + slot_count > NR_INLINE_DENTRY ||
+            regular_slot + slot_count > NR_DENTRY_IN_BLOCK) {
+            return ENOSPC;
+        }
+
+        slot_map[i] = (uint16_t)regular_slot;
+        regular_block.dentry[regular_slot] = *src_entry;
+        for (slot = 0; slot < slot_count; ++slot) {
+            rtfsDirInodeSetDentryBit(regular_block.dentry_bitmap, regular_slot + slot);
+            memcpy(
+                regular_block.filename[regular_slot + slot],
+                dir_inode->inline_dentry->filename[i + slot],
+                RTFS_SLOT_LEN
+            );
+        }
+
+        regular_slot += slot_count;
+        i += slot_count - 1;
+    }
+
+    dir_inode->disk_inode->i_inline &= (uint8_t)~RTFS_INLINE_DENTRY;
+    memset(dir_inode->disk_inode->i_addr, 0, sizeof(dir_inode->disk_inode->i_addr));
+    memset(dir_inode->disk_inode->i_nid, 0, sizeof(dir_inode->disk_inode->i_nid));
+    dir_inode->disk_inode->i_size = 0;
+    dir_inode->i_size = 0;
+    dir_inode->total_block_count = 0;
+    dir_inode->loaded_block_count = 0;
+    dir_inode->is_fully_loaded = true;
+
+    ret = rtfsDirInodeGrowRegularBlock(dir_inode, NULL, INVALID_NID, RTFS_FT_UNKNOWN);
+    if (ret != 0) {
+        dir_inode->disk_inode->i_inline = old_i_inline;
+        dir_inode->disk_inode->i_size = old_i_size;
+        memcpy(dir_inode->disk_inode->i_addr, old_i_addr, sizeof(old_i_addr));
+        memcpy(dir_inode->disk_inode->i_nid, old_i_nid, sizeof(old_i_nid));
+        dir_inode->i_size = old_i_size;
+        dir_inode->total_block_count = old_total_block_count;
+        dir_inode->loaded_block_count = old_loaded_block_count;
+        dir_inode->is_fully_loaded = old_is_fully_loaded;
+        return ret;
+    }
+
+    loaded_block = &dir_inode->loaded_blocks[dir_inode->loaded_block_count_actual - 1];
+    memcpy(loaded_block->block, &regular_block, sizeof(regular_block));
+    loaded_block->is_dirty = true;
+    dir_inode->backing_kind = RTFS_DIR_BACKING_BLOCKS;
+    dir_inode->inline_dentry = NULL;
+    dir_inode->loaded_block_count = dir_inode->total_block_count;
+    dir_inode->is_fully_loaded = true;
+
+    for (i = 0; i < dir_inode->entry_count; ++i) {
+        RtfsMemDirEntry *entry = &dir_inode->entries[i];
+
+        if (!entry->source_is_inline ||
+            entry->source_slot_index >= NR_INLINE_DENTRY ||
+            slot_map[entry->source_slot_index] == UINT16_MAX) {
+            continue;
+        }
+
+        entry->source_is_inline = false;
+        entry->source_block_index = loaded_block->block_index;
+        entry->source_slot_index = slot_map[entry->source_slot_index];
+    }
+
+    owned_handle = (RtfsDirInodeNodeHandle *)dir_inode->cache_handle;
+    nodeBlockCacheEntryHandleMarkDirty(&owned_handle->node_handle);
     return 0;
 }
 
@@ -2211,6 +2341,14 @@ static int rtfsDirInodeGrowRegularBlock(
             dir_inode->loaded_block_count >= dir_inode->total_block_count;
         sitInvalidateLpa(&sit_op, new_lpa);
         return ret;
+    }
+
+    if (name == NULL) {
+        RtfsLoadedDirBlock *loaded_block =
+            &dir_inode->loaded_blocks[dir_inode->loaded_block_count_actual - 1];
+
+        loaded_block->is_dirty = true;
+        return 0;
     }
 
     ret = rtfsDirInodeAddRegularBacking(dir_inode, name, child_ino, child_type);

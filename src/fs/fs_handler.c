@@ -10,7 +10,7 @@
 #include "dir_inode/dir_inode.h"
 #include "dir_inode/dir_inode_resolver.h"
 #include "fs_manager.h"
-#include "handler/dir_handler.h"
+#include "dir_inode/dir_handler.h"
 #include "handler/file_handler.h"
 #include "inode/inode.h"
 #include "nat_utils.h"

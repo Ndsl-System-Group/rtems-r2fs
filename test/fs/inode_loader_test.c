@@ -1,6 +1,6 @@
 #include "rtfs_test.h"
 
-#include "fs/inode/inode_loader.h"
+#include "inode/inode_loader.h"
 
 
 RTFS_TEST(InodeLoaderEnsureCached_WhenFsManagerIsNull_ShouldReturnEINVAL)

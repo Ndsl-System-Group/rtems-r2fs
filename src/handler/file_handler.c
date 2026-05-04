@@ -4,7 +4,7 @@
 #include <rtems/libio_.h>
 #include <string.h>
 
-#include "fs/inode/inode.h"
+#include "inode/inode.h"
 
 
 static RtfsRuntimeInodeView *rtfsFileGetNodeView(
