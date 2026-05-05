@@ -174,6 +174,13 @@ int rtfsDirInodeApplyPendingCowRelocations(
     RtfsDirInode *dir_inode
 );
 
+int rtfsDirInodeCollectPendingDataCowOldLpas(
+    RtfsDirInode *dir_inode,
+    uint32_t *out_array,
+    size_t max_count,
+    size_t *out_count
+);
+
 typedef int (*rtfs_dir_inode_write_block_hook)(
     comm_dev *dev,
     uint32_t lpa,
@@ -184,6 +191,12 @@ typedef int (*rtfs_dir_inode_journal_commit_hook)(JournalContainer *journal);
 
 void rtfsDirInodeSetWriteBlockHook(rtfs_dir_inode_write_block_hook hook);
 void rtfsDirInodeSetJournalCommitHook(rtfs_dir_inode_journal_commit_hook hook);
+
+int rtfsDirInodeCommitCowWritebackWithTxId(
+    file_system_manager *fs_manager,
+    RtfsDirInode *dir_inode,
+    uint64_t *out_tx_id
+);
 
 int rtfsDirInodeCommitCowWriteback(
     file_system_manager *fs_manager,

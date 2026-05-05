@@ -8,6 +8,7 @@
 #include "fs/super_manager.h"
 #include "journal/journal_container.h"
 #include "journal/journal_process_env.h"
+#include "utils/rtfs_log.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -252,7 +253,7 @@ static int rtfsDirInodeRelocateOneRegularBlock(
     uint32_t block_index,
     uint32_t new_lpa
 );
-static int rtfsDirInodeCollectPendingDataCowOldLpas(
+int rtfsDirInodeCollectPendingDataCowOldLpas(
     RtfsDirInode *dir_inode,
     uint32_t *out_array,
     size_t max_count,
@@ -705,9 +706,10 @@ void rtfsDirInodeSetJournalCommitHook(rtfs_dir_inode_journal_commit_hook hook)
     g_rtfs_dir_inode_journal_commit_hook = hook;
 }
 
-int rtfsDirInodeCommitCowWriteback(
+int rtfsDirInodeCommitCowWritebackWithTxId(
     file_system_manager *fs_manager,
-    RtfsDirInode *dir_inode
+    RtfsDirInode *dir_inode,
+    uint64_t *out_tx_id
 )
 {
     NodeBlockCache *node_cache;
@@ -818,6 +820,14 @@ int rtfsDirInodeCommitCowWriteback(
         return ret;
     }
 
+    RTFS_LOG(
+        RTFS_LOG_INFO,
+        "dir commit begin ino=%u dirty=%d journal_empty=%d",
+        (unsigned int)dir_inode->ino,
+        dir_inode->is_dirty ? 1 : 0,
+        journalContainerIsEmpty(cur_journal) ? 1 : 0
+    );
+
     if (!journalContainerIsEmpty(cur_journal)) {
         to_commit = rtfsDirInodeCloneJournalContainer(cur_journal);
         if (to_commit == NULL) {
@@ -836,10 +846,22 @@ int rtfsDirInodeCommitCowWriteback(
             free(old_data_lpas);
             return ret;
         }
+        RTFS_LOG(
+            RTFS_LOG_INFO,
+            "dir commit submitted ino=%u tx_id=%llu",
+            (unsigned int)dir_inode->ino,
+            (unsigned long long)tx_id
+        );
         journal_submitted = true;
 
         journalContainerDestroy(cur_journal);
         journalContainerInit(cur_journal);
+    } else {
+        RTFS_LOG(
+            RTFS_LOG_INFO,
+            "dir commit skipped submit ino=%u because journal is empty",
+            (unsigned int)dir_inode->ino
+        );
     }
 
     if (journal_submitted) {
@@ -848,15 +870,35 @@ int rtfsDirInodeCommitCowWriteback(
             old_data_lpas,
             old_data_count,
             old_node_lpas,
-            old_node_count
+            old_node_count,
+            NULL,
+            0
         );
     }
 
     free(old_node_lpas);
     free(node_relocations);
     free(old_data_lpas);
+    if (out_tx_id != NULL) {
+        *out_tx_id = tx_id;
+    }
+    RTFS_LOG(
+        RTFS_LOG_INFO,
+        "dir commit end ino=%u tx_id=%llu submitted=%d",
+        (unsigned int)dir_inode->ino,
+        (unsigned long long)tx_id,
+        journal_submitted ? 1 : 0
+    );
     dir_inode->is_dirty = false;
     return 0;
+}
+
+int rtfsDirInodeCommitCowWriteback(
+    file_system_manager *fs_manager,
+    RtfsDirInode *dir_inode
+)
+{
+    return rtfsDirInodeCommitCowWritebackWithTxId(fs_manager, dir_inode, NULL);
 }
 
 /* ===== Internal Helper Implementations ===== */
@@ -1548,6 +1590,15 @@ static void rtfsDirInodeTouchMetadata(RtfsDirInode *dir_inode)
     if (dir_inode->disk_inode != NULL) {
         dir_inode->disk_inode->i_dentry_num = dir_inode->i_dentry_num;
         dir_inode->disk_inode->i_mtime = dir_inode->i_mtime;
+    }
+
+    if (dir_inode->cache_handle != NULL) {
+        RtfsDirInodeNodeHandle *owned_handle =
+            (RtfsDirInodeNodeHandle *)dir_inode->cache_handle;
+
+        if (!nodeBlockCacheEntryHandleIsEmpty(&owned_handle->node_handle)) {
+            nodeBlockCacheEntryHandleMarkDirty(&owned_handle->node_handle);
+        }
     }
 }
 
@@ -2797,7 +2848,7 @@ static int rtfsDirInodeRelocateOneRegularBlock(
     return ENOSYS;
 }
 
-static int rtfsDirInodeCollectPendingDataCowOldLpas(
+int rtfsDirInodeCollectPendingDataCowOldLpas(
     RtfsDirInode *dir_inode,
     uint32_t *out_array,
     size_t max_count,
@@ -2879,6 +2930,16 @@ static int rtfsDirInodeSubmitJournal(
         tx_id = journalProcessEnvAllocTxId(env);
         journalContainerSetTxId(journal, tx_id);
     }
+
+    RTFS_LOG(
+        RTFS_LOG_INFO,
+        "dir submit journal tx_id=%llu sb=%zu nat=%zu sit=%zu hook=%d",
+        (unsigned long long)tx_id,
+        kv_size(journal->superBlockJournal),
+        kv_size(journal->natJournal),
+        kv_size(journal->sitJournal),
+        g_rtfs_dir_inode_journal_commit_hook != NULL ? 1 : 0
+    );
 
     if (out_tx_id != NULL) {
         *out_tx_id = tx_id;

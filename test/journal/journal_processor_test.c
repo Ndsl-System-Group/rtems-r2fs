@@ -109,7 +109,6 @@ RTFS_TEST(JpInitBasicTest)
     JournalProcessor jp;
 
     memset(&jp, 0, sizeof(JournalProcessor));
-
     journalProcessorInit(&jp, NULL, 100, 200, 150);
 
     TEST_ASSERT_EQUAL_UINT64(100, jp.startLpa);

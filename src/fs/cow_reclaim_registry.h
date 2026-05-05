@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cache/node_block_cache.h"
+
 struct file_system_manager;
 
 void cowReclaimRegistryInit(struct file_system_manager *fs_manager);
@@ -14,7 +16,9 @@ int cowReclaimRegistryRegister(
     const uint32_t *data_lpas,
     size_t data_count,
     const uint32_t *node_lpas,
-    size_t node_count
+    size_t node_count,
+    const NodeBlockCacheEntryHandle *deleted_handles,
+    size_t deleted_handle_count
 );
 
 void cowReclaimRegistryOnTxComplete(uint64_t tx_id);

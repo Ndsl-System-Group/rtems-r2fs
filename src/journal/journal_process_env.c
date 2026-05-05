@@ -10,6 +10,7 @@ extern void rtfsJournalProcessThread(struct comm_dev *dev, uint64_t journalStart
 
 // 单例实例。
 static JournalProcessEnv gEnv;
+static bool gEnvTxIdBootstrapped = false;
 
 // 日志处理线程参数。
 typedef struct JournalProcessThreadArgs
@@ -37,6 +38,10 @@ static void *journalProcessThreadEntry(void *arg)
 
 JournalProcessEnv *journalProcessEnvGetInstance()
 {
+    if (!gEnvTxIdBootstrapped) {
+        atomic_init(&gEnv.txIdToAlloc, 1);
+        gEnvTxIdBootstrapped = true;
+    }
     return &gEnv;
 }
 
@@ -48,7 +53,7 @@ void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64
     this->commitQueueHead = NULL;
     this->exitReq = false;
 
-    atomic_init(&this->txIdToAlloc, 0);
+    atomic_init(&this->txIdToAlloc, 1);
 
     JournalProcessThreadArgs *args = malloc(sizeof(*args));
 

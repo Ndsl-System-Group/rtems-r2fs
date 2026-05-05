@@ -60,6 +60,7 @@ void rtfsRunAllTests(void)
             rtfsPrintElapsedTime(costUs);
             printf(")" RTFS_COLOR_RESET "\n");
         }
+
     }
 
     uint64_t totalEnd = rtfsGetCounter();

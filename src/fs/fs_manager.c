@@ -12,6 +12,8 @@
 #include "cache/sit_nat_cache.h"
 #include "cache/super_cache.h"
 #include "cow_reclaim_registry.h"
+#include "journal/journal_container.h"
+#include "journal/journal_process_env.h"
 #include "super_manager.h"
 #include "srmap_utils.h"
 
@@ -83,6 +85,10 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
 {
     file_system_manager *this = (file_system_manager *)calloc(1, sizeof(file_system_manager));
     bool locks_inited = false;
+    JournalProcessEnv *journal_env;
+    uint64_t journal_start_lpa;
+    uint64_t journal_end_lpa;
+    uint64_t journal_fifo_pos;
 
     if (!this) return NULL;
 
@@ -125,6 +131,23 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
     {
         goto fail_after_init;
     }
+
+    this->cur_journal_ = malloc(sizeof(*this->cur_journal_));
+    if (this->cur_journal_ == NULL)
+    {
+        goto fail_after_init;
+    }
+    journalContainerInit(this->cur_journal_);
+
+    journal_env = journalProcessEnvGetInstance();
+    journal_start_lpa = this->super_blk_mem_->meta_journal_blkaddr;
+    journal_end_lpa = journal_start_lpa +
+        (uint64_t)this->super_blk_mem_->segment_count_meta_journal * BLOCK_PER_SEGMENT;
+    journal_fifo_pos = journal_start_lpa + this->super_blk_mem_->meta_journal_end_blkoff;
+    if (journal_fifo_pos >= journal_end_lpa) {
+        journal_fifo_pos = journal_start_lpa;
+    }
+    journalProcessEnvInit(journal_env, dev, journal_start_lpa, journal_end_lpa, journal_fifo_pos);
 
     cowReclaimRegistryInit(this);
 
@@ -171,10 +194,17 @@ static void _internal_destroy(file_system_manager *this)
         free(this->srmap_utils_);
         this->srmap_utils_ = NULL;
     }
+    if (this->cur_journal_ != NULL)
+    {
+        journalContainerDestroy(this->cur_journal_);
+        free(this->cur_journal_);
+        this->cur_journal_ = NULL;
+    }
     superManagerDestroy(this->sp_manager_);
     this->sp_manager_ = NULL;
 
     cowReclaimRegistryDestroy();
+    journalProcessEnvDestroy(journalProcessEnvGetInstance());
 
     superCacheDestroy(&this->super_cache_);
     this->super_blk_mem_ = NULL;

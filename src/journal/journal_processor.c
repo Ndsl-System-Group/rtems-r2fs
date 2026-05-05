@@ -124,13 +124,14 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
     this->txCompleteHook = g_default_tx_complete_hook;
     this->txCompleteHookArg = g_default_tx_complete_hook_arg;
     this->curJournal = NULL;
+    journalWriterInit(&this->journalWriter, dev, journalStartLpa, journalEndLpa);
 }
 
 void journalProcessorDestroy(JournalProcessor *this)
 {
-    comm_free_dma_mem(this->journalPosDmaBuffer);
     rtfsTimerStop(&this->journalPollTimer);
     rtfsTimerDestructor(&this->journalPollTimer);
+    comm_free_dma_mem(this->journalPosDmaBuffer);
 }
 
 void journalProcessorSetTxCompleteHook(
