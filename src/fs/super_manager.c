@@ -2,12 +2,14 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <stddef.h>
 #include <stdlib.h>
 
 #include "fs.h"
 #include "fs/fs_manager.h"
 #include "fs/nat_utils.h"
 #include "cache/sit_nat_cache.h"
+#include "journal/journal_container.h"
 #include "uthash/utarray.h"
 #include "sit_utils.h"
 #include "utils/rtfs_log.h"
@@ -19,12 +21,16 @@ typedef struct LpaAllocContext
     UT_array *uncommit_segs;
 } LpaAllocContext;
 
-void lpaAllocContextInit(LpaAllocContext *this, uint32_t *cur_seg_id, uint32_t *cur_seg_off)
+static void lpaAllocContextInit(
+    LpaAllocContext *this,
+    uint32_t *cur_seg_id,
+    uint32_t *cur_seg_off,
+    UT_array *uncommit_segs
+)
 {
     this->cur_seg_id_ = cur_seg_id;
     this->cur_seg_off_ = cur_seg_off;
-    UT_icd int_icd = {sizeof(int), NULL, NULL, NULL};
-    utarray_new(this->uncommit_segs, &int_icd);
+    this->uncommit_segs = uncommit_segs;
 }
 
 typedef struct super_manager
@@ -33,6 +39,44 @@ typedef struct super_manager
     RtfsSuperBlock *super_block_;
     UT_array *uncommit_node_segs, *uncommit_data_segs;
 } super_manager;
+
+static void superManagerAppendSuperBlockJournalEntry(
+    super_manager *this,
+    uint32_t off,
+    uint32_t new_val
+)
+{
+    JournalContainer *cur_journal;
+    SuperBlockJournalEntry entry;
+
+    if (this == NULL || this->fs_manager_ == NULL) {
+        return;
+    }
+
+    cur_journal = fileSystemManagerGetCurJournal(this->fs_manager_);
+    if (cur_journal == NULL) {
+        return;
+    }
+
+    entry.Off = off;
+    entry.newVal = new_val;
+    journalContainerAppendSuperBlockJournalEntry(cur_journal, &entry);
+}
+
+static void superManagerAppendSuperBlockJournalEntryForField(
+    super_manager *this,
+    uint32_t *field_ptr
+)
+{
+    uint32_t off;
+
+    if (this == NULL || this->super_block_ == NULL || field_ptr == NULL) {
+        return;
+    }
+
+    off = (uint32_t)((char *)field_ptr - (char *)this->super_block_);
+    superManagerAppendSuperBlockJournalEntry(this, off, *field_ptr);
+}
 
 
 void superManagerInit(super_manager *this, file_system_manager *fs_manager)
@@ -104,6 +148,7 @@ uint32_t superManagerAllocNid(super_manager *this, uint32_t ino, bool is_inode)
 
     if (nat_entry->block_addr == INVALID_LPA)
     {
+        sitNatCacheEntryHandleDestroy(&nat_cache_handle);
         return INVALID_NID;
     }
 
@@ -120,7 +165,13 @@ uint32_t superManagerAllocNid(super_manager *this, uint32_t ino, bool is_inode)
     }
     nat_entry->block_addr = INVALID_LPA;
 
-    // TODO: 添加超级块日志
+    sitNatCacheEntryHandleDestroy(&nat_cache_handle);
+
+    superManagerAppendSuperBlockJournalEntry(
+        this,
+        (uint32_t)offsetof(RtfsSuperBlock, next_free_nid),
+        this->super_block_->next_free_nid
+    );
     return nid;
 }
 
@@ -144,7 +195,13 @@ void superManagerFreeNid(super_manager *this, uint32_t nid)
     nat_entry->block_addr = this->super_block_->next_free_nid;
     this->super_block_->next_free_nid = nid;
 
-    // TODO: 添加超级块日志
+    sitNatCacheEntryHandleDestroy(&nat_cache_handle);
+
+    superManagerAppendSuperBlockJournalEntry(
+        this,
+        (uint32_t)offsetof(RtfsSuperBlock, next_free_nid),
+        this->super_block_->next_free_nid
+    );
 }
 
 /******************************* segment ******************************************** */
@@ -154,11 +211,21 @@ LpaAllocContext superManagerGetLpaCtx(super_manager *this, bool is_node)
     LpaAllocContext lpa_ctx;
     if (is_node)
     {
-        lpaAllocContextInit(&lpa_ctx, &this->super_block_->current_node_segment_id, &this->super_block_->current_node_segment_blkoff);
+        lpaAllocContextInit(
+            &lpa_ctx,
+            &this->super_block_->current_node_segment_id,
+            &this->super_block_->current_node_segment_blkoff,
+            this->uncommit_node_segs
+        );
     }
     else
     {
-        lpaAllocContextInit(&lpa_ctx, &this->super_block_->current_data_segment_id, &this->super_block_->current_data_segment_blkoff);
+        lpaAllocContextInit(
+            &lpa_ctx,
+            &this->super_block_->current_data_segment_id,
+            &this->super_block_->current_data_segment_blkoff,
+            this->uncommit_data_segs
+        );
     }
     return lpa_ctx;
 }
@@ -185,7 +252,18 @@ uint32_t superManagerAllocSegment(super_manager *this)
     this->super_block_->first_free_segment_id = next_segid;
     this->super_block_->free_segment_count--;
 
-    // TODO: 添加超级块日志
+    sitNatCacheEntryHandleDestroy(&sit_cache_handle);
+
+    superManagerAppendSuperBlockJournalEntry(
+        this,
+        (uint32_t)offsetof(RtfsSuperBlock, first_free_segment_id),
+        this->super_block_->first_free_segment_id
+    );
+    superManagerAppendSuperBlockJournalEntry(
+        this,
+        (uint32_t)offsetof(RtfsSuperBlock, free_segment_count),
+        this->super_block_->free_segment_count
+    );
 
     return seg_id;
 }
@@ -193,15 +271,28 @@ uint32_t superManagerAllocSegment(super_manager *this)
 uint32_t superManagerAllocLpaInner(super_manager *this, LpaAllocContext *ctx)
 {
     uint32_t cur_seg_off;
+    uint32_t old_seg_id;
+    uint32_t new_seg_id;
 
     // TODO：开启日志容器
     if (*ctx->cur_seg_off_ >= BLOCK_PER_SEGMENT)
     {
-        utarray_push_back(ctx->uncommit_segs, ctx->cur_seg_id_);
-        uint32_t new_seg_id = superManagerAllocSegment(this);
+        old_seg_id = *ctx->cur_seg_id_;
+        new_seg_id = superManagerAllocSegment(this);
+        if (new_seg_id == INVALID_SEGID)
+        {
+            return INVALID_LPA;
+        }
+
+        if (ctx->uncommit_segs != NULL)
+        {
+            utarray_push_back(ctx->uncommit_segs, &old_seg_id);
+        }
+
         *ctx->cur_seg_id_ = new_seg_id;
         *ctx->cur_seg_off_ = 0;
-        // TODO: 添加超级块日志
+        superManagerAppendSuperBlockJournalEntryForField(this, ctx->cur_seg_id_);
+        superManagerAppendSuperBlockJournalEntryForField(this, ctx->cur_seg_off_);
     }
 
     SitOperator sit_operator;
@@ -210,7 +301,7 @@ uint32_t superManagerAllocLpaInner(super_manager *this, LpaAllocContext *ctx)
     uint32_t lpa = sitGetFirstLpaOfSegId(&sit_operator, *ctx->cur_seg_id_) + cur_seg_off;
     *ctx->cur_seg_off_ = cur_seg_off + 1;
 
-    // TODO: 添加超级块日志
+    superManagerAppendSuperBlockJournalEntryForField(this, ctx->cur_seg_off_);
 
     sitValidateLpa(&sit_operator, lpa); // ! sit_operator 不是栈对象吗？
     return lpa;
@@ -219,13 +310,23 @@ uint32_t superManagerAllocLpaInner(super_manager *this, LpaAllocContext *ctx)
 uint32_t superManagerAllocNodeLpa(super_manager *this)
 {
     LpaAllocContext ctx;
-    lpaAllocContextInit(&ctx, &this->super_block_->current_node_segment_id, &this->super_block_->current_node_segment_blkoff);
+    lpaAllocContextInit(
+        &ctx,
+        &this->super_block_->current_node_segment_id,
+        &this->super_block_->current_node_segment_blkoff,
+        this->uncommit_node_segs
+    );
     return superManagerAllocLpaInner(this, &ctx);
 }
 
 uint32_t superManagerAllocDataLpa(super_manager *this)
 {
     LpaAllocContext ctx;
-    lpaAllocContextInit(&ctx, &this->super_block_->current_data_segment_id, &this->super_block_->current_data_segment_blkoff);
+    lpaAllocContextInit(
+        &ctx,
+        &this->super_block_->current_data_segment_id,
+        &this->super_block_->current_data_segment_blkoff,
+        this->uncommit_data_segs
+    );
     return superManagerAllocLpaInner(this, &ctx);
 }

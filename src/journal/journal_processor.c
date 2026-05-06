@@ -19,6 +19,7 @@ void rtfsJournalProcessThread(struct comm_dev *dev, uint64_t journalStartLpa, ui
     journalProcessorInit(&processor, dev, journalStartLpa, journalEndLpa, journalFifoPos);
 
     journalProcessorProcessJournal(&processor);
+    journalProcessorDestroy(&processor);
 
     RTFS_LOG(RTFS_LOG_INFO, "journal process thread exit.");
 }
@@ -123,6 +124,8 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
     this->endLpa = journalEndLpa;
     this->txCompleteHook = g_default_tx_complete_hook;
     this->txCompleteHookArg = g_default_tx_complete_hook_arg;
+    this->pendingJournalListHead = NULL;
+    this->txRecordHead = NULL;
     this->curJournal = NULL;
     journalWriterInit(&this->journalWriter, dev, journalStartLpa, journalEndLpa);
 }

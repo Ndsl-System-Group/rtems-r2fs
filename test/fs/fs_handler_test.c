@@ -35,14 +35,12 @@ typedef struct file_system_manager
     struct RtfsSuperBlock *super_blk_mem_;
     super_manager *sp_manager_;
     NodeBlockCache *node_cache_;
-    dir_data_block_cache *dir_data_cache_;
 
     SrmapUtils *srmap_utils_;
     SitNatCache *sit_cache_;
     SitNatCache *nat_cache_;
 
     comm_dev *dev_;
-    fd_array *fd_arr_;
 
     JournalContainer *cur_journal_;
     bool is_unrecoverable_;

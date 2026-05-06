@@ -10,6 +10,12 @@
 struct SitNatCache;
 struct comm_dev;
 
+typedef int (*sit_nat_cache_read_block_hook)(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    void *buffer
+);
+
 
 /**
  * @brief SIT/NAT 缓存项。
@@ -176,6 +182,11 @@ SitNatCacheEntryHandle sitNatCacheGet(SitNatCache *this, uint32_t lpa);
  *  - refCount -1
  */
 void sitNatCacheAddSsdVersion(SitNatCache *this, uint32_t lpa);
+
+/**
+ * @brief 设置读取块的测试 hook。若设置，则 miss 时优先通过 hook 读取数据。
+ */
+void sitNatCacheSetReadBlockHook(sit_nat_cache_read_block_hook hook);
 
 
 #endif

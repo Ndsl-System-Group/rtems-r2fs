@@ -35,6 +35,8 @@ static void sitNatCacheDoReplace(SitNatCache *this);
 
 static void sitNatCacheReadLpa(SitNatCache *this, SitNatCacheEntry *entry);
 
+static sit_nat_cache_read_block_hook g_sit_nat_cache_read_block_hook = NULL;
+
 
 /* 公共函数实现 */
 void sitNatCacheEntryInit(SitNatCacheEntry *this, uint32_t lpa)
@@ -154,6 +156,11 @@ void sitNatCacheAddSsdVersion(SitNatCache *this, uint32_t lpa)
     sitNatCacheSubRefcount(this, entry);
 }
 
+void sitNatCacheSetReadBlockHook(sit_nat_cache_read_block_hook hook)
+{
+    g_sit_nat_cache_read_block_hook = hook;
+}
+
 
 /* 私有静态函数实现 */
 void sitNatCacheEntryHandleDoAddRef(SitNatCacheEntryHandle *this)
@@ -247,6 +254,14 @@ void sitNatCacheDoReplace(SitNatCache *this)
 
 void sitNatCacheReadLpa(SitNatCache *this, SitNatCacheEntry *entry)
 {
+    if (g_sit_nat_cache_read_block_hook != NULL)
+    {
+        int res = g_sit_nat_cache_read_block_hook(this->dev, entry->lpa, blockBufferGetPtr(&entry->cache));
+        if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "SIT/NAT cache entry: read lpa failed.");
+
+        return;
+    }
+
     int res = comm_submit_sync_rw_request(this->dev, blockBufferGetPtr(&entry->cache), LPA_TO_LBA(entry->lpa), LBA_PER_LPA, COMM_IO_READ);
     if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "SIT/NAT cache entry: read lpa failed.");
 }

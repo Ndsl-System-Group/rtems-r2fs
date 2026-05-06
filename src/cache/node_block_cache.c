@@ -27,6 +27,7 @@ static void nodeBlockCacheRemoveEntry(NodeBlockCache *this, NodeBlockCacheEntry 
 static void nodeBlockCacheDoReplace(NodeBlockCache *this);
 
 static node_block_cache_write_block_hook g_node_block_cache_write_block_hook = NULL;
+static node_block_cache_read_block_hook g_node_block_cache_read_block_hook = NULL;
 
 
 void nodeBlockCacheEntryInit(NodeBlockCacheEntry *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa)
@@ -164,7 +165,7 @@ void nodeBlockCacheInit(NodeBlockCache *this, struct file_system_manager *fsMana
 
 void nodeBlockCacheDestroy(NodeBlockCache *this)
 {
-    if (NULL == this->dirtyListHead) RTFS_LOG(RTFS_LOG_WARNING, "node block cache still has dirty block while destructed.");
+    if (NULL != this->dirtyListHead) RTFS_LOG(RTFS_LOG_WARNING, "node block cache still has dirty block while destructed.");
 
     kh_destroy(khdp, this->dirtyPos);
     this->dirtyPos = NULL;
@@ -249,6 +250,11 @@ void nodeBlockCacheForceReplace(NodeBlockCache *this)
 void nodeBlockCacheSetWriteBlockHook(node_block_cache_write_block_hook hook)
 {
     g_node_block_cache_write_block_hook = hook;
+}
+
+void nodeBlockCacheSetReadBlockHook(node_block_cache_read_block_hook hook)
+{
+    g_node_block_cache_read_block_hook = hook;
 }
 
 int nodeBlockCacheWritebackDirtyContentCow(NodeBlockCache *this)
@@ -418,13 +424,21 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper 
         BlockBuffer buffer;
         blockBufferInit(&buffer);
 
-        Try
+        if (g_node_block_cache_read_block_hook != NULL)
         {
-            blockBufferReadFromLpa(&buffer, this->dev, nidLpa);
+            int res = g_node_block_cache_read_block_hook(this->dev, nidLpa, blockBufferGetPtr(&buffer));
+            if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "node cache helper: read lpa %u failed.", nidLpa);
         }
-        Catch(e)
+        else
         {
-            THROW_FATAL_MESSAGE(e, "node cache helper: read lpa %u failed.", nidLpa);
+            Try
+            {
+                blockBufferReadFromLpa(&buffer, this->dev, nidLpa);
+            }
+            Catch(e)
+            {
+                THROW_FATAL_MESSAGE(e, "node cache helper: read lpa %u failed.", nidLpa);
+            }
         }
 
         // node_handle = node_cache->add(std::move(buf), nid, parentNid, nid_lpa);

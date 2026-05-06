@@ -138,3 +138,13 @@ void journalProcessEnvStopProcessThread(JournalProcessEnv *this)
 
     pthread_join(this->processThreadHandle, NULL);
 }
+
+bool journalProcessEnvIsCommitQueueEmpty(JournalProcessEnv *this)
+{
+    return this != NULL && this->commitQueueHead == NULL;
+}
+
+bool journalProcessEnvIsExitRequested(JournalProcessEnv *this)
+{
+    return this != NULL && this->exitReq;
+}

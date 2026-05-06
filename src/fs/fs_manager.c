@@ -26,14 +26,12 @@ typedef struct file_system_manager
     struct RtfsSuperBlock *super_blk_mem_; // 超级块内存镜像
     super_manager *sp_manager_;            // 超级块管理器
     NodeBlockCache *node_cache_;           // 节点块缓存
-    dir_data_block_cache *dir_data_cache_; // 目录数据块缓存
 
     SrmapUtils *srmap_utils_; // SRMAP
     SitNatCache *sit_cache_;  // 缓存
     SitNatCache *nat_cache_;
 
-    comm_dev *dev_;    // 底层设备抽象
-    fd_array *fd_arr_; // 文件描述符数组
+    comm_dev *dev_; // 底层设备抽象
 
     JournalContainer *cur_journal_; // 当前日志容器
     // replace_protect_manager *rp_manager_;    // 替换保护管理器
@@ -43,11 +41,10 @@ typedef struct file_system_manager
 static uint64_t super_block_lpa;
 static size_t dentry_cache_size;
 static size_t node_cache_size;
-static size_t dir_data_cache_size;
 static size_t sit_cache_size;
 static size_t nat_cache_size;
 static size_t file_cache_size;
-static size_t fd_array_size;
+static uint32_t g_fs_manager_setup_failure_step = 0;
 
 // ==================== 全局静态变量 ====================
 
@@ -105,12 +102,20 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
     superCacheInit(&this->super_cache_, dev, super_block_lpa);
     superCacheReadSuperBlock(&this->super_cache_);
     this->super_blk_mem_ = superCacheGet(&this->super_cache_);
+    if (g_fs_manager_setup_failure_step == 1)
+    {
+        goto fail_after_init;
+    }
     this->sit_cache_ = malloc(sizeof(SitNatCache));
     if (this->sit_cache_ == NULL)
     {
         goto fail_after_init;
     }
     sitNatCacheInit(this->sit_cache_, dev, 100);
+    if (g_fs_manager_setup_failure_step == 2)
+    {
+        goto fail_after_init;
+    }
 
     this->nat_cache_ = malloc(sizeof(SitNatCache));
     if (this->nat_cache_ == NULL)
@@ -118,6 +123,10 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
         goto fail_after_init;
     }
     sitNatCacheInit(this->nat_cache_, dev, 100);
+    if (g_fs_manager_setup_failure_step == 3)
+    {
+        goto fail_after_init;
+    }
 
     this->node_cache_ = malloc(sizeof(NodeBlockCache));
     if (this->node_cache_ == NULL)
@@ -125,9 +134,28 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
         goto fail_after_init;
     }
     nodeBlockCacheInit(this->node_cache_, this, 100);
+    if (g_fs_manager_setup_failure_step == 4)
+    {
+        goto fail_after_init;
+    }
+
+    this->srmap_utils_ = malloc(sizeof(*this->srmap_utils_));
+    if (this->srmap_utils_ == NULL)
+    {
+        goto fail_after_init;
+    }
+    srmapUtilsInit(this->srmap_utils_, this);
+    if (g_fs_manager_setup_failure_step == 5)
+    {
+        goto fail_after_init;
+    }
 
     this->sp_manager_ = superManagerCreate(this);
     if (this->sp_manager_ == NULL)
+    {
+        goto fail_after_init;
+    }
+    if (g_fs_manager_setup_failure_step == 6)
     {
         goto fail_after_init;
     }
@@ -138,6 +166,10 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
         goto fail_after_init;
     }
     journalContainerInit(this->cur_journal_);
+    if (g_fs_manager_setup_failure_step == 7)
+    {
+        goto fail_after_init;
+    }
 
     journal_env = journalProcessEnvGetInstance();
     journal_start_lpa = this->super_blk_mem_->meta_journal_blkaddr;
@@ -148,8 +180,16 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
         journal_fifo_pos = journal_start_lpa;
     }
     journalProcessEnvInit(journal_env, dev, journal_start_lpa, journal_end_lpa, journal_fifo_pos);
+    if (g_fs_manager_setup_failure_step == 8)
+    {
+        goto fail_after_init;
+    }
 
     cowReclaimRegistryInit(this);
+    if (g_fs_manager_setup_failure_step == 9)
+    {
+        goto fail_after_init;
+    }
 
     return this;
 
@@ -278,10 +318,13 @@ void fileSystemManagerFreezeUnLock(file_system_manager *this)
 RtfsSuperBlock *fileSystemManagerGetSuperBlkMem(file_system_manager *this) { return this ? this->super_blk_mem_ : NULL; };
 super_manager *fileSystemManagerGetSuperManager(file_system_manager *this) { return this ? this->sp_manager_ : NULL; };
 NodeBlockCache *fileSystemManagerGetNodeCache(file_system_manager *this) { return this ? this->node_cache_ : NULL; };
-dir_data_block_cache *fileSystemManagerGetDirDataCache(file_system_manager *this) { return this ? this->dir_data_cache_ : NULL; };
 SitNatCache *fileSystemManagerGetSitCache(file_system_manager *this) { return this ? this->sit_cache_ : NULL; }
 SitNatCache *fileSystemManagerGetNatCache(file_system_manager *this) { return this ? this->nat_cache_ : NULL; }
 SrmapUtils *fileSystemManagerGetSrmapUtils(file_system_manager *this) { return this ? this->srmap_utils_ : NULL; };
-fd_array *fileSystemManagerGetFdArray(file_system_manager *this) { return this ? this->fd_arr_ : NULL; };
 JournalContainer *fileSystemManagerGetCurJournal(file_system_manager *this) { return this ? this->cur_journal_ : NULL; };
 comm_dev *fileSystemManagerGetDevice(file_system_manager *this) { return this ? this->dev_ : NULL; }
+
+void fileSystemManagerSetSetupFailureStepForTest(uint32_t step)
+{
+    g_fs_manager_setup_failure_step = step;
+}

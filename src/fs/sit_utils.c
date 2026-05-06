@@ -118,4 +118,5 @@ void sitChangeLpaState(SitOperator *this, uint32_t lpa, int valid)
     SitJournalEntry journalEntry = {.segID = segId, .newValue = *sitEntry};
     journalContainerAppendSitJournalEntry(curJournal, &journalEntry);
     sitNatCacheEntryHandleAddHostVersion(&sitBlockHandle);
+    sitNatCacheEntryHandleDestroy(&sitBlockHandle);
 }

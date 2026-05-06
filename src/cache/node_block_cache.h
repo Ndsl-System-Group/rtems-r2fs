@@ -263,6 +263,12 @@ typedef int (*node_block_cache_write_block_hook)(
     const void *buffer
 );
 
+typedef int (*node_block_cache_read_block_hook)(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    void *buffer
+);
+
 /**
  * @brief 第一阶段 node content-COW writeback：将当前 dirty node blocks 写到新的
  * node lpa，并在缓存项上记录 pending relocation。此阶段不修改 NAT。
@@ -271,6 +277,7 @@ typedef int (*node_block_cache_write_block_hook)(
 int nodeBlockCacheWritebackDirtyContentCow(NodeBlockCache *this);
 
 void nodeBlockCacheSetWriteBlockHook(node_block_cache_write_block_hook hook);
+void nodeBlockCacheSetReadBlockHook(node_block_cache_read_block_hook hook);
 
 /**
  * @brief 收集当前 cache 中所有待提交的 node relocation。
