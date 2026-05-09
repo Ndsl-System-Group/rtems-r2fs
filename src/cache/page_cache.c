@@ -111,6 +111,9 @@ void pageEntryHandleDestroy(PageEntryHandle *this)
         {
             RTFS_LOG(RTFS_LOG_WARNING, "exception during sub_refcount of page cache entry: %d", e);
         }
+
+        this->cache = NULL;
+        this->entry = NULL;
     }
 }
 
@@ -156,6 +159,17 @@ void pageCacheDestroy(PageCache *this)
     this->curSize = 0;
     this->expectSize = 0;
 
+    // 先释放 dirty tree 里的引用。
+    kbitr_t itr;
+    for (kb_itr_first(ktdpn, getDirtyPagesTree(this), &itr); kb_itr_valid(&itr); kb_itr_next(ktdpn, getDirtyPagesTree(this), &itr))
+    {
+        DirtyPagesNode *node = &kb_itr_key(DirtyPagesNode, &itr);
+
+        atomic_store(&node->handle.entry->isDirty, false);
+
+        pageEntryHandleDestroy(&node->handle);
+    }
+
     kb_destroy(ktdpn, getDirtyPagesTree(this));
     this->dirtyPages = NULL;
 
@@ -185,6 +199,7 @@ PageEntryHandle pageCacheGet(PageCache *this, uint32_t blkoff)
                 RTFS_LOG(RTFS_LOG_INFO, "replace page cache entry, blkoff = %u", victim->blkoff);
 
                 victim->blkoff = blkoff;
+                victim->lpa = INVALID_LPA;
                 victim->contentState = PAGE_INVALID;
 
                 entry = victim;
@@ -251,18 +266,18 @@ void pageCacheTruncate(PageCache *this, uint32_t maxBlkoff)
     // 和 kbtree_test KbtreeRangeEraseTest 的算法相同，因为树的结构会发生改变，不能依赖原来树的指针。
     while (upper)
     {
-        DirtyPagesNode node = *upper;
-        uint32_t k = node.blkoff;
+        DirtyPagesNode *node = upper;
+        uint32_t k = node->blkoff;
 
         // 将范围外的所有 page 的 dirty 标记清除，标记为 invalid。
-        atomic_store(&node.handle.entry->isDirty, false);
-        node.handle.entry->contentState = PAGE_INVALID;
+        atomic_store(&node->handle.entry->isDirty, false);
+        node->handle.entry->contentState = PAGE_INVALID;
 
-        // 范围外的 page 将被移除，所以递减 curSize。
-        --this->curSize;
-
+        // 先把树里的节点移除，再释放它持有的引用。
+        DirtyPagesNode handleCopy = *node;
         // 从 dirty pages 集合中移除范围外的所有 page。
-        kb_del(ktdpn, getDirtyPagesTree(this), node);
+        kb_del(ktdpn, getDirtyPagesTree(this), *node);
+        pageEntryHandleDestroy(&handleCopy.handle);
 
         // 查找后继（严格大于 k）。
         query.blkoff = k;
@@ -285,6 +300,9 @@ void pageCacheClearDirtyPages(PageCache *this)
         DirtyPagesNode *node = &kb_itr_key(DirtyPagesNode, &itr);
 
         atomic_store(&node->handle.entry->isDirty, false);
+
+        // 释放 dirty tree 的那份引用。
+        pageEntryHandleDestroy(&node->handle);
     }
 
     // kbtree 未提供 clear 接口。用销毁加重建模拟。
@@ -382,7 +400,9 @@ void pageCacheAddToDirtyPages(PageCache *this, PageEntryHandle *page)
 
     assert(atomic_load(&page->entry->refCount) >= 1);
 
-    DirtyPagesNode node = {.blkoff = page->entry->blkoff, .handle = *page};
+    DirtyPagesNode node;
+    node.blkoff = page->entry->blkoff;
+    pageEntryHandleCopy(&node.handle, page); // PageEntryHandle 需要做深拷贝而非浅拷贝。
 
     kb_put(ktdpn, getDirtyPagesTree(this), node);
 
