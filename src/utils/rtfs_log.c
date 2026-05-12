@@ -11,15 +11,25 @@ const char *logLevelStr[] = {"DEBUG", "INFO", "WARING", "ERROR"};
 #define PRINT_TO_STDERR(fmt, ...) \
     vfprintf(stderr, fmt, ##__VA_ARGS__)
 
+static void rtfsLogVPrint(
+    RtfsLogLevel log_level,
+    const char *funcname,
+    unsigned int lineno,
+    const char *fmt,
+    va_list args
+)
+{
+    fprintf(stderr, "[%s:%u, %s]: ", funcname, lineno, logLevelStr[log_level]);
+    vfprintf(stderr, fmt, args);
+    fprintf(stderr, "\n");
+}
+
 
 void rtfsLogPrint(RtfsLogLevel log_level, const char *funcname, unsigned int lineno, const char *fmt, ...)
 {
-    fprintf(stderr, "[%s:%u, %s]: ", funcname, lineno, logLevelStr[log_level]);
-
     va_list args;
     va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
-    fprintf(stderr, "\n");
+    rtfsLogVPrint(log_level, funcname, lineno, fmt, args);
     va_end(args);
 }
 
@@ -27,7 +37,7 @@ void rtfsLogErrno(RtfsLogLevel log_level, const char *funcname, unsigned int lin
 {
     va_list args;
     va_start(args, fmt);
-    rtfsLogPrint(log_level, funcname, lineno, fmt, args);
+    rtfsLogVPrint(log_level, funcname, lineno, fmt, args);
     va_end(args);
 
     char errno_msg[ERRNO_MSG_LEN];

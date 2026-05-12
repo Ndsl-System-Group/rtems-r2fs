@@ -1,6 +1,21 @@
 #include "rtfs_test.h"
 
 #include "journal/journal_processor.h"
+#include "uthash/utlist.h"
+
+typedef struct TxCompleteProbe
+{
+    uint64_t tx_id;
+    uint32_t call_count;
+} TxCompleteProbe;
+
+static void testTxCompleteHook(uint64_t tx_id, void *arg)
+{
+    TxCompleteProbe *probe = (TxCompleteProbe *)arg;
+
+    probe->tx_id = tx_id;
+    probe->call_count++;
+}
 
 
 static TransactionJournalRecord makeRecord(uint64_t txId, uint64_t startLpa, uint64_t endLpa)
@@ -94,7 +109,6 @@ RTFS_TEST(JpInitBasicTest)
     JournalProcessor jp;
 
     memset(&jp, 0, sizeof(JournalProcessor));
-
     journalProcessorInit(&jp, NULL, 100, 200, 150);
 
     TEST_ASSERT_EQUAL_UINT64(100, jp.startLpa);
@@ -181,6 +195,40 @@ RTFS_TEST(JpMultiInitDestroyTest)
 
         journalProcessorDestroy(&jp);
     }
+}
+
+RTFS_TEST(JpTxCompleteHookTest)
+{
+    JournalProcessor jp;
+    TxRecordNode node1;
+    TxRecordNode node2;
+    TxRecordNode *head = NULL;
+    TxCompleteProbe probe;
+
+    memset(&jp, 0, sizeof(JournalProcessor));
+    memset(&node1, 0, sizeof(node1));
+    memset(&node2, 0, sizeof(node2));
+    memset(&probe, 0, sizeof(probe));
+
+    journalProcessorInit(&jp, NULL, 100, 200, 150);
+    journalProcessorSetTxCompleteHook(&jp, testTxCompleteHook, &probe);
+
+    transactionJournalRecordInit(&node1.record, 11, 120, 130);
+    transactionJournalRecordInit(&node2.record, 22, 140, 150);
+    DL_APPEND(head, &node1);
+    DL_APPEND(head, &node2);
+    jp.txRecordHead = head;
+
+    jp.headLpa = 135;
+    jp.tailLpa = 160;
+
+    journalProcessorDrainCompletedTxRecords(&jp);
+
+    TEST_ASSERT_EQUAL_UINT32(1u, probe.call_count);
+    TEST_ASSERT_EQUAL_UINT32(11u, (uint32_t)probe.tx_id);
+    TEST_ASSERT_EQUAL_PTR(&node2, jp.txRecordHead);
+
+    journalProcessorDestroy(&jp);
 }
 
 // TODO 目前不单独测试 journalProcessorProcessJournal 函数。该函数主要作为线程主循环调度入口，自身逻辑较少且依赖线程同步、定时器与 I/O 协作，当前优先测试其内部核心处理函数，后续再通过集成测试覆盖整体行为。

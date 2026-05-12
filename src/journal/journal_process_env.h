@@ -99,5 +99,15 @@ void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *j
  */
 void journalProcessEnvStopProcessThread(JournalProcessEnv *this);
 
+/**
+ * @brief 测试/诊断辅助接口：返回当前提交队列是否为空。
+ */
+bool journalProcessEnvIsCommitQueueEmpty(JournalProcessEnv *this);
+
+/**
+ * @brief 测试/诊断辅助接口：返回当前退出请求标志。
+ */
+bool journalProcessEnvIsExitRequested(JournalProcessEnv *this);
+
 
 #endif

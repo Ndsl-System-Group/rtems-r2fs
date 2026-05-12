@@ -8,6 +8,12 @@
 
 struct comm_dev;
 
+typedef int (*super_cache_read_block_hook)(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    void *buffer
+);
+
 
 /**
  * @brief 超级块缓存结构。用于缓存文件系统的 Super Block（超级块），避免频繁从设备读取。
@@ -36,6 +42,11 @@ void superCacheDestroy(SuperCache *this);
  * @brief 从设备读取超级块到缓存。
  */
 void superCacheReadSuperBlock(SuperCache *this);
+
+/**
+ * @brief 设置 super block 读取测试 hook。若设置，则优先通过 hook 读取数据。
+ */
+void superCacheSetReadBlockHook(super_cache_read_block_hook hook);
 
 /**
  * @brief 获取超级块指针。

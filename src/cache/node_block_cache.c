@@ -9,6 +9,7 @@
 #include "uthash/utlist.h"
 
 #include <assert.h>
+#include <errno.h>
 
 
 static void nodeBlockCacheEntryHandleDoAddRef(NodeBlockCacheEntryHandle *this);
@@ -25,6 +26,9 @@ static void nodeBlockCacheRemoveEntry(NodeBlockCache *this, NodeBlockCacheEntry 
 
 static void nodeBlockCacheDoReplace(NodeBlockCache *this);
 
+static node_block_cache_write_block_hook g_node_block_cache_write_block_hook = NULL;
+static node_block_cache_read_block_hook g_node_block_cache_read_block_hook = NULL;
+
 
 void nodeBlockCacheEntryInit(NodeBlockCacheEntry *this, BlockBuffer *buffer, uint32_t nid, uint32_t parentNid, uint32_t lpa)
 {
@@ -34,6 +38,8 @@ void nodeBlockCacheEntryInit(NodeBlockCacheEntry *this, BlockBuffer *buffer, uin
     this->nid = nid;
     this->parentNid = parentNid;
     this->lpa = lpa;
+    this->cowNewLpa = INVALID_LPA;
+    this->hasPendingCowRelocation = false;
     this->refCount = 0;
     this->state = NODE_BLOCK_CACHE_ENTRY_UPTODATE;
 }
@@ -43,6 +49,8 @@ void nodeBlockCacheEntryDestroy(NodeBlockCacheEntry *this)
     this->state = NODE_BLOCK_CACHE_ENTRY_DELETED;
     this->refCount = 0;
     this->lpa = 0;
+    this->cowNewLpa = 0;
+    this->hasPendingCowRelocation = false;
     this->parentNid = 0;
     this->nid = 0;
 
@@ -157,7 +165,7 @@ void nodeBlockCacheInit(NodeBlockCache *this, struct file_system_manager *fsMana
 
 void nodeBlockCacheDestroy(NodeBlockCache *this)
 {
-    if (NULL == this->dirtyListHead) RTFS_LOG(RTFS_LOG_WARNING, "node block cache still has dirty block while destructed.");
+    if (NULL != this->dirtyListHead) RTFS_LOG(RTFS_LOG_WARNING, "node block cache still has dirty block while destructed.");
 
     kh_destroy(khdp, this->dirtyPos);
     this->dirtyPos = NULL;
@@ -239,6 +247,150 @@ void nodeBlockCacheForceReplace(NodeBlockCache *this)
     nodeBlockCacheDoReplace(this);
 }
 
+void nodeBlockCacheSetWriteBlockHook(node_block_cache_write_block_hook hook)
+{
+    g_node_block_cache_write_block_hook = hook;
+}
+
+void nodeBlockCacheSetReadBlockHook(node_block_cache_read_block_hook hook)
+{
+    g_node_block_cache_read_block_hook = hook;
+}
+
+int nodeBlockCacheWritebackDirtyContentCow(NodeBlockCache *this)
+{
+    NodeBlockCacheDirtyNode *cur = NULL;
+    struct file_system_manager *fs_manager;
+    super_manager *sp_manager;
+    struct comm_dev *dev;
+
+    if (this == NULL || this->fsManager == NULL) {
+        return EINVAL;
+    }
+
+    fs_manager = this->fsManager;
+    sp_manager = fileSystemManagerGetSuperManager(fs_manager);
+    dev = fileSystemManagerGetDevice(fs_manager);
+    if (sp_manager == NULL || dev == NULL) {
+        return EINVAL;
+    }
+
+    DL_FOREACH(this->dirtyListHead, cur)
+    {
+        NodeBlockCacheEntry *entry = cur->handle.entry;
+        uint32_t new_lpa;
+
+        if (entry == NULL || entry->state != NODE_BLOCK_CACHE_ENTRY_DIRTY) {
+            continue;
+        }
+
+        new_lpa = superManagerAllocNodeLpa(sp_manager);
+        if (new_lpa == INVALID_LPA) {
+            return ENOSPC;
+        }
+
+        if (g_node_block_cache_write_block_hook != NULL) {
+            int res = g_node_block_cache_write_block_hook(dev, new_lpa, blockBufferGetPtr(&entry->node));
+            if (res != 0) {
+                return res;
+            }
+        } else {
+            blockBufferWriteToLpaSync(&entry->node, dev, new_lpa);
+        }
+        entry->cowNewLpa = new_lpa;
+        entry->hasPendingCowRelocation = true;
+    }
+
+    return 0;
+}
+
+int nodeBlockCacheCollectPendingCowRelocations(
+    NodeBlockCache *this,
+    NodeBlockCacheCowRelocation *out_array,
+    size_t max_count,
+    size_t *out_count
+)
+{
+    size_t count = 0;
+    khiter_t k;
+
+    if (this == NULL || out_array == NULL || out_count == NULL) {
+        return EINVAL;
+    }
+
+    for (k = kh_begin(this->cacheManager.index.index);
+         k != kh_end(this->cacheManager.index.index);
+         ++k)
+    {
+        NodeBlockCacheEntry *entry;
+
+        if (!kh_exist(this->cacheManager.index.index, k)) {
+            continue;
+        }
+
+        entry = (NodeBlockCacheEntry *)kh_val(this->cacheManager.index.index, k);
+        if (entry == NULL || !entry->hasPendingCowRelocation || entry->cowNewLpa == INVALID_LPA) {
+            continue;
+        }
+
+        if (count >= max_count) {
+            return ENOSPC;
+        }
+
+        out_array[count].nid = entry->nid;
+        out_array[count].oldLpa = entry->lpa;
+        out_array[count].newLpa = entry->cowNewLpa;
+        count++;
+    }
+
+    *out_count = count;
+    return 0;
+}
+
+int nodeBlockCacheApplyPendingCowRelocations(NodeBlockCache *this)
+{
+    khiter_t k;
+    NatLpaMapping nat_mapping;
+
+    if (this == NULL || this->fsManager == NULL) {
+        return EINVAL;
+    }
+
+    natLpaMappingInit(&nat_mapping, this->fsManager);
+    for (k = kh_begin(this->cacheManager.index.index);
+         k != kh_end(this->cacheManager.index.index);
+         ++k)
+    {
+        NodeBlockCacheEntry *entry;
+
+        if (!kh_exist(this->cacheManager.index.index, k)) {
+            continue;
+        }
+
+        entry = (NodeBlockCacheEntry *)kh_val(this->cacheManager.index.index, k);
+        if (entry == NULL || !entry->hasPendingCowRelocation || entry->cowNewLpa == INVALID_LPA) {
+            continue;
+        }
+
+        natSetLpaOfNid(&nat_mapping, entry->nid, entry->cowNewLpa);
+        entry->lpa = entry->cowNewLpa;
+        entry->cowNewLpa = INVALID_LPA;
+        entry->hasPendingCowRelocation = false;
+        if (entry->state == NODE_BLOCK_CACHE_ENTRY_DIRTY) {
+            khiter_t dirty_k = kh_get(khdp, this->dirtyPos, entry);
+            if (dirty_k != kh_end(this->dirtyPos)) {
+                NodeBlockCacheDirtyNode *dirty_node = kh_value(this->dirtyPos, dirty_k);
+                DL_DELETE(this->dirtyListHead, dirty_node);
+                kh_del(khdp, this->dirtyPos, dirty_k);
+                free(dirty_node);
+            }
+            entry->state = NODE_BLOCK_CACHE_ENTRY_UPTODATE;
+        }
+    }
+
+    return 0;
+}
+
 
 void nodeBlockCacheHelperInit(NodeBlockCacheHelper *this, struct file_system_manager *fsManager)
 {
@@ -272,13 +424,21 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper 
         BlockBuffer buffer;
         blockBufferInit(&buffer);
 
-        Try
+        if (g_node_block_cache_read_block_hook != NULL)
         {
-            blockBufferReadFromLpa(&buffer, this->dev, nidLpa);
+            int res = g_node_block_cache_read_block_hook(this->dev, nidLpa, blockBufferGetPtr(&buffer));
+            if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "node cache helper: read lpa %u failed.", nidLpa);
         }
-        Catch(e)
+        else
         {
-            THROW_FATAL_MESSAGE(e, "node cache helper: read lpa %u failed.", nidLpa);
+            Try
+            {
+                blockBufferReadFromLpa(&buffer, this->dev, nidLpa);
+            }
+            Catch(e)
+            {
+                THROW_FATAL_MESSAGE(e, "node cache helper: read lpa %u failed.", nidLpa);
+            }
         }
 
         // node_handle = node_cache->add(std::move(buf), nid, parentNid, nid_lpa);
@@ -299,11 +459,19 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperCreateNodeEntry(NodeBlockCacheHelp
 {
     // 分配 nid，创建 node block 缓存项并加入缓存。
     uint32_t newNid = superManagerAllocNid(fileSystemManagerGetSuperManager(this->fsManager), ino, false);
+    NodeBlockCacheEntryHandle handle = {
+        .cache = NULL,
+        .entry = NULL
+    };
+
+    if (newNid == INVALID_NID) {
+        return handle;
+    }
 
     BlockBuffer buffer;
     blockBufferInit(&buffer);
 
-    NodeBlockCacheEntryHandle handle = nodeBlockCacheAdd(this->nodeBlockCache, &buffer, newNid, parentNid, INVALID_LPA);
+    handle = nodeBlockCacheAdd(this->nodeBlockCache, &buffer, newNid, parentNid, INVALID_LPA);
 
     struct RtfsNode *node = nodeBlockCacheEntryGetNodeBlockPtr(handle.entry);
 
@@ -326,11 +494,19 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperCreateInodeEntry(NodeBlockCacheHel
 {
     // 分配 nid，创建 inode block 缓存项并加入缓存。
     uint32_t newNid = superManagerAllocNid(fileSystemManagerGetSuperManager(this->fsManager), INVALID_NID, true);
+    NodeBlockCacheEntryHandle handle = {
+        .cache = NULL,
+        .entry = NULL
+    };
+
+    if (newNid == INVALID_NID) {
+        return handle;
+    }
 
     BlockBuffer buffer;
     blockBufferInit(&buffer);
 
-    NodeBlockCacheEntryHandle handle = nodeBlockCacheAdd(this->nodeBlockCache, &buffer, newNid, INVALID_NID, INVALID_LPA);
+    handle = nodeBlockCacheAdd(this->nodeBlockCache, &buffer, newNid, INVALID_NID, INVALID_LPA);
 
     struct RtfsNode *node = nodeBlockCacheEntryGetNodeBlockPtr(handle.entry);
 

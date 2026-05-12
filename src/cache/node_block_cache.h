@@ -45,6 +45,16 @@ typedef struct NodeBlockCacheEntry
     uint32_t lpa;
 
     /**
+     * @brief content-COW 写出后的新位置，尚未通过 NAT 正式切换时保存在这里。
+     */
+    uint32_t cowNewLpa;
+
+    /**
+     * @brief 是否存在尚未提交的 node relocation。
+     */
+    bool hasPendingCowRelocation;
+
+    /**
      * @brief node block 数据缓冲区。
      */
     BlockBuffer node;
@@ -169,6 +179,13 @@ typedef struct NodeBlockCacheDirtyNode
     struct NodeBlockCacheDirtyNode *next;
 } NodeBlockCacheDirtyNode;
 
+typedef struct NodeBlockCacheCowRelocation
+{
+    uint32_t nid;
+    uint32_t oldLpa;
+    uint32_t newLpa;
+} NodeBlockCacheCowRelocation;
+
 
 KHASH_MAP_INIT_PTR(khdp, NodeBlockCacheDirtyNode *)
 
@@ -239,6 +256,48 @@ NodeBlockCacheDirtyNode *nodeBlockCacheGetAndClearDirtyList(NodeBlockCache *this
  * @brief 强制执行一次缓存替换。
  */
 void nodeBlockCacheForceReplace(NodeBlockCache *this);
+
+typedef int (*node_block_cache_write_block_hook)(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    const void *buffer
+);
+
+typedef int (*node_block_cache_read_block_hook)(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    void *buffer
+);
+
+/**
+ * @brief 第一阶段 node content-COW writeback：将当前 dirty node blocks 写到新的
+ * node lpa，并在缓存项上记录 pending relocation。此阶段不修改 NAT。
+ * @return 成功返回 0，失败返回错误码值。
+ */
+int nodeBlockCacheWritebackDirtyContentCow(NodeBlockCache *this);
+
+void nodeBlockCacheSetWriteBlockHook(node_block_cache_write_block_hook hook);
+void nodeBlockCacheSetReadBlockHook(node_block_cache_read_block_hook hook);
+
+/**
+ * @brief 收集当前 cache 中所有待提交的 node relocation。
+ * @param out_array 输出数组，由调用者提供。
+ * @param max_count 数组容量。
+ * @param out_count 返回实际写入的 relocation 数量。
+ * @return 成功返回 0，参数错误返回 EINVAL，空间不足返回 ENOSPC。
+ */
+int nodeBlockCacheCollectPendingCowRelocations(
+    NodeBlockCache *this,
+    NodeBlockCacheCowRelocation *out_array,
+    size_t max_count,
+    size_t *out_count
+);
+
+/**
+ * @brief 将当前 cache 中待提交的 node relocation 应用到 NAT 的内存缓存视图，并记录 NAT journal。
+ * @return 成功返回 0，参数错误返回 EINVAL。
+ */
+int nodeBlockCacheApplyPendingCowRelocations(NodeBlockCache *this);
 
 
 /**

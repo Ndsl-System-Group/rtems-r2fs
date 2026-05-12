@@ -12,6 +12,8 @@
 
 struct comm_dev;
 
+typedef void (*journal_tx_complete_hook)(uint64_t tx_id, void *arg);
+
 
 /**
  * @brief 事务日志记录，一个对象代表一个事务，记录该事务日志在 SSD 上持久化的 LPA 范围 [startLpa, endLpa)。
@@ -149,6 +151,16 @@ typedef struct JournalProcessor
      * @brief 轮询定时器是否已启动。
      */
     bool isPollTimerEnabled;
+
+    /**
+     * @brief 事务完成通知 hook。仅在确认某个 tx 已完成应用时调用。
+     */
+    journal_tx_complete_hook txCompleteHook;
+
+    /**
+     * @brief 传递给 txCompleteHook 的用户上下文。
+     */
+    void *txCompleteHookArg;
 } JournalProcessor;
 
 
@@ -163,6 +175,20 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
 void journalProcessorDestroy(JournalProcessor *this);
 
 /**
+ * @brief 设置事务完成通知 hook。
+ */
+void journalProcessorSetTxCompleteHook(
+    JournalProcessor *this,
+    journal_tx_complete_hook hook,
+    void *arg
+);
+
+void journalProcessorSetDefaultTxCompleteHook(
+    journal_tx_complete_hook hook,
+    void *arg
+);
+
+/**
  * @brief 日志处理线程主循环。
  *
  * @details 该函数通常作为日志后台线程入口逻辑调用。循环执行以下任务：
@@ -173,6 +199,11 @@ void journalProcessorDestroy(JournalProcessor *this);
  * 5. 收到退出请求后结束线程。
  */
 void journalProcessorProcessJournal(JournalProcessor *this);
+
+/**
+ * @brief 测试/最小驱动辅助入口：仅处理当前已完成应用的事务记录。
+ */
+void journalProcessorDrainCompletedTxRecords(JournalProcessor *this);
 
 
 #endif

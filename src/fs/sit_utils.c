@@ -87,7 +87,7 @@ void sitChangeLpaState(SitOperator *this, uint32_t lpa, int valid)
     SitNatCache *sitCache = fileSystemManagerGetSitCache(this->fsManager);
     SitNatCacheEntryHandle sitBlockHandle = sitNatCacheGet(sitCache, sitLpa);
     struct RtfsSitBlock *sitBlock = sitNatCacheEntryHandleGetSitBlockPtr(&sitBlockHandle);
-    struct RtfsSitEntry sitEntry = sitBlock->entries[segId % SIT_ENTRY_PER_BLOCK];
+    struct RtfsSitEntry *sitEntry = &sitBlock->entries[segId % SIT_ENTRY_PER_BLOCK];
 
     // 修改对应 sit entry。
     uint32_t bitmapIdx = segoff / 8;
@@ -95,27 +95,28 @@ void sitChangeLpaState(SitOperator *this, uint32_t lpa, int valid)
 
     if (valid)
     {
-        assert(!(sitEntry.valid_map[bitmapIdx] & (1U << bitmapOff)));
-        sitEntry.valid_map[bitmapIdx] |= (1U << bitmapOff);
+        assert(!(sitEntry->valid_map[bitmapIdx] & (1U << bitmapOff)));
+        sitEntry->valid_map[bitmapIdx] |= (1U << bitmapOff);
 
         // 有效块计数字段最多只能是 511（9 位），但实际可能有 512。因此不记录从 511 -> 512 的增加。
-        if (GET_SIT_VBLOCKS(&sitEntry) < 511) ++sitEntry.vblocks;
+        if (GET_SIT_VBLOCKS(sitEntry) < 511) ++sitEntry->vblocks;
 
         RTFS_LOG(RTFS_LOG_INFO, "validate lpa [%u] in SIT.", lpa);
     }
     else
     {
-        assert(sitEntry.valid_map[bitmapIdx] & (1U << bitmapOff));
-        sitEntry.valid_map[bitmapIdx] &= ~(1U << bitmapOff);
+        assert(sitEntry->valid_map[bitmapIdx] & (1U << bitmapOff));
+        sitEntry->valid_map[bitmapIdx] &= ~(1U << bitmapOff);
 
-        if (GET_SIT_VBLOCKS(&sitEntry) > 0) --sitEntry.vblocks;
+        if (GET_SIT_VBLOCKS(sitEntry) > 0) --sitEntry->vblocks;
 
         RTFS_LOG(RTFS_LOG_INFO, "invalidate lpa [%u] in SIT.", lpa);
     }
 
     // 写下 SIT 日志条目，增加 sit 缓存块主机侧版本。
     JournalContainer *curJournal = fileSystemManagerGetCurJournal(this->fsManager);
-    SitJournalEntry journalEntry = {.segID = segId, .newValue = sitEntry};
+    SitJournalEntry journalEntry = {.segID = segId, .newValue = *sitEntry};
     journalContainerAppendSitJournalEntry(curJournal, &journalEntry);
     sitNatCacheEntryHandleAddHostVersion(&sitBlockHandle);
+    sitNatCacheEntryHandleDestroy(&sitBlockHandle);
 }
