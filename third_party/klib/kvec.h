@@ -69,7 +69,7 @@ static void *kv_a_impl(void **a, size_t *n, size_t *m, size_t i, size_t sz);
     }
 #define kv_init(v) ((v).n = (v).m = 0, (v).a = 0)
 #define kv_destroy(v) free((v).a)
-// #define kv_A(v, i) ((v).a[(i)])
+#define kv_A(v, i) ((v).a[(i)])
 #define kv_pop(v) ((v).a[--(v).n])
 #define kv_size(v) ((v).n)
 #define kv_cap(v) ((v).m)

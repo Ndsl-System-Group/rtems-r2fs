@@ -2898,15 +2898,15 @@ static JournalContainer *rtfsDirInodeCloneJournalContainer(const JournalContaine
 
     journalContainerInit(dst);
     for (i = 0; i < kv_size(src->superBlockJournal); ++i) {
-        SuperBlockJournalEntry entry = kv_a(SuperBlockJournalEntry, src->superBlockJournal, i);
+        SuperBlockJournalEntry entry = kv_A(src->superBlockJournal, i);
         journalContainerAppendSuperBlockJournalEntry(dst, &entry);
     }
     for (i = 0; i < kv_size(src->natJournal); ++i) {
-        NatJournalEntry entry = kv_a(NatJournalEntry, src->natJournal, i);
+        NatJournalEntry entry = kv_A(src->natJournal, i);
         journalContainerAppendNatJournalEntry(dst, &entry);
     }
     for (i = 0; i < kv_size(src->sitJournal); ++i) {
-        SitJournalEntry entry = kv_a(SitJournalEntry, src->sitJournal, i);
+        SitJournalEntry entry = kv_A(src->sitJournal, i);
         journalContainerAppendSitJournalEntry(dst, &entry);
     }
 
