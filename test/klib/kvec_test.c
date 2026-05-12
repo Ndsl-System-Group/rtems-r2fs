@@ -165,3 +165,51 @@ RTFS_TEST(KvecStressTest)
 
     kv_destroy(v);
 }
+
+RTFS_TEST(KvecATest)
+{
+    kvec_t(int) v;
+    kv_init(v);
+
+    // 先分配固定大小。
+    kv_resize(int, v, 8);
+
+    TEST_ASSERT_EQUAL(kv_size(v), 8);
+
+    // kv_A 是静态访问，不会扩容。
+    kv_A(v, 0) = 11;
+    kv_A(v, 3) = 33;
+    kv_A(v, 7) = 77;
+
+    TEST_ASSERT_EQUAL(kv_A(v, 0), 11);
+    TEST_ASSERT_EQUAL(kv_A(v, 3), 33);
+    TEST_ASSERT_EQUAL(kv_A(v, 7), 77);
+
+    // size/cap 不应变化。
+    TEST_ASSERT_EQUAL(kv_size(v), 8);
+    TEST_ASSERT_GREATER_OR_EQUAL(kv_size(v), kv_cap(v));
+
+    kv_destroy(v);
+}
+
+RTFS_TEST(KvecADiffTest)
+{
+    kvec_t(int) v;
+    kv_init(v);
+
+    kv_resize(int, v, 4);
+
+    TEST_ASSERT_EQUAL(kv_size(v), 4);
+
+    kv_a(int, v, 10) = 100;
+
+    // kv_a 自动扩容并更新 size。
+    TEST_ASSERT_EQUAL(kv_size(v), 11);
+
+    // kv_A 只是普通数组访问。
+    kv_A(v, 2) = 20;
+
+    TEST_ASSERT_EQUAL(kv_A(v, 2), 20);
+
+    kv_destroy(v);
+}

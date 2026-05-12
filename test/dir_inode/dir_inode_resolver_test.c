@@ -339,7 +339,7 @@ static void dirAssertSitJournalDoesNotInvalidateLpa(
     TEST_ASSERT_NOT_NULL(journal);
 
     for (i = 0; i < kv_size(journal->sitJournal); ++i) {
-        const SitJournalEntry *entry = &kv_a(SitJournalEntry, journal->sitJournal, i);
+        const SitJournalEntry *entry = &kv_A(journal->sitJournal, i);
 
         if (entry->segID != seg_id) {
             continue;
