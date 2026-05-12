@@ -132,7 +132,6 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
 
 void journalProcessorDestroy(JournalProcessor *this)
 {
-    comm_free_dma_mem(this->journalPosDmaBuffer);
     rtfsTimerStop(&this->journalPollTimer);
     rtfsTimerDestructor(&this->journalPollTimer);
     comm_free_dma_mem(this->journalPosDmaBuffer);
@@ -141,10 +140,10 @@ void journalProcessorDestroy(JournalProcessor *this)
 void journalProcessorSetTxCompleteHook(
     JournalProcessor *this,
     journal_tx_complete_hook hook,
-    void *arg
-)
+    void *arg)
 {
-    if (this == NULL) {
+    if (this == NULL)
+    {
         return;
     }
 
@@ -154,8 +153,7 @@ void journalProcessorSetTxCompleteHook(
 
 void journalProcessorSetDefaultTxCompleteHook(
     journal_tx_complete_hook hook,
-    void *arg
-)
+    void *arg)
 {
     g_default_tx_complete_hook = hook;
     g_default_tx_complete_hook_arg = arg;
@@ -183,7 +181,8 @@ void journalProcessorProcessJournal(JournalProcessor *this)
 
 void journalProcessorDrainCompletedTxRecords(JournalProcessor *this)
 {
-    if (this == NULL) {
+    if (this == NULL)
+    {
         return;
     }
 
@@ -388,11 +387,11 @@ void journalProcessorProcessTxRecord(JournalProcessor *this)
         {
             RTFS_LOG(RTFS_LOG_DEBUG, "transaction %lu completed, which applied journal area: start lpa = %lu, end lpa = %lu\n", transactionJournalRecordGetTxId(&txRc->record), transactionJournalRecordGetStartLpa(&txRc->record), transactionJournalRecordGetEndLpa(&txRc->record));
 
-            if (this->txCompleteHook != NULL) {
+            if (this->txCompleteHook != NULL)
+            {
                 this->txCompleteHook(
                     transactionJournalRecordGetTxId(&txRc->record),
-                    this->txCompleteHookArg
-                );
+                    this->txCompleteHookArg);
             }
 
             DL_DELETE(this->txRecordHead, txRc);

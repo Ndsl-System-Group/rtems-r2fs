@@ -38,7 +38,8 @@ static void *journalProcessThreadEntry(void *arg)
 
 JournalProcessEnv *journalProcessEnvGetInstance()
 {
-    if (!gEnvTxIdBootstrapped) {
+    if (!gEnvTxIdBootstrapped)
+    {
         atomic_init(&gEnv.txIdToAlloc, 1);
         gEnvTxIdBootstrapped = true;
     }
@@ -53,7 +54,7 @@ void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64
     this->commitQueueHead = NULL;
     this->exitReq = false;
 
-    atomic_init(&this->txIdToAlloc, 0);
+    atomic_init(&this->txIdToAlloc, 1);
 
     JournalProcessThreadArgs *args = malloc(sizeof(*args));
 
