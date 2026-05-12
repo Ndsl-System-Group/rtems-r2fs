@@ -21,7 +21,7 @@
 #include "fs/fs_handler.h"
 #include "fs/srmap_utils.h"
 #include "fs/super_manager.h"
-#include "handler/file_handler.h"
+#include "file_inode/file_handler.h"
 #include "journal/journal_container.h"
 #include "journal/journal_process_env.h"
 #include "uthash/utlist.h"

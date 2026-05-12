@@ -15,7 +15,7 @@
 #include "fs/cow_reclaim_registry.h"
 #include "fs_manager.h"
 #include "dir_inode/dir_handler.h"
-#include "handler/file_handler.h"
+#include "file_inode/file_handler.h"
 #include "inode/inode.h"
 #include "inode/inode_loader.h"
 #include "journal/journal_process_env.h"

@@ -23,7 +23,7 @@
 #include "fs/fs.h"
 #include "fs/srmap_utils.h"
 #include "fs/super_manager.h"
-#include "handler/file_handler.h"
+#include "file_inode/file_handler.h"
 #include "inode/inode.h"
 #include "journal/journal_container.h"
 
