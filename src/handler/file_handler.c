@@ -96,7 +96,7 @@ static int rtfsFileGetHandle(
         return EINVAL;
     }
 
-    handle = (RtfsFileHandle *)iop->data0;
+    handle = (RtfsFileHandle *)iop->data1;
     if (handle == NULL || handle->file_inode == NULL ||
         handle->fs_manager == NULL) {
         return EBADF;
@@ -206,7 +206,7 @@ int rtfsFileOpen(rtems_libio_t *iop, const char *pathname, int oflag, mode_t mod
         return -1;
     }
 
-    if (iop->data0 != NULL) {
+    if (iop->data1 != NULL) {
         errno = EBUSY;
         return -1;
     }
@@ -261,7 +261,7 @@ int rtfsFileOpen(rtems_libio_t *iop, const char *pathname, int oflag, mode_t mod
     handle->fs_manager = fs_manager;
     handle->file_inode = file_inode;
     handle->oflag = oflag;
-    iop->data0 = handle;
+    iop->data1 = handle;
 
     if ((oflag & O_APPEND) != 0) {
         iop->offset = (off_t)rtfsFileInodeGetSize(file_inode);
@@ -280,7 +280,7 @@ int rtfsFileClose(rtems_libio_t *iop)
         return -1;
     }
 
-    handle = (RtfsFileHandle *)iop->data0;
+    handle = (RtfsFileHandle *)iop->data1;
     if (handle == NULL) {
         return 0;
     }
@@ -297,7 +297,7 @@ int rtfsFileClose(rtems_libio_t *iop)
     }
 
     free(handle);
-    iop->data0 = NULL;
+    iop->data1 = NULL;
 
     if (ret != 0) {
         errno = ret;

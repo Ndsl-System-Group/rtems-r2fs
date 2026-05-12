@@ -343,7 +343,7 @@ static void fileHandlerFixturePrepareRegularFile(
 
 static void fileHandlerFixtureFini(FileHandlerFixture *fixture)
 {
-    if (fixture->iop.data0 != NULL) {
+    if (fixture->iop.data1 != NULL) {
         rtfsFilehandlers.close_h(&fixture->iop);
     }
 
@@ -372,7 +372,7 @@ RTFS_TEST(FileHandlerOpen_WhenNodeIsRegularFile_ShouldSucceed)
     fileHandlerFixturePrepareRegularFile(&fixture, 5100, 5099);
 
     TEST_ASSERT_EQUAL(0, rtfsFilehandlers.open_h(&fixture.iop, "/file", O_RDONLY, 0));
-    TEST_ASSERT_NOT_NULL(fixture.iop.data0);
+    TEST_ASSERT_NOT_NULL(fixture.iop.data1);
 
     fileHandlerFixtureFini(&fixture);
 }
@@ -402,12 +402,12 @@ RTFS_TEST(FileHandlerOpen_WhenHandleAlreadyExists_ShouldReturnEBUSY)
     int dummy;
 
     fileHandlerFixturePrepareRegularFile(&fixture, 5102, 5101);
-    fixture.iop.data0 = &dummy;
+    fixture.iop.data1 = &dummy;
 
     TEST_ASSERT_EQUAL(-1, rtfsFilehandlers.open_h(&fixture.iop, "/file", O_RDONLY, 0));
     TEST_ASSERT_EQUAL(EBUSY, errno);
 
-    fixture.iop.data0 = NULL;
+    fixture.iop.data1 = NULL;
     fileHandlerFixtureFini(&fixture);
 }
 
@@ -687,7 +687,7 @@ RTFS_TEST(FileHandlerClose_WhenDirtyFileExists_ShouldCommitAndClearHandle)
     TEST_ASSERT_EQUAL(5, rtfsFilehandlers.write_h(&fixture.iop, text, strlen(text)));
 
     TEST_ASSERT_EQUAL(0, rtfsFilehandlers.close_h(&fixture.iop));
-    TEST_ASSERT_NULL(fixture.iop.data0);
+    TEST_ASSERT_NULL(fixture.iop.data1);
     TEST_ASSERT_NOT_NULL(g_file_handler_committed_journal);
 
     fileHandlerFixtureFini(&fixture);
