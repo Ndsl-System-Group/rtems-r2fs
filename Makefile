@@ -8,17 +8,17 @@
 #   make clean      - 清理构建文件
 
 # 默认配置
-RTEMS_ROOT ?= # 填入你自己的 RTEMS 安装路径，例如：$(HOME)/quick-start/rtems/6
-BSP ?= # 填入你自己的 BSP，例如：arm/realview_pbx_a9_qemu
+RTEMS_ROOT ?= $(HOME)/phytium-rtems-sdk/toolchain/aarch64-6
+BSP ?= aarch64/xilinx_zynqmp_lp64_qemu
 
 # 项目配置
 PROJECT_NAME = main
 TARGET = $(PROJECT_NAME).exe
 
 # QEMU 配置
-QEMU ?= # 填入你自己的 qemu 程序，例如：qemu-system-arm
-QEMU_OPTS ?= # 填入你自己的板级、内存、显示等参数，例如：-no-reboot -nographic -M realview-pbx-a9 -m 256M
-QEMU_KERNEL ?= # 填入最终运行的 ELF，例如：./build/arm-rtems6-realview_pbx_a9_qemu/$(TARGET)
+QEMU ?= qemu-system-aarch64
+QEMU_OPTS ?= -M xlnx-zcu102 -cpu cortex-a53 -m 1G -nographic -no-reboot -smp 4
+QEMU_KERNEL ?= ./build/aarch64-rtems6-xilinx_zynqmp_lp64_qemu/$(TARGET)
 
 # 默认目标
 all: build

@@ -4,7 +4,6 @@ build/
 .waf*
 .lock*
 *.img
-/Makefile
 /note/*
 /codex/*
 *.staging
