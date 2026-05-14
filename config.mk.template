@@ -1,0 +1,32 @@
+# =========================
+# RTFS Config
+# =========================
+
+# 默认配置。
+RTEMS_ROOT ?= $(HOME)/phytium-rtems-sdk/toolchain/aarch64-6
+BSP ?= aarch64/xilinx_zynqmp_lp64_qemu
+
+# 项目配置。。
+PROJECT_NAME = main
+TARGET = $(PROJECT_NAME).exe
+
+# QEMU 配置。
+QEMU ?= qemu-system-aarch64
+
+QEMU_MACHINE ?= xlnx-zcu102
+QEMU_CPU ?= cortex-a53
+QEMU_MEM ?= 1G
+QEMU_SMP ?= 4
+
+QEMU_BASE_OPTS ?= -nographic -no-reboot
+QEMU_EXTRA_OPTS ?=
+
+QEMU_OPTS = \
+	-M $(QEMU_MACHINE) \
+	-cpu $(QEMU_CPU) \
+	-m $(QEMU_MEM) \
+	-smp $(QEMU_SMP) \
+	$(QEMU_BASE_OPTS) \
+	$(QEMU_EXTRA_OPTS)
+
+QEMU_KERNEL ?= ./build/aarch64-rtems6-xilinx_zynqmp_lp64_qemu/$(TARGET)

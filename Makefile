@@ -7,18 +7,8 @@
 #   make run        - 运行项目
 #   make clean      - 清理构建文件
 
-# 默认配置
-RTEMS_ROOT ?= $(HOME)/phytium-rtems-sdk/toolchain/aarch64-6
-BSP ?= aarch64/xilinx_zynqmp_lp64_qemu
+-include config.mk
 
-# 项目配置
-PROJECT_NAME = main
-TARGET = $(PROJECT_NAME).exe
-
-# QEMU 配置
-QEMU ?= qemu-system-aarch64
-QEMU_OPTS ?= -M xlnx-zcu102 -cpu cortex-a53 -m 1G -nographic -no-reboot -smp 4
-QEMU_KERNEL ?= ./build/aarch64-rtems6-xilinx_zynqmp_lp64_qemu/$(TARGET)
 
 # 默认目标
 all: build
