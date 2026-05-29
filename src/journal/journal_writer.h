@@ -55,6 +55,11 @@ typedef struct JournalWriter
 void journalWriterInit(JournalWriter *this, struct comm_dev *dev, uint64_t journalAreaStartLpa, uint64_t journalAreaEndLpa);
 
 /**
+ * @brief 释放 JournalWriter 内部缓存资源。
+ */
+void journalWriterDestroy(JournalWriter *this);
+
+/**
  * @brief 设置将要处理的日志。
  */
 void journalWriterSetPendingJournal(JournalWriter *this, JournalContainer *journal);

@@ -23,6 +23,39 @@ typedef enum comm_io_direction
     COMM_IO_WRITE
 } comm_io_direction;
 
+typedef int (*comm_test_sync_rw_hook)(
+    struct comm_dev *dev,
+    void *buffer,
+    uint64_t lba,
+    uint32_t lbaCount,
+    comm_io_direction dir
+);
+
+typedef int (*comm_test_async_rw_hook)(
+    struct comm_dev *dev,
+    void *buffer,
+    uint64_t lba,
+    uint32_t lbaCount,
+    comm_async_cb_func cbFunc,
+    void *cbArg,
+    comm_io_direction dir
+);
+
+typedef int (*comm_test_get_metajournal_head_hook)(
+    struct comm_dev *dev,
+    uint64_t *headLpa
+);
+
+typedef int (*comm_test_update_metajournal_tail_hook)(
+    struct comm_dev *dev,
+    uint64_t originLpa,
+    uint32_t writeBlockNum
+);
+
+typedef int (*comm_test_fs_recover_hook)(
+    struct comm_dev *dev
+);
+
 
 int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_io_direction dir);
 int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_async_cb_func cbFunc, void *cbArg, comm_io_direction dir);
@@ -62,6 +95,12 @@ int comm_submit_start_apply_journal_request(struct comm_dev *dev);
 
 // 挂起元数据日志应用，同步接口。
 int comm_submit_stop_apply_journal_request(struct comm_dev *dev);
+
+void commSetTestSyncRwHook(comm_test_sync_rw_hook hook);
+void commSetTestAsyncRwHook(comm_test_async_rw_hook hook);
+void commSetTestGetMetaJournalHeadHook(comm_test_get_metajournal_head_hook hook);
+void commSetTestUpdateMetaJournalTailHook(comm_test_update_metajournal_tail_hook hook);
+void commSetTestFsRecoverHook(comm_test_fs_recover_hook hook);
 
 
 #endif

@@ -325,7 +325,12 @@ void nodeBlockCacheHelperDestroy(NodeBlockCacheHelper *this);
 /**
  * @brief 获取 nid 对应的 node block 缓存项，封装 node block cache 不命中时，从 NAT 表中查找 lpa 并读入缓存的过程。parentNid 为目标 nid 在索引树上的父 node block。如果 nid 为 inode block，则 parentNid 应置为 INVALID_NID。调用者应确保 parentNid 在缓存中，且nid有效。
  */
-NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper *this, uint32_t nid, uint32_t parentNid);
+int nodeBlockCacheHelperGetNodeEntry(
+    NodeBlockCacheHelper *this,
+    uint32_t nid,
+    uint32_t parentNid,
+    NodeBlockCacheEntryHandle *out_handle
+);
 
 /**
  * @brief 分配一个 nid，然后分配一个 node block 缓存项，把该 node block 缓存项和 nid 绑定。新缓存项的 oldLpa 和 newLpa 均为 invalid，状态为 dirty。新 node block 中，node footer 按参数内容初始化，其余内容初始化为 0。

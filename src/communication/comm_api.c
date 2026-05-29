@@ -20,6 +20,12 @@ typedef struct comm_async_ctx
     void *user_arg;
 } comm_async_ctx;
 
+static comm_test_sync_rw_hook g_comm_test_sync_rw_hook = NULL;
+static comm_test_async_rw_hook g_comm_test_async_rw_hook = NULL;
+static comm_test_get_metajournal_head_hook g_comm_test_get_metajournal_head_hook = NULL;
+static comm_test_update_metajournal_tail_hook g_comm_test_update_metajournal_tail_hook = NULL;
+static comm_test_fs_recover_hook g_comm_test_fs_recover_hook = NULL;
+
 
 static void comm_sync_rw_done(rtems_blkdev_request *req, rtems_status_code status);
 
@@ -31,6 +37,10 @@ static int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uin
 
 int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_io_direction dir)
 {
+    if (g_comm_test_sync_rw_hook != NULL) {
+        return g_comm_test_sync_rw_hook(dev, buffer, lba, lbaCount, dir);
+    }
+
     comm_sync_rw_ctx syncCtx;
     int res = comm_submit_rw_request_common(dev, buffer, lba, lbaCount, dir, &syncCtx, NULL);
     RTFS_LOG(RTFS_LOG_DEBUG, "comm_submit_sync_rw_request res: %d", res);
@@ -45,6 +55,10 @@ int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba
 
 int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_async_cb_func cbFunc, void *cbArg, comm_io_direction dir)
 {
+    if (g_comm_test_async_rw_hook != NULL) {
+        return g_comm_test_async_rw_hook(dev, buffer, lba, lbaCount, cbFunc, cbArg, dir);
+    }
+
     comm_async_ctx *ctx = (comm_async_ctx *)malloc(sizeof(comm_async_ctx));
     if (NULL == ctx) return ENOMEM;
 
@@ -55,6 +69,16 @@ int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lb
     RTFS_LOG(RTFS_LOG_DEBUG, "comm_submit_async_rw_request res: %d", res);
     if (0 != res)
     {
+        RTFS_LOG(
+            RTFS_LOG_WARNING,
+            "async rw submit failed res=%d dev=%p disk=%p lba=%llu lbaCount=%u dir=%d",
+            res,
+            (void *)dev,
+            dev != NULL ? (void *)dev->diskDevice : NULL,
+            (unsigned long long)lba,
+            (unsigned int)lbaCount,
+            (int)dir
+        );
         free(ctx);
 
 
@@ -91,6 +115,10 @@ int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lb
 
 int comm_submit_sync_update_metajournal_tail_request(struct comm_dev *dev, uint64_t originLpa, uint32_t writeBlockNum)
 {
+    if (g_comm_test_update_metajournal_tail_hook != NULL) {
+        return g_comm_test_update_metajournal_tail_hook(dev, originLpa, writeBlockNum);
+    }
+
     if (NULL == dev) return EINVAL;
     if (NULL == dev->diskDevice) return ENODEV;
     if (0 == writeBlockNum) return 0;
@@ -134,6 +162,14 @@ int comm_submit_sync_update_metajournal_tail_request(struct comm_dev *dev, uint6
 
     dev->metaJournalTailLpa = dev->metaJournalStartLpa + newOffset;
 
+    /*
+     * 当前简化实现没有独立的设备侧 apply-journal 线程。
+     * 因此一旦尾指针推进，就视为这批 journal 已经被设备“消费”，
+     * 需要同步推进头指针，否则 journal processor 会一直认为
+     * 仍有未完成事务，卸载阶段会卡在后台线程退出上。
+     */
+    dev->metaJournalHeadLpa = dev->metaJournalTailLpa;
+
 out:
     res = rtfsMutexUnlock(&dev->metaJournalMutex);
     if (0 == result && 0 != res) result = res;
@@ -155,6 +191,10 @@ int comm_submit_async_update_metajournal_tail_request(struct comm_dev *dev, uint
 
 int comm_submit_sync_get_metajournal_head_request(struct comm_dev *dev, uint64_t *headLpa)
 {
+    if (g_comm_test_get_metajournal_head_hook != NULL) {
+        return g_comm_test_get_metajournal_head_hook(dev, headLpa);
+    }
+
     if (NULL == dev || NULL == headLpa) return EINVAL;
     if (NULL == dev->diskDevice) return ENODEV;
 
@@ -217,6 +257,10 @@ int comm_submit_fs_db_init_request(comm_dev *dev)
 
 int comm_submit_fs_recover_from_db_request(comm_dev *dev)
 {
+    if (g_comm_test_fs_recover_hook != NULL) {
+        return g_comm_test_fs_recover_hook(dev);
+    }
+
     if (NULL == dev) return EINVAL;
     if (NULL == dev->diskDevice) return ENODEV;
 
@@ -263,6 +307,31 @@ int comm_submit_stop_apply_journal_request(comm_dev *dev)
     return 0;
 }
 
+void commSetTestSyncRwHook(comm_test_sync_rw_hook hook)
+{
+    g_comm_test_sync_rw_hook = hook;
+}
+
+void commSetTestAsyncRwHook(comm_test_async_rw_hook hook)
+{
+    g_comm_test_async_rw_hook = hook;
+}
+
+void commSetTestGetMetaJournalHeadHook(comm_test_get_metajournal_head_hook hook)
+{
+    g_comm_test_get_metajournal_head_hook = hook;
+}
+
+void commSetTestUpdateMetaJournalTailHook(comm_test_update_metajournal_tail_hook hook)
+{
+    g_comm_test_update_metajournal_tail_hook = hook;
+}
+
+void commSetTestFsRecoverHook(comm_test_fs_recover_hook hook)
+{
+    g_comm_test_fs_recover_hook = hook;
+}
+
 
 void comm_sync_rw_done(rtems_blkdev_request *req, rtems_status_code status)
 {
@@ -305,6 +374,8 @@ int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uint64_t l
 {
     if (NULL == dev || NULL == buffer) return EINVAL;
     if (NULL == dev->diskDevice) return ENODEV;
+    if (NULL == dev->diskDevice->ioctl) return ENODEV;
+    if (NULL == dev->diskDevice->phys_dev) return ENODEV;
     if (0 == dev->blockSize || 0 == dev->blockCount) return EINVAL;
     if (COMM_IO_READ != dir && COMM_IO_WRITE != dir) return EINVAL;
     if (0 == lbaCount) return 0;
@@ -357,6 +428,7 @@ int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uint64_t l
 
     req->io_task = rtems_task_self();
     req->bufnum = 1;
+    req->req = (dir == COMM_IO_READ) ? RTEMS_BLKDEV_REQ_READ : RTEMS_BLKDEV_REQ_WRITE;
 
     req->bufs[0].block = (rtems_blkdev_bnum)lba;
     req->bufs[0].length = (uint32_t)totalBytes64;
@@ -364,13 +436,17 @@ int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uint64_t l
     req->bufs[0].user = NULL;
 
     // 向 RTEMS 块设备提交请求。这里返回值主要看“是否成功把请求送出去”，真正的传输结果在 done callback 里拿。
-    int res = rtems_blkdev_ioctl(dev->diskDevice, RTEMS_BLKIO_REQUEST, req);
+    int res = dev->diskDevice->ioctl(
+        dev->diskDevice->phys_dev,
+        RTEMS_BLKIO_REQUEST,
+        req
+    );
     if (0 != res)
     {
+        int saved_errno = errno;
         free(req);
 
-
-        return EIO;
+        return saved_errno != 0 ? saved_errno : EIO;
     }
 
 

@@ -64,6 +64,7 @@ void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64
     args->fifo = journalFifoPos;
 
     pthread_create(&this->processThreadHandle, NULL, journalProcessThreadEntry, args);
+    this->processThreadRunning = true;
 }
 
 void journalProcessEnvDestroy(JournalProcessEnv *this)
@@ -78,7 +79,10 @@ void journalProcessEnvDestroy(JournalProcessEnv *this)
 
     rtfsCondBroadcast(&this->cond);
 
-    pthread_join(this->processThreadHandle, NULL);
+    if (this->processThreadRunning) {
+        pthread_join(this->processThreadHandle, NULL);
+        this->processThreadRunning = false;
+    }
 
     // 清理 commit queue。
     {
@@ -129,6 +133,10 @@ void journalProcessEnvCommitJournal(JournalProcessEnv *this, JournalContainer *j
 
 void journalProcessEnvStopProcessThread(JournalProcessEnv *this)
 {
+    if (this == NULL || !this->processThreadRunning) {
+        return;
+    }
+
     {
         rtfsMutexLock(&this->mtx);
         this->exitReq = true;
@@ -138,6 +146,7 @@ void journalProcessEnvStopProcessThread(JournalProcessEnv *this)
     rtfsCondBroadcast(&this->cond);
 
     pthread_join(this->processThreadHandle, NULL);
+    this->processThreadRunning = false;
 }
 
 bool journalProcessEnvIsCommitQueueEmpty(JournalProcessEnv *this)

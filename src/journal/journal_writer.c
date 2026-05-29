@@ -37,6 +37,8 @@ static void journalWriterAppendEndEntry(JournalWriter *this);
 
 static void journalWriterAsyncWriteCallback(comm_cmd_result res, void *arg);
 
+static int journalWriterEnsureBufferCapacity(JournalWriter *this, size_t required_count);
+
 
 typedef enum JournalOutputState
 {
@@ -99,6 +101,8 @@ static void superJournalOutputVectorInit(SuperJournalOutputVector *this, SuperBl
 static void superJournalOutputVectorDestroy(SuperJournalOutputVector *this);
 
 static void superJournalOutputVectorGenerateOutputVector(SuperJournalOutputVector *this);
+
+static void superJournalOutputVectorAdvanceToNextValid(SuperJournalOutputVector *this);
 
 static void superJournalOutputVectorPrepareOutput(SuperJournalOutputVector *this);
 
@@ -182,6 +186,28 @@ void journalWriterInit(JournalWriter *this, struct comm_dev *dev, uint64_t journ
     this->dev = dev;
 
     kv_init(this->journalBuffer);
+}
+
+void journalWriterDestroy(JournalWriter *this)
+{
+    size_t i;
+
+    if (this == NULL) {
+        return;
+    }
+
+    for (i = 0; i < kv_size(this->journalBuffer); ++i) {
+        blockBufferDestroy(&kv_A(this->journalBuffer, i));
+    }
+    kv_destroy(this->journalBuffer);
+    kv_init(this->journalBuffer);
+
+    this->curJournal = NULL;
+    this->bufferTailIdx = 0;
+    this->bufferTailOff = 0;
+    this->dev = NULL;
+    this->startLpa = 0;
+    this->endLpa = 0;
 }
 
 void journalWriterSetPendingJournal(JournalWriter *this, JournalContainer *journal)
@@ -422,10 +448,50 @@ SitJournalOutputVector *journalWriterSitJournalOutputVecGenerate(JournalWriter *
 
 char *journalWriterGetIthBufferBlock(JournalWriter *this, size_t index)
 {
-    if (index >= kv_size(this->journalBuffer)) kv_resize(BlockBuffer, this->journalBuffer, 1 + index);
+    if (journalWriterEnsureBufferCapacity(this, 1 + index) != 0) {
+        THROW_FATAL_MESSAGE(EXIT_FAILURE, "journal writer: allocate buffer block failed.");
+    }
 
 
     return blockBufferGetPtr(&kv_a(BlockBuffer, this->journalBuffer, index));
+}
+
+static int journalWriterEnsureBufferCapacity(
+    JournalWriter *this,
+    size_t required_count
+)
+{
+    size_t old_count;
+    size_t i;
+
+    if (this == NULL) {
+        return -1;
+    }
+
+    old_count = kv_size(this->journalBuffer);
+    if (required_count <= old_count) {
+        return 0;
+    }
+
+    if (kv_resize(BlockBuffer, this->journalBuffer, required_count) != 0) {
+        return -1;
+    }
+
+    for (i = old_count; i < required_count; ++i) {
+        memset(&kv_A(this->journalBuffer, i), 0, sizeof(BlockBuffer));
+        if (blockBufferInit(&kv_A(this->journalBuffer, i)) != 0) {
+            size_t j;
+
+            for (j = old_count; j < i; ++j) {
+                blockBufferDestroy(&kv_A(this->journalBuffer, j));
+                memset(&kv_A(this->journalBuffer, j), 0, sizeof(BlockBuffer));
+            }
+            kv_resize(BlockBuffer, this->journalBuffer, old_count);
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 void journalWriterAppendEndEntry(JournalWriter *this)
@@ -477,6 +543,15 @@ void superJournalOutputVectorPrepareOutput(SuperJournalOutputVector *this)
 {
     this->outputIt = kh_begin(this->map);
     this->restOutputNum = kh_size(this->map);
+    superJournalOutputVectorAdvanceToNextValid(this);
+}
+
+static void superJournalOutputVectorAdvanceToNextValid(SuperJournalOutputVector *this)
+{
+    while (this->outputIt != kh_end(this->map) &&
+           !kh_exist(this->map, this->outputIt)) {
+        ++this->outputIt;
+    }
 }
 
 JournalOutputState superJournalOutputVectorOutputToBuffer(SuperJournalOutputVector *this, char **pStartAddr, char *endAddr)
@@ -495,11 +570,13 @@ JournalOutputState superJournalOutputVectorOutputToBuffer(SuperJournalOutputVect
     memcpy(p, &header, sizeof(header));
     SuperBlockJournalEntry *entry = (SuperBlockJournalEntry *)(p + sizeof(MetaJournalEntry));
 
-    for (size_t i = 0; i < outputNum; ++i, ++this->outputIt, ++entry)
+    for (size_t i = 0; i < outputNum; ++i, ++entry)
     {
         SuperBlockJournalEntry *p = &kv_a(SuperBlockJournalEntry, *this->journal, kh_value(this->map, this->outputIt));
 
         *entry = *p;
+        ++this->outputIt;
+        superJournalOutputVectorAdvanceToNextValid(this);
     }
 
     this->restOutputNum -= outputNum;

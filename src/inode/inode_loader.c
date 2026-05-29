@@ -30,6 +30,7 @@ int rtfsInodeLoaderEnsureCached(file_system_manager *fs_manager, rtfs_ino ino)
         .entry = NULL
     };
     bool helper_inited = false;
+    int ret;
 
     if (fs_manager == NULL) {
         return EINVAL;
@@ -48,11 +49,12 @@ int rtfsInodeLoaderEnsureCached(file_system_manager *fs_manager, rtfs_ino ino)
     helper_inited = true;
 
     if (helper.nodeBlockCache == NULL || helper.natCache == NULL || helper.dev == NULL) {
+        ret = ENOENT;
         goto fail;
     }
 
-    handle = nodeBlockCacheHelperGetNodeEntry(&helper, ino, INVALID_NID);
-    if (nodeBlockCacheEntryHandleIsEmpty(&handle)) {
+    ret = nodeBlockCacheHelperGetNodeEntry(&helper, ino, INVALID_NID, &handle);
+    if (ret != 0) {
         goto fail;
     }
 
@@ -64,5 +66,5 @@ fail:
     if (helper_inited) {
         nodeBlockCacheHelperDestroy(&helper);
     }
-    return ENOENT;
+    return ret;
 }

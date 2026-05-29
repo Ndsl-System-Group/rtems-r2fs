@@ -58,6 +58,11 @@ typedef struct JournalProcessEnv
     pthread_t processThreadHandle;
 
     /**
+     * @brief 日志处理线程当前是否仍可 join。
+     */
+    bool processThreadRunning;
+
+    /**
      * @brief 下一个待分配的事务号。
      */
     atomic_uint_fast64_t txIdToAlloc;

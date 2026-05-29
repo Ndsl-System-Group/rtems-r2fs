@@ -15,6 +15,7 @@ typedef struct JournalContainer JournalContainer;
 int fileSystemManagerSetup(comm_dev *dev);
 void fileSystemManagerFini(void);
 file_system_manager *fileSystemManagerGetInstance(void);
+int fileSystemManagerFlushForUnmount(file_system_manager *this);
 
 // ==================== 锁操作 API ====================
 

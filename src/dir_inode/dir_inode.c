@@ -4,6 +4,7 @@
 #include "cache/node_block_cache.h"
 #include "fs/cow_reclaim_registry.h"
 #include "fs/fs_manager.h"
+#include "fs/srmap_utils.h"
 #include "fs/sit_utils.h"
 #include "fs/super_manager.h"
 #include "journal/journal_container.h"
@@ -1843,11 +1844,11 @@ static int rtfsDirInodeConvertInlineToRegular(
 )
 {
     RtfsDirInodeNodeHandle *owned_handle;
-    struct RtfsDentryBlock regular_block;
+    struct RtfsDentryBlock *regular_block;
     RtfsLoadedDirBlock *loaded_block;
     uint8_t old_i_inline;
     uint64_t old_i_size;
-    uint32_t old_i_addr[DEF_ADDRS_PER_INODE];
+    uint32_t *old_i_addr;
     uint32_t old_i_nid[DEF_NIDS_PER_INODE];
     uint16_t slot_map[NR_INLINE_DENTRY];
     size_t old_total_block_count;
@@ -1865,11 +1866,18 @@ static int rtfsDirInodeConvertInlineToRegular(
         return EINVAL;
     }
 
-    memset(&regular_block, 0, sizeof(regular_block));
+    regular_block = calloc(1, sizeof(*regular_block));
+    old_i_addr = malloc(sizeof(*old_i_addr) * DEF_ADDRS_PER_INODE);
+    if (regular_block == NULL || old_i_addr == NULL) {
+        free(old_i_addr);
+        free(regular_block);
+        return ENOMEM;
+    }
+
     memset(slot_map, 0xff, sizeof(slot_map));
     old_i_inline = dir_inode->disk_inode->i_inline;
     old_i_size = dir_inode->disk_inode->i_size;
-    memcpy(old_i_addr, dir_inode->disk_inode->i_addr, sizeof(old_i_addr));
+    memcpy(old_i_addr, dir_inode->disk_inode->i_addr, sizeof(*old_i_addr) * DEF_ADDRS_PER_INODE);
     memcpy(old_i_nid, dir_inode->disk_inode->i_nid, sizeof(old_i_nid));
     old_total_block_count = dir_inode->total_block_count;
     old_loaded_block_count = dir_inode->loaded_block_count;
@@ -1886,21 +1894,25 @@ static int rtfsDirInodeConvertInlineToRegular(
 
         src_entry = &dir_inode->inline_dentry->dentry[i];
         if (src_entry->name_len == 0 || src_entry->name_len > RTFS_NAME_LEN) {
+            free(old_i_addr);
+            free(regular_block);
             return EINVAL;
         }
 
         slot_count = GET_DENTRY_SLOTS(src_entry->name_len);
         if (i + slot_count > NR_INLINE_DENTRY ||
             regular_slot + slot_count > NR_DENTRY_IN_BLOCK) {
+            free(old_i_addr);
+            free(regular_block);
             return ENOSPC;
         }
 
         slot_map[i] = (uint16_t)regular_slot;
-        regular_block.dentry[regular_slot] = *src_entry;
+        regular_block->dentry[regular_slot] = *src_entry;
         for (slot = 0; slot < slot_count; ++slot) {
-            rtfsDirInodeSetDentryBit(regular_block.dentry_bitmap, regular_slot + slot);
+            rtfsDirInodeSetDentryBit(regular_block->dentry_bitmap, regular_slot + slot);
             memcpy(
-                regular_block.filename[regular_slot + slot],
+                regular_block->filename[regular_slot + slot],
                 dir_inode->inline_dentry->filename[i + slot],
                 RTFS_SLOT_LEN
             );
@@ -1923,17 +1935,19 @@ static int rtfsDirInodeConvertInlineToRegular(
     if (ret != 0) {
         dir_inode->disk_inode->i_inline = old_i_inline;
         dir_inode->disk_inode->i_size = old_i_size;
-        memcpy(dir_inode->disk_inode->i_addr, old_i_addr, sizeof(old_i_addr));
+        memcpy(dir_inode->disk_inode->i_addr, old_i_addr, sizeof(*old_i_addr) * DEF_ADDRS_PER_INODE);
         memcpy(dir_inode->disk_inode->i_nid, old_i_nid, sizeof(old_i_nid));
         dir_inode->i_size = old_i_size;
         dir_inode->total_block_count = old_total_block_count;
         dir_inode->loaded_block_count = old_loaded_block_count;
         dir_inode->is_fully_loaded = old_is_fully_loaded;
+        free(old_i_addr);
+        free(regular_block);
         return ret;
     }
 
     loaded_block = &dir_inode->loaded_blocks[dir_inode->loaded_block_count_actual - 1];
-    memcpy(loaded_block->block, &regular_block, sizeof(regular_block));
+    memcpy(loaded_block->block, regular_block, sizeof(*regular_block));
     loaded_block->is_dirty = true;
     dir_inode->backing_kind = RTFS_DIR_BACKING_BLOCKS;
     dir_inode->inline_dentry = NULL;
@@ -1956,6 +1970,8 @@ static int rtfsDirInodeConvertInlineToRegular(
 
     owned_handle = (RtfsDirInodeNodeHandle *)dir_inode->cache_handle;
     nodeBlockCacheEntryHandleMarkDirty(&owned_handle->node_handle);
+    free(old_i_addr);
+    free(regular_block);
     return 0;
 }
 
@@ -2506,11 +2522,13 @@ static int rtfsDirInodeApplyPendingRegularBlockRelocations(
 )
 {
     size_t i;
+    SrmapUtils *srmap_utils;
 
     if (fs_manager == NULL || dir_inode == NULL) {
         return EINVAL;
     }
 
+    srmap_utils = fileSystemManagerGetSrmapUtils(fs_manager);
     for (i = 0; i < dir_inode->loaded_block_count_actual; ++i) {
         RtfsLoadedDirBlock *loaded_block = &dir_inode->loaded_blocks[i];
         int ret;
@@ -2548,10 +2566,23 @@ static int rtfsDirInodeApplyPendingRegularBlockRelocations(
             return ret;
         }
 
+        if (srmap_utils != NULL) {
+            srmapUtilsWriteSrmapOfData(
+                srmap_utils,
+                loaded_block->cow_new_lpa,
+                dir_inode->ino,
+                loaded_block->block_index
+            );
+        }
+
         loaded_block->lpa = loaded_block->cow_new_lpa;
         loaded_block->cow_new_lpa = INVALID_LPA;
         loaded_block->has_pending_cow_relocation = false;
         loaded_block->is_dirty = false;
+    }
+
+    if (srmap_utils != NULL) {
+        srmapUtilsWriteDirtySrmapSync(srmap_utils);
     }
 
     return 0;

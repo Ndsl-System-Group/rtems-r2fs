@@ -37,6 +37,27 @@ def options(opt):
         help='Enable gcov coverage instrumentation'
     )
 
+    opt.add_option(
+        '--test-group',
+        action='store',
+        default='',
+        help='Run only the specified unit test group(s), comma-separated'
+    )
+
+    opt.add_option(
+        '--test-filter',
+        action='store',
+        default='',
+        help='Run only unit tests whose names contain this substring'
+    )
+
+    opt.add_option(
+        '--list-tests',
+        action='store_true',
+        default=False,
+        help='List registered unit tests instead of executing them'
+    )
+
 def configure(conf):
     rtems.configure(conf, bsp_configure=bsp_configure)
 
@@ -51,6 +72,24 @@ def configure(conf):
         conf.msg('Checking for Coverage', 'Enabled')
     else:
         conf.msg('Checking for Coverage', 'Disabled')
+
+    if conf.options.test_group:
+        conf.define('RTFS_CONFIG_TEST_GROUP', conf.options.test_group)
+        conf.msg('Checking for Test Group Filter', conf.options.test_group)
+    else:
+        conf.msg('Checking for Test Group Filter', 'Disabled')
+
+    if conf.options.test_filter:
+        conf.define('RTFS_CONFIG_TEST_FILTER', conf.options.test_filter)
+        conf.msg('Checking for Test Name Filter', conf.options.test_filter)
+    else:
+        conf.msg('Checking for Test Name Filter', 'Disabled')
+
+    if conf.options.list_tests:
+        conf.define('RTFS_CONFIG_LIST_TESTS', 1)
+        conf.msg('Checking for Test Listing Mode', 'Enabled')
+    else:
+        conf.msg('Checking for Test Listing Mode', 'Disabled')
 
     conf.write_config_header('rtfs_config.h')
 

@@ -95,6 +95,7 @@ void srmapUtilsWriteDirtySrmapSync(SrmapUtils *this)
         blockBufferWriteToLpaAsync(blk, fileSystemManagerGetDevice(this->fsManager), lpa, asyncVecioSynchronizerGenericCallback, &syn);
     }
 
+    (void)asyncVecioSynchronizerWaitCplt(&syn);
     asyncVecioSynchronizerDestroy(&syn);
 }
 
@@ -130,6 +131,7 @@ SrmapPos srmapUtilsGetSrmapPosOfLpa(SrmapUtils *this, uint32_t lpa)
 
 BlockBuffer *srmapUtilsGetSrmapBlk(SrmapUtils *this, uint32_t lpa)
 {
+    comm_dev *dev;
     khiter_t k = kh_get(khsc, this->srmapCache, lpa);
     if (kh_end(this->srmapCache) != k) return &kh_value(this->srmapCache, k); // 找到直接返回 BlockBuffer。
 
@@ -137,6 +139,12 @@ BlockBuffer *srmapUtilsGetSrmapBlk(SrmapUtils *this, uint32_t lpa)
     k = kh_put(khsc, this->srmapCache, lpa, &res);
     BlockBuffer *blk = &kh_value(this->srmapCache, k);
     blockBufferInit(blk);
+    dev = fileSystemManagerGetDevice(this->fsManager);
+    if (dev != NULL) {
+        blockBufferReadFromLpa(blk, dev, lpa);
+    } else {
+        memset(blockBufferGetPtr(blk), 0, BLOCK_BUFFER_SIZE);
+    }
 
 
     return blk;

@@ -41,7 +41,9 @@ typedef void (*rtfsTestFunc)(void);
 
 struct RtfsTestEntry
 {
+    const char *group;
     const char *name;
+    const char *source_file;
     rtfsTestFunc func;
 };
 
@@ -49,13 +51,15 @@ extern struct RtfsTestEntry rtfsTestArray[RTFS_MAX_TESTS];
 extern int rtfsTestCount;
 
 
-#define RTFS_TEST(rtfsTestName)                                                  \
+#define RTFS_TEST_GROUP(rtfsGroupName, rtfsTestName)                             \
     void rtfsTestName(void);                                                     \
     static void __attribute__((unused)) register_##rtfsTestName(void)            \
     {                                                                            \
         if (rtfsTestCount < RTFS_MAX_TESTS)                                      \
         {                                                                        \
+            rtfsTestArray[rtfsTestCount].group = (rtfsGroupName);                \
             rtfsTestArray[rtfsTestCount].name = #rtfsTestName;                   \
+            rtfsTestArray[rtfsTestCount].source_file = __FILE__;                 \
             rtfsTestArray[rtfsTestCount].func = rtfsTestName;                    \
             ++rtfsTestCount;                                                     \
         }                                                                        \
@@ -65,6 +69,9 @@ extern int rtfsTestCount;
         register_##rtfsTestName();                                               \
     }                                                                            \
     void rtfsTestName(void)
+
+
+#define RTFS_TEST(rtfsTestName) RTFS_TEST_GROUP(NULL, rtfsTestName)
 
 
 void rtfsRunAllTests(void);

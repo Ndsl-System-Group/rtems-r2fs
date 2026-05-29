@@ -49,17 +49,17 @@ void blockBufferCopyContentFromBuf(BlockBuffer *this, const char *buf);
 /**
  * @brief 从块设备读取指定 LPA 的数据到 blockBuffer（同步）。
  */
-void blockBufferReadFromLpa(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa);
+int blockBufferReadFromLpa(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa);
 
 /**
  * @brief 将 blockBuffer 中的数据写入指定 LPA（同步）。
  */
-void blockBufferWriteToLpaSync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa);
+int blockBufferWriteToLpaSync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa);
 
 /**
  * @brief 将 blockBuffer 中的数据写入指定 LPA（异步）。
  */
-void blockBufferWriteToLpaAsync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa, comm_async_cb_func cbFunc, void *cbArg);
+int blockBufferWriteToLpaAsync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa, comm_async_cb_func cbFunc, void *cbArg);
 
 
 #endif

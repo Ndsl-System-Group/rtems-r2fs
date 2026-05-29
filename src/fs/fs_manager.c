@@ -9,8 +9,10 @@
 #include "sit_utils.h"
 #include "nat_utils.h"
 #include "cache/node_block_cache.h"
+#include "cache/block_buffer.h"
 #include "cache/sit_nat_cache.h"
 #include "cache/super_cache.h"
+#include "communication/dev.h"
 #include "cow_reclaim_registry.h"
 #include "journal/journal_container.h"
 #include "journal/journal_process_env.h"
@@ -54,6 +56,10 @@ static rtems_recursive_mutex g_fs_manager_init_lock = RTEMS_RECURSIVE_MUTEX_INIT
 // ==================== 内部辅助函数 ====================
 
 static void _internal_destroy(file_system_manager *this);
+static int _flush_for_unmount(file_system_manager *this);
+static void _stop_journal_for_unmount(void);
+static void _sync_dev_journal_pos_from_super(file_system_manager *this);
+static void _sync_super_journal_pos_from_dev(file_system_manager *this);
 
 static int _init_locks(file_system_manager *this)
 {
@@ -75,6 +81,65 @@ static void _destroy_locks(file_system_manager *this)
 {
     rtems_recursive_mutex_destroy(&this->fs_meta_lock_);
     pthread_rwlock_destroy(&this->fs_freeze_lock_);
+}
+
+static void _sync_dev_journal_pos_from_super(file_system_manager *this)
+{
+    uint64_t journal_start_lpa;
+    uint64_t journal_end_lpa;
+    uint64_t journal_size;
+    uint64_t head_off;
+    uint64_t tail_off;
+
+    if (this == NULL || this->dev_ == NULL || this->super_blk_mem_ == NULL) {
+        return;
+    }
+
+    journal_start_lpa = this->super_blk_mem_->meta_journal_blkaddr;
+    journal_end_lpa = journal_start_lpa +
+        (uint64_t)this->super_blk_mem_->segment_count_meta_journal * BLOCK_PER_SEGMENT;
+    journal_size = journal_end_lpa - journal_start_lpa;
+    if (journal_size == 0) {
+        return;
+    }
+
+    head_off = (uint64_t)this->super_blk_mem_->meta_journal_start_blkoff % journal_size;
+    tail_off = (uint64_t)this->super_blk_mem_->meta_journal_end_blkoff % journal_size;
+
+    this->dev_->metaJournalStartLpa = journal_start_lpa;
+    this->dev_->metaJournalEndLpa = journal_end_lpa;
+    this->dev_->metaJournalHeadLpa = journal_start_lpa + head_off;
+    this->dev_->metaJournalTailLpa = journal_start_lpa + tail_off;
+}
+
+static void _sync_super_journal_pos_from_dev(file_system_manager *this)
+{
+    uint64_t journal_start_lpa;
+    uint64_t journal_end_lpa;
+
+    if (this == NULL || this->dev_ == NULL || this->super_blk_mem_ == NULL) {
+        return;
+    }
+
+    journal_start_lpa = this->super_blk_mem_->meta_journal_blkaddr;
+    journal_end_lpa = journal_start_lpa +
+        (uint64_t)this->super_blk_mem_->segment_count_meta_journal * BLOCK_PER_SEGMENT;
+
+    if (this->dev_->metaJournalHeadLpa < journal_start_lpa ||
+        this->dev_->metaJournalHeadLpa >= journal_end_lpa) {
+        this->super_blk_mem_->meta_journal_start_blkoff = 0;
+    } else {
+        this->super_blk_mem_->meta_journal_start_blkoff =
+            (uint16_t)(this->dev_->metaJournalHeadLpa - journal_start_lpa);
+    }
+
+    if (this->dev_->metaJournalTailLpa < journal_start_lpa ||
+        this->dev_->metaJournalTailLpa >= journal_end_lpa) {
+        this->super_blk_mem_->meta_journal_end_blkoff = 0;
+    } else {
+        this->super_blk_mem_->meta_journal_end_blkoff =
+            (uint16_t)(this->dev_->metaJournalTailLpa - journal_start_lpa);
+    }
 }
 
 
@@ -175,7 +240,8 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
     journal_start_lpa = this->super_blk_mem_->meta_journal_blkaddr;
     journal_end_lpa = journal_start_lpa +
         (uint64_t)this->super_blk_mem_->segment_count_meta_journal * BLOCK_PER_SEGMENT;
-    journal_fifo_pos = journal_start_lpa + this->super_blk_mem_->meta_journal_end_blkoff;
+    _sync_dev_journal_pos_from_super(this);
+    journal_fifo_pos = this->dev_->metaJournalTailLpa;
     if (journal_fifo_pos >= journal_end_lpa) {
         journal_fifo_pos = journal_start_lpa;
     }
@@ -210,6 +276,14 @@ static void _internal_destroy(file_system_manager *this)
 {
     if (!this) return;
 
+    /*
+     * 先停 journal 线程，再销毁 reclaim registry。
+     * registry 里可能还持有 NodeBlockCacheEntryHandle；如果先拆 node_cache，
+     * 后续释放这些 handle 会落到失效对象上。
+     */
+    journalProcessEnvDestroy(journalProcessEnvGetInstance());
+    cowReclaimRegistryDestroy();
+
     if (this->node_cache_ != NULL)
     {
         nodeBlockCacheDestroy(this->node_cache_);
@@ -243,15 +317,39 @@ static void _internal_destroy(file_system_manager *this)
     superManagerDestroy(this->sp_manager_);
     this->sp_manager_ = NULL;
 
-    cowReclaimRegistryDestroy();
-    journalProcessEnvDestroy(journalProcessEnvGetInstance());
-
     superCacheDestroy(&this->super_cache_);
     this->super_blk_mem_ = NULL;
 
     _destroy_locks(this);
 
     free(this);
+}
+
+static int _flush_for_unmount(file_system_manager *this)
+{
+    if (this == NULL || this->dev_ == NULL || this->super_blk_mem_ == NULL) {
+        return EINVAL;
+    }
+
+    /*
+     * 正常卸载时把当前主区元数据镜像写回盘面。
+     * 这不是 crash recovery；这里只保证 clean unmount 之后，
+     * remount 能重新读到已经提交到内存态的 super/NAT/SIT/SRMAP。
+     */
+    _sync_super_journal_pos_from_dev(this);
+    sitNatCacheWriteAllSync(this->nat_cache_);
+    sitNatCacheWriteAllSync(this->sit_cache_);
+    srmapUtilsWriteDirtySrmapSync(this->srmap_utils_);
+    blockBufferWriteToLpaSync(&this->super_cache_.superBlock, this->dev_, (uint32_t)super_block_lpa);
+
+    return 0;
+}
+
+static void _stop_journal_for_unmount(void)
+{
+    JournalProcessEnv *journal_env = journalProcessEnvGetInstance();
+
+    journalProcessEnvStopProcessThread(journal_env);
 }
 
 // ==================== 公开 API 实现 ====================
@@ -295,6 +393,22 @@ file_system_manager *fileSystemManagerGetInstance(void)
 {
     return g_fs_manager;
 };
+
+int fileSystemManagerFlushForUnmount(file_system_manager *this)
+{
+    int ret;
+
+    if (this == NULL) {
+        return EINVAL;
+    }
+
+    fileSystemManagerMetaLock(this);
+    _stop_journal_for_unmount();
+    ret = _flush_for_unmount(this);
+    fileSystemManagerMetaUnlock(this);
+
+    return ret;
+}
 
 void fileSystemManagerMetaLock(file_system_manager *this)
 {

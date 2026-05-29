@@ -3,6 +3,7 @@
 #include "fs/nat_utils.h"
 #include "fs/sit_utils.h"
 #include "fs/fs_manager.h"
+#include "fs/srmap_utils.h"
 #include "fs/super_manager.h"
 #include "utils/rtfs_exception.h"
 #include "utils/rtfs_log.h"
@@ -351,12 +352,14 @@ int nodeBlockCacheApplyPendingCowRelocations(NodeBlockCache *this)
 {
     khiter_t k;
     NatLpaMapping nat_mapping;
+    SrmapUtils *srmap_utils;
 
     if (this == NULL || this->fsManager == NULL) {
         return EINVAL;
     }
 
     natLpaMappingInit(&nat_mapping, this->fsManager);
+    srmap_utils = fileSystemManagerGetSrmapUtils(this->fsManager);
     for (k = kh_begin(this->cacheManager.index.index);
          k != kh_end(this->cacheManager.index.index);
          ++k)
@@ -373,6 +376,9 @@ int nodeBlockCacheApplyPendingCowRelocations(NodeBlockCache *this)
         }
 
         natSetLpaOfNid(&nat_mapping, entry->nid, entry->cowNewLpa);
+        if (srmap_utils != NULL) {
+            srmapUtilsWriteSrmapOfNode(srmap_utils, entry->cowNewLpa, entry->nid);
+        }
         entry->lpa = entry->cowNewLpa;
         entry->cowNewLpa = INVALID_LPA;
         entry->hasPendingCowRelocation = false;
@@ -386,6 +392,10 @@ int nodeBlockCacheApplyPendingCowRelocations(NodeBlockCache *this)
             }
             entry->state = NODE_BLOCK_CACHE_ENTRY_UPTODATE;
         }
+    }
+
+    if (srmap_utils != NULL) {
+        srmapUtilsWriteDirtySrmapSync(srmap_utils);
     }
 
     return 0;
@@ -408,11 +418,23 @@ void nodeBlockCacheHelperDestroy(NodeBlockCacheHelper *this)
     this->fsManager = NULL;
 }
 
-NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper *this, uint32_t nid, uint32_t parentNid)
+int nodeBlockCacheHelperGetNodeEntry(
+    NodeBlockCacheHelper *this,
+    uint32_t nid,
+    uint32_t parentNid,
+    NodeBlockCacheEntryHandle *out_handle
+)
 {
-    CEXCEPTION_T e;
+    NodeBlockCacheEntryHandle handle;
 
-    NodeBlockCacheEntryHandle handle = nodeBlockCacheGet(this->nodeBlockCache, nid);
+    if (this == NULL || out_handle == NULL) {
+        return EINVAL;
+    }
+
+    out_handle->cache = NULL;
+    out_handle->entry = NULL;
+
+    handle = nodeBlockCacheGet(this->nodeBlockCache, nid);
     if (nodeBlockCacheEntryHandleIsEmpty(&handle))
     {
         NatLpaMapping nlp;
@@ -427,17 +449,17 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper 
         if (g_node_block_cache_read_block_hook != NULL)
         {
             int res = g_node_block_cache_read_block_hook(this->dev, nidLpa, blockBufferGetPtr(&buffer));
-            if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "node cache helper: read lpa %u failed.", nidLpa);
+            if (0 != res) {
+                blockBufferDestroy(&buffer);
+                return res;
+            }
         }
         else
         {
-            Try
-            {
-                blockBufferReadFromLpa(&buffer, this->dev, nidLpa);
-            }
-            Catch(e)
-            {
-                THROW_FATAL_MESSAGE(e, "node cache helper: read lpa %u failed.", nidLpa);
+            int ret = blockBufferReadFromLpa(&buffer, this->dev, nidLpa);
+            if (ret != 0) {
+                blockBufferDestroy(&buffer);
+                return ret;
             }
         }
 
@@ -451,8 +473,8 @@ NodeBlockCacheEntryHandle nodeBlockCacheHelperGetNodeEntry(NodeBlockCacheHelper 
     assert(node->footer.nid == nid);
     if (INVALID_NID == parentNid) assert(node->footer.ino == nid);
 
-
-    return handle;
+    *out_handle = handle;
+    return 0;
 }
 
 NodeBlockCacheEntryHandle nodeBlockCacheHelperCreateNodeEntry(NodeBlockCacheHelper *this, uint32_t ino, uint32_t noffset, uint32_t parentNid)

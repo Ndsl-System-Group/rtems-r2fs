@@ -190,7 +190,9 @@ static ssize_t rtfsDirRead(rtems_libio_t *iop, void *buffer, size_t count)
     offset = iop->offset;
     total_bytes_read = 0;
 
-    do {
+    while (count - (size_t)total_bytes_read >= sizeof(struct dirent)) {
+        size_t loaded_block_count_before;
+
         bytes_read = rtfsDirInodeReadEntries(
             dir_inode,
             &offset,
@@ -201,14 +203,35 @@ static ssize_t rtfsDirRead(rtems_libio_t *iop, void *buffer, size_t count)
             break;
         }
 
+        if (bytes_read == 0) {
+            if (rtfsDirInodeIsFullyLoaded(dir_inode)) {
+                break;
+            }
+
+            loaded_block_count_before = rtfsDirInodeGetLoadedBlockCount(dir_inode);
+            ret = rtfsDirInodeResolveNext(fs_manager, view->ino, dir_inode);
+            if (ret != 0) {
+                errno = ret;
+                bytes_read = -1;
+                break;
+            }
+
+            if (!rtfsDirInodeIsFullyLoaded(dir_inode) &&
+                rtfsDirInodeGetLoadedBlockCount(dir_inode) == loaded_block_count_before) {
+                errno = EIO;
+                bytes_read = -1;
+                break;
+            }
+
+            continue;
+        }
+
         total_bytes_read += bytes_read;
         if ((size_t)total_bytes_read >= count) {
             break;
         }
 
-        if (bytes_read > 0 &&
-            (count - (size_t)total_bytes_read < sizeof(struct dirent) ||
-             rtfsDirInodeIsFullyLoaded(dir_inode))) {
+        if (rtfsDirInodeIsFullyLoaded(dir_inode)) {
             break;
         }
 
@@ -218,7 +241,7 @@ static ssize_t rtfsDirRead(rtems_libio_t *iop, void *buffer, size_t count)
             bytes_read = -1;
             break;
         }
-    } while (true);
+    }
 
     if (bytes_read >= 0) {
         iop->offset = offset;

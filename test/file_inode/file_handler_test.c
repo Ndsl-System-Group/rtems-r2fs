@@ -399,15 +399,14 @@ RTFS_TEST(FileHandlerOpen_WhenIopIsNull_ShouldReturnEINVAL)
 RTFS_TEST(FileHandlerOpen_WhenHandleAlreadyExists_ShouldReturnEBUSY)
 {
     FileHandlerFixture fixture;
-    int dummy;
 
     fileHandlerFixturePrepareRegularFile(&fixture, 5102, 5101);
-    fixture.iop.data1 = &dummy;
+    fixture.iop.flags = LIBIO_FLAGS_OPEN;
 
     TEST_ASSERT_EQUAL(-1, rtfsFilehandlers.open_h(&fixture.iop, "/file", O_RDONLY, 0));
     TEST_ASSERT_EQUAL(EBUSY, errno);
 
-    fixture.iop.data1 = NULL;
+    fixture.iop.flags = 0;
     fileHandlerFixtureFini(&fixture);
 }
 

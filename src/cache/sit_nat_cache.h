@@ -184,6 +184,11 @@ SitNatCacheEntryHandle sitNatCacheGet(SitNatCache *this, uint32_t lpa);
 void sitNatCacheAddSsdVersion(SitNatCache *this, uint32_t lpa);
 
 /**
+ * @brief 将缓存中的所有 SIT/NAT block 同步写回原位。
+ */
+void sitNatCacheWriteAllSync(SitNatCache *this);
+
+/**
  * @brief 设置读取块的测试 hook。若设置，则 miss 时优先通过 hook 读取数据。
  */
 void sitNatCacheSetReadBlockHook(sit_nat_cache_read_block_hook hook);

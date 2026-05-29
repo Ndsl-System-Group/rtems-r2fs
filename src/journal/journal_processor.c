@@ -132,8 +132,13 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
 
 void journalProcessorDestroy(JournalProcessor *this)
 {
+    if (this == NULL) {
+        return;
+    }
+
     rtfsTimerStop(&this->journalPollTimer);
     rtfsTimerDestructor(&this->journalPollTimer);
+    journalWriterDestroy(&this->journalWriter);
     comm_free_dma_mem(this->journalPosDmaBuffer);
 }
 

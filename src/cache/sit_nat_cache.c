@@ -156,6 +156,32 @@ void sitNatCacheAddSsdVersion(SitNatCache *this, uint32_t lpa)
     sitNatCacheSubRefcount(this, entry);
 }
 
+void sitNatCacheWriteAllSync(SitNatCache *this)
+{
+    khiter_t k;
+
+    if (this == NULL || this->dev == NULL) {
+        return;
+    }
+
+    for (k = kh_begin(this->cacheManager.index.index);
+         k != kh_end(this->cacheManager.index.index);
+         ++k) {
+        SitNatCacheEntry *entry;
+
+        if (!kh_exist(this->cacheManager.index.index, k)) {
+            continue;
+        }
+
+        entry = (SitNatCacheEntry *)kh_val(this->cacheManager.index.index, k);
+        if (entry == NULL) {
+            continue;
+        }
+
+        blockBufferWriteToLpaSync(&entry->cache, this->dev, entry->lpa);
+    }
+}
+
 void sitNatCacheSetReadBlockHook(sit_nat_cache_read_block_hook hook)
 {
     g_sit_nat_cache_read_block_hook = hook;

@@ -17,6 +17,7 @@
 #include "fs/fs_manager.h"
 #include "inode/inode.h"
 #include "inode/inode_loader.h"
+#include "utils/rtfs_log.h"
 
 
 typedef struct RtfsFileHandle
@@ -24,6 +25,7 @@ typedef struct RtfsFileHandle
     file_system_manager *fs_manager;
     RtfsFileInode *file_inode;
     int oflag;
+    bool sync_failed;
 } RtfsFileHandle;
 
 static RtfsRuntimeInodeView *rtfsFileGetNodeView(
@@ -203,22 +205,40 @@ int rtfsFileOpen(rtems_libio_t *iop, const char *pathname, int oflag, mode_t mod
 
     if (iop == NULL) {
         errno = EINVAL;
+        RTFS_LOG(RTFS_LOG_WARNING, "file open invalid iop");
         return -1;
     }
 
-    if (iop->data1 != NULL) {
+    if ((rtems_libio_iop_flags(iop) & LIBIO_FLAGS_OPEN) != 0) {
         errno = EBUSY;
+        RTFS_LOG(
+            RTFS_LOG_WARNING,
+            "file open rejects reused iop path=%s",
+            pathname != NULL ? pathname : "(null)"
+        );
         return -1;
     }
 
     ret = rtfsFileValidatePathloc(&iop->pathinfo, &view);
     if (ret != 0) {
+        RTFS_LOG(
+            RTFS_LOG_WARNING,
+            "file open validate path failed ret=%d path=%s",
+            ret,
+            pathname != NULL ? pathname : "(null)"
+        );
         errno = ret;
         return -1;
     }
 
     ret = rtfsFileGetFsManager(&iop->pathinfo, &fs_manager);
     if (ret != 0) {
+        RTFS_LOG(
+            RTFS_LOG_WARNING,
+            "file open get fs manager failed ret=%d path=%s",
+            ret,
+            pathname != NULL ? pathname : "(null)"
+        );
         errno = ret;
         return -1;
     }
@@ -226,12 +246,22 @@ int rtfsFileOpen(rtems_libio_t *iop, const char *pathname, int oflag, mode_t mod
     if ((oflag & O_TRUNC) != 0 &&
         (oflag & O_ACCMODE) == O_RDONLY) {
         errno = EACCES;
+        RTFS_LOG(
+            RTFS_LOG_WARNING,
+            "file open rejects readonly truncation path=%s",
+            pathname != NULL ? pathname : "(null)"
+        );
         return -1;
     }
 
     handle = (RtfsFileHandle *)calloc(1, sizeof(*handle));
     if (handle == NULL) {
         errno = ENOMEM;
+        RTFS_LOG(
+            RTFS_LOG_WARNING,
+            "file open alloc handle failed path=%s",
+            pathname != NULL ? pathname : "(null)"
+        );
         return -1;
     }
 
@@ -241,6 +271,13 @@ int rtfsFileOpen(rtems_libio_t *iop, const char *pathname, int oflag, mode_t mod
     ret = rtfsFileInodeResolve(fs_manager, NULL, &request, &file_inode);
     if (ret != 0) {
         free(handle);
+        RTFS_LOG(
+            RTFS_LOG_WARNING,
+            "file open resolve inode failed ret=%d ino=%u path=%s",
+            ret,
+            (unsigned int)view->ino,
+            pathname != NULL ? pathname : "(null)"
+        );
         errno = ret;
         return -1;
     }
@@ -253,6 +290,13 @@ int rtfsFileOpen(rtems_libio_t *iop, const char *pathname, int oflag, mode_t mod
         if (ret != 0) {
             rtfsFileInodePut(file_inode);
             free(handle);
+            RTFS_LOG(
+                RTFS_LOG_WARNING,
+                "file open truncate commit failed ret=%d ino=%u path=%s",
+                ret,
+                (unsigned int)view->ino,
+                pathname != NULL ? pathname : "(null)"
+            );
             errno = ret;
             return -1;
         }
@@ -286,10 +330,12 @@ int rtfsFileClose(rtems_libio_t *iop)
     }
 
     if (handle->file_inode != NULL && handle->fs_manager != NULL) {
-        ret = rtfsFileInodeCommitCowWriteback(
-            handle->fs_manager,
-            handle->file_inode
-        );
+        if (!handle->sync_failed) {
+            ret = rtfsFileInodeCommitCowWriteback(
+                handle->fs_manager,
+                handle->file_inode
+            );
+        }
     }
 
     if (handle->file_inode != NULL) {
@@ -478,10 +524,12 @@ int rtfsFileFdatasync(rtems_libio_t *iop)
         handle->file_inode
     );
     if (ret != 0) {
+        handle->sync_failed = true;
         errno = ret;
         return -1;
     }
 
+    handle->sync_failed = false;
     return 0;
 }
 

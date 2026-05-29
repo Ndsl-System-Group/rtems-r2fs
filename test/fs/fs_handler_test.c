@@ -13,8 +13,10 @@
 #include "cache/node_block_cache.h"
 #include "cache/sit_nat_cache.h"
 #include "cache/super_cache.h"
+#include "communication/comm_api.h"
 #include "communication/dev.h"
 #include "dir_inode/dir_inode.h"
+#include "dir_inode/dir_handler.h"
 #include "dir_inode/dir_inode_resolver.h"
 #include "fs/cow_reclaim_registry.h"
 #include "fs/fs.h"
@@ -82,9 +84,24 @@ typedef struct FsHandlerFixture
     bool hook_enabled;
 } FsHandlerFixture;
 
+typedef struct FsHandlerInitFixture
+{
+    comm_dev dev;
+    rtems_disk_device disk;
+    struct RtfsSuperBlock super_block;
+    unsigned char *block_store;
+    size_t block_store_size;
+    rtems_filesystem_mount_table_entry_t mt_entry;
+    rtems_filesystem_global_location_t root_gloc;
+} FsHandlerInitFixture;
+
 static FsHandlerFixture *g_fs_handler_fixture = NULL;
+static FsHandlerInitFixture *g_fs_handler_init_fixture = NULL;
 static uint64_t g_fs_handler_committed_tx_id = 0;
 static bool g_fs_handler_journal_env_stub_inited = false;
+static uint32_t g_fs_handler_init_super_read_count = 0;
+static uint32_t g_fs_handler_init_recover_call_count = 0;
+static int g_fs_handler_init_recover_result = 0;
 
 static uint64_t fsHandlerGetLatestQueuedJournalTxId(void)
 {
@@ -111,6 +128,144 @@ static uint64_t fsHandlerGetLatestObservedTxId(void)
     return g_fs_handler_committed_tx_id > queued_tx_id
         ? g_fs_handler_committed_tx_id
         : queued_tx_id;
+}
+
+static int fsHandlerInitReadSuperBlockHook(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    void *buffer
+)
+{
+    FsHandlerInitFixture *fixture = g_fs_handler_init_fixture;
+
+    (void)dev;
+
+    if (fixture == NULL || buffer == NULL) {
+        return EIO;
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(0u, lpa);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_fs_handler_init_recover_call_count);
+    g_fs_handler_init_super_read_count++;
+    memcpy(buffer, &fixture->super_block, sizeof(fixture->super_block));
+    return 0;
+}
+
+static int fsHandlerInitRecoverHook(struct comm_dev *dev)
+{
+    FsHandlerInitFixture *fixture = g_fs_handler_init_fixture;
+
+    TEST_ASSERT_NOT_NULL(dev);
+    TEST_ASSERT_NOT_NULL(fixture);
+    TEST_ASSERT_EQUAL_PTR(&fixture->dev, dev);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_fs_handler_init_super_read_count);
+    g_fs_handler_init_recover_call_count++;
+    return g_fs_handler_init_recover_result;
+}
+
+static int fsHandlerInitDiskIoctl(
+    rtems_disk_device *dd,
+    uint32_t req,
+    void *argp
+)
+{
+    FsHandlerInitFixture *fixture = g_fs_handler_init_fixture;
+    rtems_blkdev_request *breq;
+    size_t i;
+
+    TEST_ASSERT_NOT_NULL(dd);
+    TEST_ASSERT_NOT_NULL(fixture);
+    TEST_ASSERT_EQUAL_PTR(&fixture->disk, dd);
+
+    if (req != RTEMS_BLKIO_REQUEST || argp == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    breq = (rtems_blkdev_request *)argp;
+    for (i = 0; i < breq->bufnum; ++i) {
+        rtems_blkdev_sg_buffer *sg = &breq->bufs[i];
+        uint64_t byte_off = (uint64_t)sg->block * fixture->dev.blockSize;
+
+        TEST_ASSERT_NOT_NULL(sg->buffer);
+        TEST_ASSERT_NOT_NULL(fixture->block_store);
+        TEST_ASSERT_TRUE(byte_off + sg->length <= fixture->block_store_size);
+
+        if (breq->req == RTEMS_BLKDEV_REQ_READ) {
+            memcpy(sg->buffer, fixture->block_store + byte_off, sg->length);
+        } else if (breq->req == RTEMS_BLKDEV_REQ_WRITE) {
+            memcpy(fixture->block_store + byte_off, sg->buffer, sg->length);
+        } else if (breq->req != RTEMS_BLKDEV_REQ_SYNC) {
+            rtems_blkdev_request_done(breq, RTEMS_IO_ERROR);
+            errno = EINVAL;
+            return -1;
+        }
+    }
+
+    rtems_blkdev_request_done(breq, RTEMS_SUCCESSFUL);
+    return 0;
+}
+
+static void fsHandlerInitFixtureReset(void)
+{
+    superCacheSetReadBlockHook(NULL);
+    commSetTestFsRecoverHook(NULL);
+    fileSystemManagerFini();
+    g_fs_handler_init_fixture = NULL;
+    g_fs_handler_fixture = NULL;
+    g_fs_handler_init_super_read_count = 0;
+    g_fs_handler_init_recover_call_count = 0;
+    g_fs_handler_init_recover_result = 0;
+}
+
+static void fsHandlerInitFixtureInit(FsHandlerInitFixture *fixture)
+{
+    memset(fixture, 0, sizeof(*fixture));
+    fixture->super_block.srmap_blkaddr = 80;
+    fixture->super_block.meta_journal_blkaddr = 100;
+    fixture->super_block.segment_count_meta_journal = 2;
+    fixture->super_block.meta_journal_end_blkoff = 3;
+    fixture->super_block.root_ino = 1;
+    fixture->super_block.nat_blkaddr = 200;
+    fixture->super_block.sit_blkaddr = 300;
+    fixture->super_block.segment0_blkaddr = 0;
+    fixture->block_store_size = 8192u * 512u;
+    fixture->block_store = (unsigned char *)calloc(1, fixture->block_store_size);
+    TEST_ASSERT_NOT_NULL(fixture->block_store);
+    fixture->disk.phys_dev = &fixture->disk;
+    fixture->disk.ioctl = fsHandlerInitDiskIoctl;
+    fixture->disk.block_size = 512;
+    fixture->disk.media_block_size = 512;
+    fixture->disk.block_count = 8192;
+
+    TEST_ASSERT_EQUAL(
+        0,
+        commDevInit(
+            &fixture->dev,
+            &fixture->disk,
+            512,
+            8192,
+            100,
+            116
+        )
+    );
+
+    fixture->mt_entry.mt_fs_root = &fixture->root_gloc;
+    fixture->root_gloc.location.mt_entry = &fixture->mt_entry;
+
+    g_fs_handler_init_fixture = fixture;
+    superCacheSetReadBlockHook(fsHandlerInitReadSuperBlockHook);
+    commSetTestFsRecoverHook(fsHandlerInitRecoverHook);
+}
+
+static void fsHandlerInitFixtureFini(FsHandlerInitFixture *fixture)
+{
+    fileSystemManagerFini();
+    commDevDestroy(&fixture->dev);
+    free(fixture->block_store);
+    fixture->block_store = NULL;
+    fixture->block_store_size = 0;
+    fsHandlerInitFixtureReset();
 }
 
 static void fsHandlerSetBitmapBit(uint8_t *bitmap, size_t bit_index)
@@ -662,6 +817,45 @@ RTFS_TEST(FsHandlerCloneNode_WhenNodeAndNameExist_ShouldDuplicateContext)
     free(original_view);
     free(original_name);
     r2fsFsHandler.freenod_h(&loc);
+}
+
+RTFS_TEST(FsHandlerInitialize_WhenRecoverSucceeds_ShouldRecoverBeforeSetupAndCreateRoot)
+{
+    FsHandlerInitFixture fixture;
+
+    fsHandlerInitFixtureReset();
+    fsHandlerInitFixtureInit(&fixture);
+
+    TEST_ASSERT_EQUAL(0, r2fsInitialize(&fixture.mt_entry, &fixture.dev));
+    TEST_ASSERT_EQUAL_UINT32(1u, g_fs_handler_init_recover_call_count);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_fs_handler_init_super_read_count);
+    TEST_ASSERT_NOT_NULL(fixture.mt_entry.fs_info);
+    TEST_ASSERT_NOT_NULL(fixture.mt_entry.mt_fs_root->location.node_access);
+    TEST_ASSERT_EQUAL_PTR(&rtfsDirhandlers, fixture.mt_entry.mt_fs_root->location.handlers);
+
+    r2fsFsHandler.fsunmount_me_h(&fixture.mt_entry);
+    fixture.mt_entry.mt_fs_root->location.node_access = NULL;
+    fixture.mt_entry.mt_fs_root->location.node_access_2 = NULL;
+    fixture.mt_entry.mt_fs_root->location.handlers = NULL;
+    fsHandlerInitFixtureFini(&fixture);
+}
+
+RTFS_TEST(FsHandlerInitialize_WhenRecoverFails_ShouldAbortBeforeSetup)
+{
+    FsHandlerInitFixture fixture;
+
+    fsHandlerInitFixtureReset();
+    fsHandlerInitFixtureInit(&fixture);
+    g_fs_handler_init_recover_result = EIO;
+
+    TEST_ASSERT_EQUAL(-1, r2fsInitialize(&fixture.mt_entry, &fixture.dev));
+    TEST_ASSERT_EQUAL(EBUSY, errno);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_fs_handler_init_recover_call_count);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_fs_handler_init_super_read_count);
+    TEST_ASSERT_NULL(fileSystemManagerGetInstance());
+    TEST_ASSERT_NULL(fixture.mt_entry.fs_info);
+
+    fsHandlerInitFixtureFini(&fixture);
 }
 
 RTFS_TEST(FsHandlerCloneNode_WhenNodeViewIsMissing_ShouldReturnEINVAL)

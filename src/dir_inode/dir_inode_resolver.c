@@ -494,12 +494,11 @@ static int rtfsDirGetCachedNodeByNid(
         return ENOENT;
     }
 
-    handle = nodeBlockCacheHelperGetNodeEntry(&helper, nid, parent_nid);
-    nodeBlockCacheHelperDestroy(&helper);
-
-    if (nodeBlockCacheEntryHandleIsEmpty(&handle)) {
-        return ENOENT;
+    if (nodeBlockCacheHelperGetNodeEntry(&helper, nid, parent_nid, &handle) != 0) {
+        nodeBlockCacheHelperDestroy(&helper);
+        return EIO;
     }
+    nodeBlockCacheHelperDestroy(&helper);
 
     *out_node = nodeBlockCacheEntryGetNodeBlockPtr(handle.entry);
     *out_handle = handle;

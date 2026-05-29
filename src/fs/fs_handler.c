@@ -12,6 +12,7 @@
 #include "dir_inode/dir_inode_resolver.h"
 #include "cache/node_block_cache.h"
 #include "cache/sit_nat_cache.h"
+#include "communication/comm_api.h"
 #include "fs/cow_reclaim_registry.h"
 #include "fs_manager.h"
 #include "dir_inode/dir_handler.h"
@@ -1286,9 +1287,14 @@ static int r2fsCollectDirectNodeReclaimPlan(
         return EINVAL;
     }
 
-    direct_handle = nodeBlockCacheHelperGetNodeEntry(helper, direct_nid, parent_nid);
-    if (nodeBlockCacheEntryHandleIsEmpty(&direct_handle)) {
-        return ENOENT;
+    ret = nodeBlockCacheHelperGetNodeEntry(
+        helper,
+        direct_nid,
+        parent_nid,
+        &direct_handle
+    );
+    if (ret != 0) {
+        return ret;
     }
 
     ret = r2fsAppendUniqueDeletedHandleCopy(
@@ -1352,9 +1358,14 @@ static int r2fsCollectIndirectNodeReclaimPlan(
         return EINVAL;
     }
 
-    indirect_handle = nodeBlockCacheHelperGetNodeEntry(helper, indirect_nid, parent_nid);
-    if (nodeBlockCacheEntryHandleIsEmpty(&indirect_handle)) {
-        return ENOENT;
+    ret = nodeBlockCacheHelperGetNodeEntry(
+        helper,
+        indirect_nid,
+        parent_nid,
+        &indirect_handle
+    );
+    if (ret != 0) {
+        return ret;
     }
 
     ret = r2fsAppendUniqueDeletedHandleCopy(
@@ -1427,13 +1438,14 @@ static int r2fsCollectDoubleIndirectNodeReclaimPlan(
         return EINVAL;
     }
 
-    dind_handle = nodeBlockCacheHelperGetNodeEntry(
+    ret = nodeBlockCacheHelperGetNodeEntry(
         helper,
         double_indirect_nid,
-        parent_nid
+        parent_nid,
+        &dind_handle
     );
-    if (nodeBlockCacheEntryHandleIsEmpty(&dind_handle)) {
-        return ENOENT;
+    if (ret != 0) {
+        return ret;
     }
 
     ret = r2fsAppendUniqueDeletedHandleCopy(
@@ -2575,6 +2587,12 @@ int r2fsInitialize(
     }
 
     dev = (comm_dev *)(data != NULL ? data : mt_entry->dev);
+    ret = comm_submit_fs_recover_from_db_request(dev);
+    if (ret != 0) {
+        errno = ret == ENOMEM ? ENOMEM : EBUSY;
+        return -1;
+    }
+
     ret = fileSystemManagerSetup(dev);
     if (ret != 0) {
         errno = ret == -ENOMEM ? ENOMEM : EBUSY;
@@ -3207,11 +3225,18 @@ int r2fsUnmount(rtems_filesystem_mount_table_entry_t *mt_entry)
 
 void r2fsUnmountMe(rtems_filesystem_mount_table_entry_t *temp_mt_entry)
 {
+    file_system_manager *fs_manager;
+
     if (temp_mt_entry == NULL) {
         return;
     }
 
     RTFS_LOG(RTFS_LOG_INFO, "unmount file system instance");
+
+    fs_manager = (file_system_manager *)temp_mt_entry->fs_info;
+    if (fs_manager != NULL) {
+        (void)fileSystemManagerFlushForUnmount(fs_manager);
+    }
 
     if (temp_mt_entry->mt_fs_root != NULL) {
         r2fsFreeNode(&temp_mt_entry->mt_fs_root->location);

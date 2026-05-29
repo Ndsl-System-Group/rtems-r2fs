@@ -11,6 +11,8 @@ int blockBufferInit(BlockBuffer *this)
 {
     this->buffer = (char *)comm_alloc_dma_mem(BLOCK_BUFFER_SIZE);
     if (NULL == this->buffer) THROW_FATAL_MESSAGE(EXIT_FAILURE, "blockBufferInit: alloc block buffer failed.");
+
+    return 0;
 }
 
 void blockBufferDestroy(BlockBuffer *this)
@@ -33,20 +35,20 @@ void blockBufferCopyContentFromBuf(BlockBuffer *this, const char *buf)
     memcpy(this->buffer, buf, BLOCK_BUFFER_SIZE);
 }
 
-void blockBufferReadFromLpa(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa)
+int blockBufferReadFromLpa(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa)
 {
     int res = comm_submit_sync_rw_request(dev, this->buffer, LPA_TO_LBA(lpa), LBA_PER_LPA, COMM_IO_READ);
-    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "blockBufferReadFromLpa: read lpa failed.");
+    return res;
 }
 
-void blockBufferWriteToLpaSync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa)
+int blockBufferWriteToLpaSync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa)
 {
     int res = comm_submit_sync_rw_request(dev, this->buffer, LPA_TO_LBA(lpa), LBA_PER_LPA, COMM_IO_WRITE);
-    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "blockBufferWriteToLpaSync: sync write lpa failed.");
+    return res;
 }
 
-void blockBufferWriteToLpaAsync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa, comm_async_cb_func cbFunc, void *cbArg)
+int blockBufferWriteToLpaAsync(BlockBuffer *this, struct comm_dev *dev, uint32_t lpa, comm_async_cb_func cbFunc, void *cbArg)
 {
     int res = comm_submit_async_rw_request(dev, this->buffer, LPA_TO_LBA(lpa), LBA_PER_LPA, cbFunc, cbArg, COMM_IO_WRITE);
-    if (0 != res) THROW_FATAL_MESSAGE(EXIT_FAILURE, "blockBufferWriteToLpaAsync: async write lpa failed.");
+    return res;
 }

@@ -10,3 +10,5 @@ build/
 *.staging
 .codex
 waf
+.codegraph/
+tools/__pycache__/

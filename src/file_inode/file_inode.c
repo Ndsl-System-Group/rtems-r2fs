@@ -6,6 +6,7 @@
 #include "cache/page_cache.h"
 #include "fs/cow_reclaim_registry.h"
 #include "fs/fs_manager.h"
+#include "fs/srmap_utils.h"
 #include "fs/sit_utils.h"
 #include "fs/super_manager.h"
 #include "journal/journal_container.h"
@@ -1737,11 +1738,15 @@ static int rtfsFileGetCachedNodeByNid(
         }
 
         nodeBlockCacheHelperInit(&helper, fs_manager);
-        node_handle = nodeBlockCacheHelperGetNodeEntry(
-            &helper,
-            nid,
-            parent_nid
-        );
+        if (nodeBlockCacheHelperGetNodeEntry(
+                &helper,
+                nid,
+                parent_nid,
+                &node_handle
+            ) != 0) {
+            nodeBlockCacheHelperDestroy(&helper);
+            return EIO;
+        }
         nodeBlockCacheHelperDestroy(&helper);
     }
 
@@ -1858,7 +1863,12 @@ static int rtfsFileInodePreparePageForRead(
                 return ret;
             }
         } else {
-            blockBufferReadFromLpa(page_buffer, dev, lpa);
+            ret = blockBufferReadFromLpa(page_buffer, dev, lpa);
+            if (ret != 0) {
+                rtfsMutexUnlock(pageEntryGetLock(page_entry));
+                pageEntryHandleDestroy(&page_handle);
+                return ret;
+            }
         }
     }
 
@@ -2072,8 +2082,7 @@ static int rtfsFileInodeWriteDirtyPagesCow(
                 blockBufferGetPtr(page_buffer)
             );
         } else {
-            blockBufferWriteToLpaSync(page_buffer, dev, new_lpa);
-            ret = 0;
+            ret = blockBufferWriteToLpaSync(page_buffer, dev, new_lpa);
         }
 
         rtfsMutexUnlock(pageEntryGetLock(page_entry));
@@ -2104,6 +2113,7 @@ static int rtfsFileInodeApplyPendingDataRelocations(
 )
 {
     size_t i;
+    SrmapUtils *srmap_utils;
 
     if (fs_manager == NULL || file_inode == NULL) {
         return EINVAL;
@@ -2113,6 +2123,7 @@ static int rtfsFileInodeApplyPendingDataRelocations(
         return 0;
     }
 
+    srmap_utils = fileSystemManagerGetSrmapUtils(fs_manager);
     for (i = 0; i < file_inode->pending_data_relocation_count; ++i) {
         RtfsFilePendingDataCowRelocation *relocation =
             &file_inode->pending_data_relocations[i];
@@ -2140,6 +2151,15 @@ static int rtfsFileInodeApplyPendingDataRelocations(
             relocation->old_lpa = old_lpa;
         }
 
+        if (srmap_utils != NULL) {
+            srmapUtilsWriteSrmapOfData(
+                srmap_utils,
+                relocation->new_lpa,
+                file_inode->ino,
+                relocation->block_index
+            );
+        }
+
         rtfsMutexLock(&file_inode->page_cache.cacheLock);
         page_entry = (PageEntry *)genericCacheManagerGet(
             &file_inode->page_cache.cacheManager,
@@ -2155,6 +2175,10 @@ static int rtfsFileInodeApplyPendingDataRelocations(
         rtfsMutexUnlock(&file_inode->page_cache.cacheLock);
 
         relocation->new_lpa = INVALID_LPA;
+    }
+
+    if (srmap_utils != NULL) {
+        srmapUtilsWriteDirtySrmapSync(srmap_utils);
     }
 
     pageCacheClearDirtyPages(&file_inode->page_cache);
