@@ -1,5 +1,9 @@
 #include "fs/r2fs_mkfs.h"
 
+#include "communication/comm_api.h"
+#include "communication/dev.h"
+#include "utils/io_utils.h"
+
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
@@ -25,6 +29,27 @@ static int r2fsMkfsWriteZeroBlock(
 
     memset(block, 0, sizeof(block));
     return write_block(write_ctx, lpa, block);
+}
+
+static int r2fsMkfsCommDevWriteBlock(
+    void *ctx,
+    uint32_t lpa,
+    const void *block
+)
+{
+    comm_dev *dev = (comm_dev *)ctx;
+
+    if (dev == NULL || block == NULL) {
+        return EINVAL;
+    }
+
+    return comm_submit_sync_rw_request(
+        dev,
+        (void *)block,
+        LPA_TO_LBA(lpa),
+        LBA_PER_LPA,
+        COMM_IO_WRITE
+    );
 }
 
 static void r2fsMkfsSitSetValid(
@@ -434,4 +459,22 @@ int r2fsMkfsFormat(
     }
 
     return 0;
+}
+
+int r2fsMkfsFormatCommDev(
+    const R2fsMkfsOptions *options,
+    comm_dev *dev,
+    R2fsMkfsLayout *out_layout
+)
+{
+    if (dev == NULL) {
+        return EINVAL;
+    }
+
+    return r2fsMkfsFormat(
+        options,
+        r2fsMkfsCommDevWriteBlock,
+        dev,
+        out_layout
+    );
 }

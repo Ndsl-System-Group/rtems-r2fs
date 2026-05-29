@@ -1,8 +1,12 @@
 #include "rtfs_test.h"
 
+#include "communication/comm_api.h"
+#include "communication/dev.h"
 #include "fs/r2fs_mkfs.h"
+#include "utils/io_utils.h"
 
 #include <errno.h>
+#include <memory.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,6 +17,43 @@ typedef struct R2fsMkfsTestDisk
     uint32_t write_count;
     uint32_t fail_lpa;
 } R2fsMkfsTestDisk;
+
+typedef struct R2fsMkfsCommWriteRecord
+{
+    uint32_t call_count;
+    uint64_t last_lba;
+    uint32_t last_lba_count;
+    comm_io_direction last_dir;
+    unsigned char first_block[4096];
+} R2fsMkfsCommWriteRecord;
+
+static R2fsMkfsCommWriteRecord g_r2fs_mkfs_comm_write_record;
+
+static int r2fsMkfsTestCommSyncRwHook(
+    struct comm_dev *dev,
+    void *buffer,
+    uint64_t lba,
+    uint32_t lbaCount,
+    comm_io_direction dir
+)
+{
+    (void)dev;
+
+    if (buffer == NULL) {
+        return EINVAL;
+    }
+
+    g_r2fs_mkfs_comm_write_record.call_count++;
+    g_r2fs_mkfs_comm_write_record.last_lba = lba;
+    g_r2fs_mkfs_comm_write_record.last_lba_count = lbaCount;
+    g_r2fs_mkfs_comm_write_record.last_dir = dir;
+
+    if (g_r2fs_mkfs_comm_write_record.call_count == 1U) {
+        memcpy(g_r2fs_mkfs_comm_write_record.first_block, buffer, sizeof(g_r2fs_mkfs_comm_write_record.first_block));
+    }
+
+    return 0;
+}
 
 static int r2fsMkfsTestWriteBlock(
     void *ctx,
@@ -180,4 +221,48 @@ RTFS_TEST(R2fsMkfsFormat_WhenWriteFails_ShouldReturnEio)
     );
 
     r2fsMkfsTestDiskDestroy(&disk);
+}
+
+RTFS_TEST(R2fsMkfsFormatCommDev_ShouldFormatUsingCommDeviceWrites)
+{
+    R2fsMkfsOptions options;
+    R2fsMkfsLayout layout;
+    comm_dev dev;
+    rtems_disk_device disk;
+    struct RtfsSuperBlock *super_block;
+
+    memset(&g_r2fs_mkfs_comm_write_record, 0, sizeof(g_r2fs_mkfs_comm_write_record));
+    memset(&dev, 0, sizeof(dev));
+    memset(&disk, 0, sizeof(disk));
+
+    TEST_ASSERT_EQUAL(
+        0,
+        commDevInit(&dev, &disk, 512U, 64U * BLOCK_PER_SEGMENT * LBA_PER_LPA, 1, BLOCK_PER_SEGMENT + 1U)
+    );
+
+    memset(&options, 0, sizeof(options));
+    options.lpa_count = 64U * BLOCK_PER_SEGMENT;
+    options.root_ino = 1;
+    options.meta_journal_segment_count = 1;
+
+    commSetTestSyncRwHook(r2fsMkfsTestCommSyncRwHook);
+
+    TEST_ASSERT_EQUAL(
+        0,
+        r2fsMkfsFormatCommDev(&options, &dev, &layout)
+    );
+
+    commSetTestSyncRwHook(NULL);
+
+    TEST_ASSERT_GREATER_THAN_UINT32(0, g_r2fs_mkfs_comm_write_record.call_count);
+    TEST_ASSERT_EQUAL_UINT64(0, g_r2fs_mkfs_comm_write_record.last_lba % LBA_PER_LPA);
+    TEST_ASSERT_EQUAL_UINT32(LBA_PER_LPA, g_r2fs_mkfs_comm_write_record.last_lba_count);
+    TEST_ASSERT_EQUAL(COMM_IO_WRITE, g_r2fs_mkfs_comm_write_record.last_dir);
+
+    super_block = (struct RtfsSuperBlock *)g_r2fs_mkfs_comm_write_record.first_block;
+    TEST_ASSERT_EQUAL_UINT32(RTFS_MAGIC_NUMBER, super_block->magic);
+    TEST_ASSERT_EQUAL_UINT64(layout.block_count, super_block->block_count);
+    TEST_ASSERT_EQUAL_UINT32(layout.main_start_lpa, super_block->main_blkaddr);
+
+    TEST_ASSERT_EQUAL(0, commDevDestroy(&dev));
 }

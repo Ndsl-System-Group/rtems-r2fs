@@ -5,6 +5,8 @@
 
 #include <stddef.h>
 
+struct comm_dev;
+
 typedef int (*R2fsMkfsWriteBlock)(
     void *ctx,
     uint32_t lpa,
@@ -45,5 +47,11 @@ int r2fsMkfsFormat(
     const R2fsMkfsOptions *options,
     R2fsMkfsWriteBlock write_block,
     void *write_ctx,
+    R2fsMkfsLayout *out_layout
+);
+
+int r2fsMkfsFormatCommDev(
+    const R2fsMkfsOptions *options,
+    struct comm_dev *dev,
     R2fsMkfsLayout *out_layout
 );
