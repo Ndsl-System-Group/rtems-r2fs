@@ -1,6 +1,11 @@
 #include "comm_api.h"
 
+#include "cache/block_buffer.h"
 #include "communication/dev.h"
+#include "communication/memory.h"
+#include "fs/fs.h"
+#include "journal/journal_type.h"
+#include "utils/io_utils.h"
 #include "utils/rtfs_log.h"
 
 #include <errno.h>
@@ -26,6 +31,20 @@ static comm_test_get_metajournal_head_hook g_comm_test_get_metajournal_head_hook
 static comm_test_update_metajournal_tail_hook g_comm_test_update_metajournal_tail_hook = NULL;
 static comm_test_fs_recover_hook g_comm_test_fs_recover_hook = NULL;
 
+typedef struct comm_recovery_block
+{
+    uint32_t lpa;
+    bool dirty;
+    unsigned char data[BLOCK_BUFFER_SIZE];
+    struct comm_recovery_block *next;
+} comm_recovery_block;
+
+typedef struct comm_recovery_tx_state
+{
+    struct RtfsSuperBlock super_block;
+    comm_recovery_block *blocks;
+} comm_recovery_tx_state;
+
 
 static void comm_sync_rw_done(rtems_blkdev_request *req, rtems_status_code status);
 
@@ -33,6 +52,75 @@ static void comm_async_rw_done(rtems_blkdev_request *req, rtems_status_code stat
 
 // syncCtx 是同步请求时使用的上下文，asyncCtx 是异步请求时使用的上下文。
 static int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_io_direction dir, comm_sync_rw_ctx *syncCtx, comm_async_ctx **asyncCtx);
+
+static int comm_recovery_read_lpa(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    void *buffer
+);
+
+static int comm_recovery_write_lpa(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    const void *buffer
+);
+
+static uint64_t comm_recovery_next_journal_lpa(
+    uint64_t cur_lpa,
+    uint64_t journal_start_lpa,
+    uint64_t journal_end_lpa
+);
+
+static void comm_recovery_tx_state_init(
+    comm_recovery_tx_state *state,
+    const struct RtfsSuperBlock *super_block
+);
+
+static void comm_recovery_tx_state_destroy(comm_recovery_tx_state *state);
+
+static int comm_recovery_tx_get_block(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    uint32_t lpa,
+    comm_recovery_block **out_block
+);
+
+static int comm_recovery_apply_super_entries(
+    comm_recovery_tx_state *state,
+    const SuperBlockJournalEntry *entries,
+    size_t count
+);
+
+static int comm_recovery_apply_nat_entries(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    const NatJournalEntry *entries,
+    size_t count
+);
+
+static int comm_recovery_apply_sit_entries(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    const SitJournalEntry *entries,
+    size_t count
+);
+
+static int comm_recovery_commit_tx(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    struct RtfsSuperBlock *out_super_block
+);
+
+static int comm_recovery_replay_one_transaction(
+    struct comm_dev *dev,
+    const struct RtfsSuperBlock *base_super_block,
+    uint64_t start_lpa,
+    uint64_t journal_start_lpa,
+    uint64_t journal_end_lpa,
+    uint64_t *out_end_lpa,
+    struct RtfsSuperBlock *out_super_block,
+    bool *out_committed
+);
 
 
 int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_io_direction dir)
@@ -222,6 +310,426 @@ int comm_submit_async_get_metajournal_head_request(struct comm_dev *dev, uint64_
     return res;
 }
 
+static int comm_recovery_read_lpa(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    void *buffer
+)
+{
+    if (dev == NULL || buffer == NULL) {
+        return EINVAL;
+    }
+
+    return comm_submit_sync_rw_request(
+        dev,
+        buffer,
+        LPA_TO_LBA(lpa),
+        LBA_PER_LPA,
+        COMM_IO_READ
+    );
+}
+
+static int comm_recovery_write_lpa(
+    struct comm_dev *dev,
+    uint32_t lpa,
+    const void *buffer
+)
+{
+    if (dev == NULL || buffer == NULL) {
+        return EINVAL;
+    }
+
+    return comm_submit_sync_rw_request(
+        dev,
+        (void *)buffer,
+        LPA_TO_LBA(lpa),
+        LBA_PER_LPA,
+        COMM_IO_WRITE
+    );
+}
+
+static uint64_t comm_recovery_next_journal_lpa(
+    uint64_t cur_lpa,
+    uint64_t journal_start_lpa,
+    uint64_t journal_end_lpa
+)
+{
+    ++cur_lpa;
+    if (cur_lpa >= journal_end_lpa) {
+        cur_lpa = journal_start_lpa;
+    }
+    return cur_lpa;
+}
+
+static void comm_recovery_tx_state_init(
+    comm_recovery_tx_state *state,
+    const struct RtfsSuperBlock *super_block
+)
+{
+    memset(state, 0, sizeof(*state));
+    memcpy(&state->super_block, super_block, sizeof(state->super_block));
+}
+
+static void comm_recovery_tx_state_destroy(comm_recovery_tx_state *state)
+{
+    comm_recovery_block *block = NULL;
+    comm_recovery_block *next = NULL;
+
+    if (state == NULL) {
+        return;
+    }
+
+    block = state->blocks;
+    while (block != NULL) {
+        next = block->next;
+        free(block);
+        block = next;
+    }
+    state->blocks = NULL;
+}
+
+static int comm_recovery_tx_get_block(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    uint32_t lpa,
+    comm_recovery_block **out_block
+)
+{
+    comm_recovery_block *block;
+    int ret;
+
+    if (dev == NULL || state == NULL || out_block == NULL) {
+        return EINVAL;
+    }
+
+    block = state->blocks;
+    while (block != NULL) {
+        if (block->lpa == lpa) {
+            *out_block = block;
+            return 0;
+        }
+        block = block->next;
+    }
+
+    block = (comm_recovery_block *)calloc(1, sizeof(*block));
+    if (block == NULL) {
+        return ENOMEM;
+    }
+
+    block->lpa = lpa;
+    ret = comm_recovery_read_lpa(dev, lpa, block->data);
+    if (ret != 0) {
+        free(block);
+        return ret;
+    }
+
+    block->next = state->blocks;
+    state->blocks = block;
+    *out_block = block;
+    return 0;
+}
+
+static int comm_recovery_apply_super_entries(
+    comm_recovery_tx_state *state,
+    const SuperBlockJournalEntry *entries,
+    size_t count
+)
+{
+    size_t i;
+
+    if (state == NULL || (count > 0 && entries == NULL)) {
+        return EINVAL;
+    }
+
+    for (i = 0; i < count; ++i) {
+        uint32_t off = entries[i].Off;
+
+        if ((size_t)off + sizeof(entries[i].newVal) > sizeof(state->super_block)) {
+            return EIO;
+        }
+
+        memcpy(
+            ((unsigned char *)&state->super_block) + off,
+            &entries[i].newVal,
+            sizeof(entries[i].newVal)
+        );
+    }
+
+    return 0;
+}
+
+static int comm_recovery_apply_nat_entries(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    const NatJournalEntry *entries,
+    size_t count
+)
+{
+    uint64_t nat_block_count;
+    size_t i;
+
+    if (dev == NULL || state == NULL || (count > 0 && entries == NULL)) {
+        return EINVAL;
+    }
+
+    nat_block_count =
+        (uint64_t)state->super_block.segment_count_nat * BLOCK_PER_SEGMENT;
+
+    for (i = 0; i < count; ++i) {
+        uint64_t nat_lpa_idx;
+        uint32_t lpa;
+        uint32_t entry_idx;
+        comm_recovery_block *block;
+        struct RtfsNatBlock *nat_block;
+        int ret;
+
+        nat_lpa_idx = (uint64_t)entries[i].nid / NAT_ENTRY_PER_BLOCK;
+        if (nat_lpa_idx >= nat_block_count) {
+            return EIO;
+        }
+
+        lpa = state->super_block.nat_blkaddr + (uint32_t)nat_lpa_idx;
+        entry_idx = entries[i].nid % NAT_ENTRY_PER_BLOCK;
+        ret = comm_recovery_tx_get_block(dev, state, lpa, &block);
+        if (ret != 0) {
+            return ret;
+        }
+
+        nat_block = (struct RtfsNatBlock *)block->data;
+        nat_block->entries[entry_idx] = entries[i].newValue;
+        block->dirty = true;
+    }
+
+    return 0;
+}
+
+static int comm_recovery_apply_sit_entries(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    const SitJournalEntry *entries,
+    size_t count
+)
+{
+    uint64_t sit_block_count;
+    size_t i;
+
+    if (dev == NULL || state == NULL || (count > 0 && entries == NULL)) {
+        return EINVAL;
+    }
+
+    sit_block_count =
+        (uint64_t)state->super_block.segment_count_sit * BLOCK_PER_SEGMENT;
+
+    for (i = 0; i < count; ++i) {
+        uint64_t sit_lpa_idx;
+        uint32_t lpa;
+        uint32_t entry_idx;
+        comm_recovery_block *block;
+        struct RtfsSitBlock *sit_block;
+        int ret;
+
+        sit_lpa_idx = (uint64_t)entries[i].segID / SIT_ENTRY_PER_BLOCK;
+        if (sit_lpa_idx >= sit_block_count) {
+            return EIO;
+        }
+
+        lpa = state->super_block.sit_blkaddr + (uint32_t)sit_lpa_idx;
+        entry_idx = entries[i].segID % SIT_ENTRY_PER_BLOCK;
+        ret = comm_recovery_tx_get_block(dev, state, lpa, &block);
+        if (ret != 0) {
+            return ret;
+        }
+
+        sit_block = (struct RtfsSitBlock *)block->data;
+        sit_block->entries[entry_idx] = entries[i].newValue;
+        block->dirty = true;
+    }
+
+    return 0;
+}
+
+static int comm_recovery_commit_tx(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    struct RtfsSuperBlock *out_super_block
+)
+{
+    comm_recovery_block *block;
+    int ret;
+
+    if (dev == NULL || state == NULL || out_super_block == NULL) {
+        return EINVAL;
+    }
+
+    for (block = state->blocks; block != NULL; block = block->next) {
+        if (!block->dirty) {
+            continue;
+        }
+
+        ret = comm_recovery_write_lpa(dev, block->lpa, block->data);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+
+    memcpy(out_super_block, &state->super_block, sizeof(*out_super_block));
+    return 0;
+}
+
+static int comm_recovery_replay_one_transaction(
+    struct comm_dev *dev,
+    const struct RtfsSuperBlock *base_super_block,
+    uint64_t start_lpa,
+    uint64_t journal_start_lpa,
+    uint64_t journal_end_lpa,
+    uint64_t *out_end_lpa,
+    struct RtfsSuperBlock *out_super_block,
+    bool *out_committed
+)
+{
+    unsigned char *journal_block;
+    uint64_t journal_size;
+    uint64_t cur_lpa;
+    uint64_t scanned_blocks;
+    comm_recovery_tx_state tx_state;
+    int ret = 0;
+
+    if (dev == NULL || base_super_block == NULL || out_end_lpa == NULL ||
+        out_super_block == NULL || out_committed == NULL) {
+        return EINVAL;
+    }
+
+    *out_committed = false;
+    journal_size = journal_end_lpa - journal_start_lpa;
+    if (journal_size == 0) {
+        return EINVAL;
+    }
+
+    journal_block = (unsigned char *)comm_alloc_dma_mem(BLOCK_BUFFER_SIZE);
+    if (journal_block == NULL) {
+        return ENOMEM;
+    }
+
+    comm_recovery_tx_state_init(&tx_state, base_super_block);
+    cur_lpa = start_lpa;
+    scanned_blocks = 0;
+
+    while (scanned_blocks < journal_size) {
+        size_t off = 0;
+
+        ret = comm_recovery_read_lpa(dev, (uint32_t)cur_lpa, journal_block);
+        if (ret != 0) {
+            goto out;
+        }
+
+        while (off + sizeof(MetaJournalEntry) <= BLOCK_BUFFER_SIZE) {
+            MetaJournalEntry header;
+            size_t payload_len;
+            const unsigned char *payload;
+
+            memcpy(&header, journal_block + off, sizeof(header));
+            if (header.len == 0) {
+                goto out;
+            }
+            if (header.len < sizeof(MetaJournalEntry) ||
+                off + header.len > BLOCK_BUFFER_SIZE) {
+                goto out;
+            }
+
+            payload_len = (size_t)header.len - sizeof(MetaJournalEntry);
+            payload = journal_block + off + sizeof(MetaJournalEntry);
+
+            switch (header.type) {
+                case JOURNAL_TYPE_SUPER_BLOCK:
+                    if ((payload_len % sizeof(SuperBlockJournalEntry)) != 0) {
+                        goto out;
+                    }
+                    ret = comm_recovery_apply_super_entries(
+                        &tx_state,
+                        (const SuperBlockJournalEntry *)payload,
+                        payload_len / sizeof(SuperBlockJournalEntry)
+                    );
+                    if (ret != 0) {
+                        goto out;
+                    }
+                    off += header.len;
+                    break;
+
+                case JOURNAL_TYPE_NATS:
+                    if ((payload_len % sizeof(NatJournalEntry)) != 0) {
+                        goto out;
+                    }
+                    ret = comm_recovery_apply_nat_entries(
+                        dev,
+                        &tx_state,
+                        (const NatJournalEntry *)payload,
+                        payload_len / sizeof(NatJournalEntry)
+                    );
+                    if (ret != 0) {
+                        goto out;
+                    }
+                    off += header.len;
+                    break;
+
+                case JOURNAL_TYPE_SITS:
+                    if ((payload_len % sizeof(SitJournalEntry)) != 0) {
+                        goto out;
+                    }
+                    ret = comm_recovery_apply_sit_entries(
+                        dev,
+                        &tx_state,
+                        (const SitJournalEntry *)payload,
+                        payload_len / sizeof(SitJournalEntry)
+                    );
+                    if (ret != 0) {
+                        goto out;
+                    }
+                    off += header.len;
+                    break;
+
+                case JOURNAL_TYPE_NOP:
+                    off = BLOCK_BUFFER_SIZE;
+                    break;
+
+                case JOURNAL_TYPE_END:
+                    if (header.len != sizeof(MetaJournalEntry)) {
+                        goto out;
+                    }
+                    ret = comm_recovery_commit_tx(
+                        dev,
+                        &tx_state,
+                        out_super_block
+                    );
+                    if (ret != 0) {
+                        goto out;
+                    }
+                    *out_end_lpa = comm_recovery_next_journal_lpa(
+                        cur_lpa,
+                        journal_start_lpa,
+                        journal_end_lpa
+                    );
+                    *out_committed = true;
+                    goto out;
+
+                default:
+                    goto out;
+            }
+        }
+
+        cur_lpa = comm_recovery_next_journal_lpa(
+            cur_lpa,
+            journal_start_lpa,
+            journal_end_lpa
+        );
+        ++scanned_blocks;
+    }
+
+out:
+    comm_recovery_tx_state_destroy(&tx_state);
+    comm_free_dma_mem(journal_block);
+    return ret;
+}
+
 int comm_submit_fs_module_init_request(comm_dev *dev)
 {
     if (NULL == dev) return EINVAL;
@@ -257,6 +765,16 @@ int comm_submit_fs_db_init_request(comm_dev *dev)
 
 int comm_submit_fs_recover_from_db_request(comm_dev *dev)
 {
+    unsigned char *super_block_buf;
+    struct RtfsSuperBlock super_block;
+    uint64_t journal_start_lpa;
+    uint64_t journal_end_lpa;
+    uint64_t journal_size;
+    uint64_t scan_start_lpa;
+    uint64_t scan_lpa;
+    uint64_t committed_end_lpa;
+    int ret;
+
     if (g_comm_test_fs_recover_hook != NULL) {
         return g_comm_test_fs_recover_hook(dev);
     }
@@ -264,8 +782,85 @@ int comm_submit_fs_recover_from_db_request(comm_dev *dev)
     if (NULL == dev) return EINVAL;
     if (NULL == dev->diskDevice) return ENODEV;
 
-    // 简化版暂无真实数据库恢复逻辑。
-    // 后续可在此处增加 journal 扫描与回放流程。
+    super_block_buf = (unsigned char *)comm_alloc_dma_mem(BLOCK_BUFFER_SIZE);
+    if (super_block_buf == NULL) {
+        return ENOMEM;
+    }
+
+    ret = comm_recovery_read_lpa(dev, 0u, super_block_buf);
+    if (ret != 0) {
+        comm_free_dma_mem(super_block_buf);
+        return ret;
+    }
+
+    memcpy(&super_block, super_block_buf, sizeof(super_block));
+    if (super_block.magic != RTFS_MAGIC_NUMBER) {
+        comm_free_dma_mem(super_block_buf);
+        return EIO;
+    }
+
+    journal_start_lpa = super_block.meta_journal_blkaddr;
+    journal_end_lpa = journal_start_lpa +
+        (uint64_t)super_block.segment_count_meta_journal * BLOCK_PER_SEGMENT;
+    journal_size = journal_end_lpa - journal_start_lpa;
+    if (journal_size == 0) {
+        comm_free_dma_mem(super_block_buf);
+        return EIO;
+    }
+
+    scan_start_lpa = journal_start_lpa +
+        ((uint64_t)super_block.meta_journal_end_blkoff % journal_size);
+    scan_lpa = scan_start_lpa;
+    committed_end_lpa = scan_start_lpa;
+
+    while (true) {
+        uint64_t next_lpa = scan_lpa;
+        struct RtfsSuperBlock replayed_super;
+        bool committed = false;
+
+        ret = comm_recovery_replay_one_transaction(
+            dev,
+            &super_block,
+            scan_lpa,
+            journal_start_lpa,
+            journal_end_lpa,
+            &next_lpa,
+            &replayed_super,
+            &committed
+        );
+        if (ret != 0) {
+            comm_free_dma_mem(super_block_buf);
+            return ret;
+        }
+        if (!committed) {
+            break;
+        }
+
+        super_block = replayed_super;
+        committed_end_lpa = next_lpa;
+        scan_lpa = next_lpa;
+        if (scan_lpa == scan_start_lpa) {
+            break;
+        }
+    }
+
+    super_block.meta_journal_start_blkoff =
+        (uint16_t)((committed_end_lpa - journal_start_lpa) % journal_size);
+    super_block.meta_journal_end_blkoff =
+        (uint16_t)((committed_end_lpa - journal_start_lpa) % journal_size);
+    memcpy(super_block_buf, &super_block, sizeof(super_block));
+
+    ret = comm_recovery_write_lpa(dev, 0u, super_block_buf);
+    comm_free_dma_mem(super_block_buf);
+    if (ret != 0) {
+        return ret;
+    }
+
+    dev->metaJournalStartLpa = journal_start_lpa;
+    dev->metaJournalEndLpa = journal_end_lpa;
+    dev->metaJournalHeadLpa = committed_end_lpa;
+    dev->metaJournalTailLpa = committed_end_lpa;
+
     return 0;
 }
 
