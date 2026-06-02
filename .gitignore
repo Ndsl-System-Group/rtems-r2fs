@@ -4,7 +4,6 @@ build/
 .waf*
 .lock*
 *.img
-/Makefile
 /note/*
 /codex/*
 *.staging
@@ -12,3 +11,5 @@ build/
 waf
 .codegraph/
 tools/__pycache__/
+
+config.mk

@@ -41,6 +41,8 @@ endif
 ifeq ($(strip $(LIST_TESTS)),1)
 WAF_UNIT_TEST_ARGS += --list-tests
 endif
+-include config.mk
+
 
 # 默认目标
 all: build
