@@ -21,6 +21,15 @@ int cowReclaimRegistryRegister(
     size_t deleted_handle_count
 );
 
+int cowReclaimRegistryRegisterCompleted(
+    const uint32_t *data_lpas,
+    size_t data_count,
+    const uint32_t *node_lpas,
+    size_t node_count,
+    const NodeBlockCacheEntryHandle *deleted_handles,
+    size_t deleted_handle_count
+);
+
 void cowReclaimRegistryOnTxComplete(uint64_t tx_id);
 int cowReclaimRegistryDrainCompleted(void);
 

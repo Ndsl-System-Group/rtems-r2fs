@@ -1,6 +1,28 @@
 #include "dev.h"
 
+#include <stdlib.h>
 #include <memory.h>
+
+void commDevClearRecoveredReclaimRecords(comm_dev *dev)
+{
+    comm_recovered_reclaim_record *record;
+    comm_recovered_reclaim_record *next;
+
+    if (dev == NULL) {
+        return;
+    }
+
+    record = dev->recoveredReclaimHead;
+    while (record != NULL) {
+        next = record->next;
+        free(record->data_lpas);
+        free(record->node_lpas);
+        free(record);
+        record = next;
+    }
+
+    dev->recoveredReclaimHead = NULL;
+}
 
 
 int commDevInit(comm_dev *dev, rtems_disk_device *diskDevice, uint32_t blockSize, uint64_t blockCount, uint64_t metaJournalStartLpa, uint64_t metaJournalEndLpa)
@@ -39,6 +61,7 @@ int commDevDestroy(comm_dev *dev)
 {
     if (NULL == dev) return EINVAL;
 
+    commDevClearRecoveredReclaimRecords(dev);
     rtfsMutexDestroy(&dev->metaJournalMutex);
     memset(dev, 0, sizeof(comm_dev));
 

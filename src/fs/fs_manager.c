@@ -60,6 +60,7 @@ static int _flush_for_unmount(file_system_manager *this);
 static void _stop_journal_for_unmount(void);
 static void _sync_dev_journal_pos_from_super(file_system_manager *this);
 static void _sync_super_journal_pos_from_dev(file_system_manager *this);
+static int _import_recovered_reclaims(file_system_manager *this);
 
 static int _init_locks(file_system_manager *this)
 {
@@ -140,6 +141,35 @@ static void _sync_super_journal_pos_from_dev(file_system_manager *this)
         this->super_blk_mem_->meta_journal_end_blkoff =
             (uint16_t)(this->dev_->metaJournalTailLpa - journal_start_lpa);
     }
+}
+
+static int _import_recovered_reclaims(file_system_manager *this)
+{
+    comm_recovered_reclaim_record *record;
+    int ret;
+
+    if (this == NULL || this->dev_ == NULL) {
+        return EINVAL;
+    }
+
+    for (record = this->dev_->recoveredReclaimHead;
+         record != NULL;
+         record = record->next) {
+        ret = cowReclaimRegistryRegisterCompleted(
+            record->data_lpas,
+            record->data_count,
+            record->node_lpas,
+            record->node_count,
+            NULL,
+            0
+        );
+        if (ret != 0) {
+            return ret;
+        }
+    }
+
+    commDevClearRecoveredReclaimRecords(this->dev_);
+    return 0;
 }
 
 
@@ -253,6 +283,12 @@ static file_system_manager *_internal_create(struct comm_dev *dev)
 
     cowReclaimRegistryInit(this);
     if (g_fs_manager_setup_failure_step == 9)
+    {
+        goto fail_after_init;
+    }
+
+    ret = _import_recovered_reclaims(this);
+    if (ret != 0)
     {
         goto fail_after_init;
     }

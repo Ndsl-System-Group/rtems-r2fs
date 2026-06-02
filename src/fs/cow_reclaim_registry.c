@@ -124,6 +124,60 @@ static int cowReclaimRegistryCopyDeletedHandles(
     return 0;
 }
 
+static int cowReclaimRegistryBuildRecord(
+    uint64_t tx_id,
+    const uint32_t *data_lpas,
+    size_t data_count,
+    const uint32_t *node_lpas,
+    size_t node_count,
+    const NodeBlockCacheEntryHandle *deleted_handles,
+    size_t deleted_handle_count,
+    CowReclaimRecord **out_record
+)
+{
+    CowReclaimRecord *record;
+    int ret;
+
+    if (out_record == NULL) {
+        return EINVAL;
+    }
+
+    *out_record = NULL;
+    record = (CowReclaimRecord *)calloc(1, sizeof(*record));
+    if (record == NULL) {
+        return ENOMEM;
+    }
+
+    record->tx_id = tx_id;
+    record->data_count = data_count;
+    record->node_count = node_count;
+    record->deleted_handle_count = deleted_handle_count;
+    ret = cowReclaimRegistryCopyLpas(data_lpas, data_count, &record->data_lpas);
+    if (ret != 0) {
+        cowReclaimRegistryFreeRecord(record);
+        return ret;
+    }
+
+    ret = cowReclaimRegistryCopyLpas(node_lpas, node_count, &record->node_lpas);
+    if (ret != 0) {
+        cowReclaimRegistryFreeRecord(record);
+        return ret;
+    }
+
+    ret = cowReclaimRegistryCopyDeletedHandles(
+        deleted_handles,
+        deleted_handle_count,
+        &record->deleted_handles
+    );
+    if (ret != 0) {
+        cowReclaimRegistryFreeRecord(record);
+        return ret;
+    }
+
+    *out_record = record;
+    return 0;
+}
+
 void cowReclaimRegistryInit(struct file_system_manager *fs_manager)
 {
     g_cow_reclaim_registry.fs_manager = fs_manager;
@@ -176,38 +230,59 @@ int cowReclaimRegistryRegister(
         return 0;
     }
 
-    record = (CowReclaimRecord *)calloc(1, sizeof(*record));
-    if (record == NULL) {
-        return ENOMEM;
-    }
-
-    record->tx_id = tx_id;
-    record->data_count = data_count;
-    record->node_count = node_count;
-    record->deleted_handle_count = deleted_handle_count;
-    ret = cowReclaimRegistryCopyLpas(data_lpas, data_count, &record->data_lpas);
-    if (ret != 0) {
-        cowReclaimRegistryFreeRecord(record);
-        return ret;
-    }
-
-    ret = cowReclaimRegistryCopyLpas(node_lpas, node_count, &record->node_lpas);
-    if (ret != 0) {
-        cowReclaimRegistryFreeRecord(record);
-        return ret;
-    }
-
-    ret = cowReclaimRegistryCopyDeletedHandles(
+    ret = cowReclaimRegistryBuildRecord(
+        tx_id,
+        data_lpas,
+        data_count,
+        node_lpas,
+        node_count,
         deleted_handles,
         deleted_handle_count,
-        &record->deleted_handles
+        &record
     );
     if (ret != 0) {
-        cowReclaimRegistryFreeRecord(record);
         return ret;
     }
 
     DL_APPEND(g_cow_reclaim_registry.pending_head, record);
+    return 0;
+}
+
+int cowReclaimRegistryRegisterCompleted(
+    const uint32_t *data_lpas,
+    size_t data_count,
+    const uint32_t *node_lpas,
+    size_t node_count,
+    const NodeBlockCacheEntryHandle *deleted_handles,
+    size_t deleted_handle_count
+)
+{
+    CowReclaimRecord *record;
+    int ret;
+
+    if (g_cow_reclaim_registry.fs_manager == NULL) {
+        return 0;
+    }
+
+    if (data_count == 0 && node_count == 0 && deleted_handle_count == 0) {
+        return 0;
+    }
+
+    ret = cowReclaimRegistryBuildRecord(
+        0u,
+        data_lpas,
+        data_count,
+        node_lpas,
+        node_count,
+        deleted_handles,
+        deleted_handle_count,
+        &record
+    );
+    if (ret != 0) {
+        return ret;
+    }
+
+    DL_APPEND(g_cow_reclaim_registry.completed_head, record);
     return 0;
 }
 

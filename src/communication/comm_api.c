@@ -39,10 +39,19 @@ typedef struct comm_recovery_block
     struct comm_recovery_block *next;
 } comm_recovery_block;
 
+typedef struct comm_recovery_lpa_vector
+{
+    uint32_t *items;
+    size_t count;
+    size_t capacity;
+} comm_recovery_lpa_vector;
+
 typedef struct comm_recovery_tx_state
 {
     struct RtfsSuperBlock super_block;
     comm_recovery_block *blocks;
+    comm_recovery_lpa_vector reclaim_data_lpas;
+    comm_recovery_lpa_vector reclaim_node_lpas;
 } comm_recovery_tx_state;
 
 
@@ -78,6 +87,15 @@ static void comm_recovery_tx_state_init(
 
 static void comm_recovery_tx_state_destroy(comm_recovery_tx_state *state);
 
+static void comm_recovery_lpa_vector_destroy(
+    comm_recovery_lpa_vector *vec
+);
+
+static int comm_recovery_lpa_vector_append_unique(
+    comm_recovery_lpa_vector *vec,
+    uint32_t lpa
+);
+
 static int comm_recovery_tx_get_block(
     struct comm_dev *dev,
     comm_recovery_tx_state *state,
@@ -98,6 +116,21 @@ static int comm_recovery_apply_nat_entries(
     size_t count
 );
 
+static int comm_recovery_collect_inode_data_reclaim(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    uint32_t old_inode_lpa,
+    uint32_t new_inode_lpa
+);
+
+static int comm_recovery_record_nat_reclaim(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    uint32_t nid,
+    const struct RtfsNatEntry *old_entry,
+    const struct RtfsNatEntry *new_entry
+);
+
 static int comm_recovery_apply_sit_entries(
     struct comm_dev *dev,
     comm_recovery_tx_state *state,
@@ -109,6 +142,11 @@ static int comm_recovery_commit_tx(
     struct comm_dev *dev,
     comm_recovery_tx_state *state,
     struct RtfsSuperBlock *out_super_block
+);
+
+static int comm_recovery_append_reclaim_record(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state
 );
 
 static int comm_recovery_replay_one_transaction(
@@ -386,6 +424,58 @@ static void comm_recovery_tx_state_destroy(comm_recovery_tx_state *state)
         block = next;
     }
     state->blocks = NULL;
+    comm_recovery_lpa_vector_destroy(&state->reclaim_data_lpas);
+    comm_recovery_lpa_vector_destroy(&state->reclaim_node_lpas);
+}
+
+static void comm_recovery_lpa_vector_destroy(
+    comm_recovery_lpa_vector *vec
+)
+{
+    if (vec == NULL) {
+        return;
+    }
+
+    free(vec->items);
+    vec->items = NULL;
+    vec->count = 0;
+    vec->capacity = 0;
+}
+
+static int comm_recovery_lpa_vector_append_unique(
+    comm_recovery_lpa_vector *vec,
+    uint32_t lpa
+)
+{
+    uint32_t *new_items;
+    size_t new_capacity;
+    size_t i;
+
+    if (vec == NULL || lpa == INVALID_LPA) {
+        return 0;
+    }
+
+    for (i = 0; i < vec->count; ++i) {
+        if (vec->items[i] == lpa) {
+            return 0;
+        }
+    }
+
+    if (vec->count == vec->capacity) {
+        new_capacity = vec->capacity == 0 ? 4u : vec->capacity * 2u;
+        new_items = (uint32_t *)realloc(
+            vec->items,
+            new_capacity * sizeof(*new_items)
+        );
+        if (new_items == NULL) {
+            return ENOMEM;
+        }
+        vec->items = new_items;
+        vec->capacity = new_capacity;
+    }
+
+    vec->items[vec->count++] = lpa;
+    return 0;
 }
 
 static int comm_recovery_tx_get_block(
@@ -458,6 +548,116 @@ static int comm_recovery_apply_super_entries(
     return 0;
 }
 
+static int comm_recovery_collect_inode_data_reclaim(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    uint32_t old_inode_lpa,
+    uint32_t new_inode_lpa
+)
+{
+    struct RtfsNode old_node;
+    struct RtfsNode new_node;
+    bool old_inline;
+    bool new_inline;
+    uint32_t main_start_lpa;
+    uint64_t block_count;
+    size_t i;
+    int ret;
+
+    if (dev == NULL || state == NULL || old_inode_lpa == INVALID_LPA) {
+        return EINVAL;
+    }
+
+    ret = comm_recovery_read_lpa(dev, old_inode_lpa, &old_node);
+    if (ret != 0) {
+        return ret;
+    }
+
+    old_inline = (old_node.i.i_inline & (RTFS_INLINE_DATA | RTFS_INLINE_DENTRY)) != 0;
+    if (old_inline) {
+        return 0;
+    }
+
+    main_start_lpa = state->super_block.main_blkaddr;
+    block_count = state->super_block.block_count;
+
+    memset(&new_node, 0, sizeof(new_node));
+    if (new_inode_lpa != INVALID_LPA) {
+        ret = comm_recovery_read_lpa(dev, new_inode_lpa, &new_node);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+
+    new_inline = new_inode_lpa != INVALID_LPA &&
+        (new_node.i.i_inline & (RTFS_INLINE_DATA | RTFS_INLINE_DENTRY)) != 0;
+
+    for (i = 0; i < DEF_ADDRS_PER_INODE; ++i) {
+        uint32_t old_data_lpa = old_node.i.i_addr[i];
+        uint32_t new_data_lpa = INVALID_LPA;
+
+        if (new_inode_lpa != INVALID_LPA && !new_inline) {
+            new_data_lpa = new_node.i.i_addr[i];
+        }
+
+        if (old_data_lpa != INVALID_LPA &&
+            old_data_lpa != new_data_lpa &&
+            old_data_lpa >= main_start_lpa &&
+            (uint64_t)old_data_lpa < block_count) {
+            ret = comm_recovery_lpa_vector_append_unique(
+                &state->reclaim_data_lpas,
+                old_data_lpa
+            );
+            if (ret != 0) {
+                return ret;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int comm_recovery_record_nat_reclaim(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state,
+    uint32_t nid,
+    const struct RtfsNatEntry *old_entry,
+    const struct RtfsNatEntry *new_entry
+)
+{
+    int ret;
+
+    if (dev == NULL || state == NULL || old_entry == NULL || new_entry == NULL) {
+        return EINVAL;
+    }
+
+    if (old_entry->ino == INVALID_NID ||
+        old_entry->block_addr == INVALID_LPA ||
+        old_entry->block_addr < state->super_block.main_blkaddr ||
+        (uint64_t)old_entry->block_addr >= state->super_block.block_count ||
+        old_entry->block_addr == new_entry->block_addr) {
+        return 0;
+    }
+
+    ret = comm_recovery_lpa_vector_append_unique(
+        &state->reclaim_node_lpas,
+        old_entry->block_addr
+    );
+    if (ret != 0) {
+        return ret;
+    }
+    if (old_entry->ino != nid) {
+        return 0;
+    }
+
+    return comm_recovery_collect_inode_data_reclaim(
+        dev,
+        state,
+        old_entry->block_addr,
+        new_entry->block_addr
+    );
+}
+
 static int comm_recovery_apply_nat_entries(
     struct comm_dev *dev,
     comm_recovery_tx_state *state,
@@ -496,6 +696,16 @@ static int comm_recovery_apply_nat_entries(
         }
 
         nat_block = (struct RtfsNatBlock *)block->data;
+        ret = comm_recovery_record_nat_reclaim(
+            dev,
+            state,
+            entries[i].nid,
+            &nat_block->entries[entry_idx],
+            &entries[i].newValue
+        );
+        if (ret != 0) {
+            return ret;
+        }
         nat_block->entries[entry_idx] = entries[i].newValue;
         block->dirty = true;
     }
@@ -573,6 +783,52 @@ static int comm_recovery_commit_tx(
     }
 
     memcpy(out_super_block, &state->super_block, sizeof(*out_super_block));
+    return 0;
+}
+
+static int comm_recovery_append_reclaim_record(
+    struct comm_dev *dev,
+    comm_recovery_tx_state *state
+)
+{
+    comm_recovered_reclaim_record *record;
+    comm_recovered_reclaim_record *tail;
+
+    if (dev == NULL || state == NULL) {
+        return EINVAL;
+    }
+
+    if (state->reclaim_data_lpas.count == 0 &&
+        state->reclaim_node_lpas.count == 0) {
+        return 0;
+    }
+
+    record = (comm_recovered_reclaim_record *)calloc(1, sizeof(*record));
+    if (record == NULL) {
+        return ENOMEM;
+    }
+
+    record->data_lpas = state->reclaim_data_lpas.items;
+    record->data_count = state->reclaim_data_lpas.count;
+    record->node_lpas = state->reclaim_node_lpas.items;
+    record->node_count = state->reclaim_node_lpas.count;
+    state->reclaim_data_lpas.items = NULL;
+    state->reclaim_data_lpas.count = 0;
+    state->reclaim_data_lpas.capacity = 0;
+    state->reclaim_node_lpas.items = NULL;
+    state->reclaim_node_lpas.count = 0;
+    state->reclaim_node_lpas.capacity = 0;
+
+    if (dev->recoveredReclaimHead == NULL) {
+        dev->recoveredReclaimHead = record;
+        return 0;
+    }
+
+    tail = dev->recoveredReclaimHead;
+    while (tail->next != NULL) {
+        tail = tail->next;
+    }
+    tail->next = record;
     return 0;
 }
 
@@ -703,6 +959,10 @@ static int comm_recovery_replay_one_transaction(
                     if (ret != 0) {
                         goto out;
                     }
+                    ret = comm_recovery_append_reclaim_record(dev, &tx_state);
+                    if (ret != 0) {
+                        goto out;
+                    }
                     *out_end_lpa = comm_recovery_next_journal_lpa(
                         cur_lpa,
                         journal_start_lpa,
@@ -782,6 +1042,8 @@ int comm_submit_fs_recover_from_db_request(comm_dev *dev)
     if (NULL == dev) return EINVAL;
     if (NULL == dev->diskDevice) return ENODEV;
 
+    commDevClearRecoveredReclaimRecords(dev);
+
     super_block_buf = (unsigned char *)comm_alloc_dma_mem(BLOCK_BUFFER_SIZE);
     if (super_block_buf == NULL) {
         return ENOMEM;
@@ -790,12 +1052,14 @@ int comm_submit_fs_recover_from_db_request(comm_dev *dev)
     ret = comm_recovery_read_lpa(dev, 0u, super_block_buf);
     if (ret != 0) {
         comm_free_dma_mem(super_block_buf);
+        commDevClearRecoveredReclaimRecords(dev);
         return ret;
     }
 
     memcpy(&super_block, super_block_buf, sizeof(super_block));
     if (super_block.magic != RTFS_MAGIC_NUMBER) {
         comm_free_dma_mem(super_block_buf);
+        commDevClearRecoveredReclaimRecords(dev);
         return EIO;
     }
 
@@ -805,6 +1069,7 @@ int comm_submit_fs_recover_from_db_request(comm_dev *dev)
     journal_size = journal_end_lpa - journal_start_lpa;
     if (journal_size == 0) {
         comm_free_dma_mem(super_block_buf);
+        commDevClearRecoveredReclaimRecords(dev);
         return EIO;
     }
 
@@ -830,6 +1095,7 @@ int comm_submit_fs_recover_from_db_request(comm_dev *dev)
         );
         if (ret != 0) {
             comm_free_dma_mem(super_block_buf);
+            commDevClearRecoveredReclaimRecords(dev);
             return ret;
         }
         if (!committed) {
@@ -853,6 +1119,7 @@ int comm_submit_fs_recover_from_db_request(comm_dev *dev)
     ret = comm_recovery_write_lpa(dev, 0u, super_block_buf);
     comm_free_dma_mem(super_block_buf);
     if (ret != 0) {
+        commDevClearRecoveredReclaimRecords(dev);
         return ret;
     }
 

@@ -110,6 +110,10 @@ int r2fsIntegrationFixtureSetStopAfterMetaWrites(
     uint32_t limit
 );
 
+int r2fsIntegrationFixtureCorruptLatestJournalEndEntry(
+    R2fsIntegrationFixture *fixture
+);
+
 int r2fsIntegrationFixtureClearFaults(
     R2fsIntegrationFixture *fixture
 );

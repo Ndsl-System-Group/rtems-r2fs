@@ -1,10 +1,11 @@
 #include "integration/r2fs_integration_fixture.h"
 #include "rtfs_test.h"
 
+#include "cache/block_buffer.h"
 #include "fs/cow_reclaim_registry.h"
-#include "journal/journal_process_env.h"
 
 #include <errno.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -12,16 +13,59 @@
 #define R2FS_ITEST_REC_FILE "/rec/file.bin"
 #define R2FS_ITEST_REC_FILE_RENAMED "/rec/file-renamed.bin"
 
-static void r2fsIntegrationWaitForCommittedRecoveryJournal(void)
+static const unsigned char *r2fsIntegrationRecoveryRawBlockPtr(
+    const R2fsIntegrationFixture *fixture,
+    uint32_t lpa
+)
 {
-    JournalProcessEnv *env = journalProcessEnvGetInstance();
-    uint64_t next_tx_id;
+    const R2fsIntegrationBlockStore *store = r2fsIntegrationFixtureBlockStore(fixture);
 
-    TEST_ASSERT_NOT_NULL(env);
-    next_tx_id = atomic_load_explicit(&env->txIdToAlloc, memory_order_relaxed);
-    TEST_ASSERT_NOT_EQUAL_UINT64(0u, next_tx_id);
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT64(2u, next_tx_id);
-    cowReclaimRegistryOnTxComplete(next_tx_id - 1u);
+    TEST_ASSERT_NOT_NULL(fixture);
+    TEST_ASSERT_NOT_NULL(store);
+    TEST_ASSERT_NOT_NULL(store->bytes);
+    TEST_ASSERT_TRUE((uint64_t)lpa < store->lpa_count);
+    return store->bytes + (uint64_t)lpa * BLOCK_BUFFER_SIZE;
+}
+
+static const struct RtfsSuperBlock *r2fsIntegrationRecoveryRawSuperBlock(
+    const R2fsIntegrationFixture *fixture
+)
+{
+    return (const struct RtfsSuperBlock *)r2fsIntegrationRecoveryRawBlockPtr(
+        fixture,
+        0u
+    );
+}
+
+static bool r2fsIntegrationRecoveryIsSitBitValid(
+    const R2fsIntegrationFixture *fixture,
+    uint32_t lpa
+)
+{
+    const struct RtfsSuperBlock *super_block;
+    const struct RtfsSitBlock *sit_block;
+    uint32_t seg_id;
+    uint32_t seg_off;
+    uint32_t sit_lpa;
+    uint32_t sit_idx;
+    uint32_t byte_idx;
+    uint32_t bit_off;
+
+    TEST_ASSERT_NOT_EQUAL_UINT32(INVALID_LPA, lpa);
+
+    super_block = r2fsIntegrationRecoveryRawSuperBlock(fixture);
+    seg_id = (lpa - super_block->segment0_blkaddr) / BLOCK_PER_SEGMENT;
+    seg_off = (lpa - super_block->segment0_blkaddr) % BLOCK_PER_SEGMENT;
+    sit_lpa = super_block->sit_blkaddr + seg_id / SIT_ENTRY_PER_BLOCK;
+    sit_idx = seg_id % SIT_ENTRY_PER_BLOCK;
+    byte_idx = seg_off / 8u;
+    bit_off = seg_off % 8u;
+
+    sit_block = (const struct RtfsSitBlock *)r2fsIntegrationRecoveryRawBlockPtr(
+        fixture,
+        sit_lpa
+    );
+    return (sit_block->entries[sit_idx].valid_map[byte_idx] & (1u << bit_off)) != 0u;
 }
 
 RTFS_TEST(IntegrationRecovery_CreateCrashRemount_ShouldKeepCommittedFileVisible)
@@ -138,17 +182,12 @@ RTFS_TEST(IntegrationRecovery_IncompleteTransactionCrashRemount_ShouldHideUncomm
 {
     R2fsIntegrationFixture fixture;
     struct stat st;
-    char payload[] = "recovery-partial";
 
     /*
      * 这条用例验证未完整提交事务的恢复语义：
-     * 只完成部分元数据写入后发生 crash 时，重挂载之后该对象
-     * 不应对外可见。
+     * 若盘上的 journal 缺少事务 END 标记，则 replay 不应把该事务
+     * 暴露到可见状态。
      */
-
-    TEST_IGNORE_MESSAGE(
-        "Recovery replay is not implemented yet; comm_submit_fs_recover_from_db_request() is still a stub."
-    );
 
     TEST_ASSERT_EQUAL(
         0,
@@ -156,24 +195,19 @@ RTFS_TEST(IntegrationRecovery_IncompleteTransactionCrashRemount_ShouldHideUncomm
     );
 
     TEST_ASSERT_EQUAL(0, r2fsIntegrationMkdir(&fixture, R2FS_ITEST_REC_DIR, 0755));
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationCreateFile(&fixture, R2FS_ITEST_REC_FILE, 0644));
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationFixtureSetStopAfterMetaWrites(&fixture, 1u)
+        r2fsIntegrationFlushMetadataToStore(&fixture)
     );
-    TEST_ASSERT_EQUAL(
-        EIO,
-        r2fsIntegrationWriteFile(
-            &fixture,
-            R2FS_ITEST_REC_FILE,
-            payload,
-            sizeof(payload)
-        )
-    );
-    TEST_ASSERT_TRUE(r2fsIntegrationFixtureMetaWriteLimitHit(&fixture));
+    r2fsIntegrationFixtureUnmount(&fixture);
+    TEST_ASSERT_EQUAL(0, r2fsIntegrationFixtureRemount(&fixture));
+
+    TEST_ASSERT_EQUAL(0, r2fsIntegrationCreateFile(&fixture, R2FS_ITEST_REC_FILE, 0644));
+    TEST_ASSERT_EQUAL(0, r2fsIntegrationFixtureCorruptLatestJournalEndEntry(&fixture));
 
     r2fsIntegrationFixtureCrash(&fixture);
     TEST_ASSERT_EQUAL(0, r2fsIntegrationFixtureRemount(&fixture));
+    TEST_ASSERT_EQUAL(0, r2fsIntegrationStatPath(&fixture, R2FS_ITEST_REC_DIR, &st));
     TEST_ASSERT_EQUAL(
         ENOENT,
         r2fsIntegrationStatPath(&fixture, R2FS_ITEST_REC_FILE, &st)
@@ -201,10 +235,6 @@ RTFS_TEST(IntegrationRecovery_ReclaimAfterCrashRemount_ShouldReleaseOldCowLpas)
     memset(initial, 'A', sizeof(initial));
     memset(overwrite, 'B', sizeof(overwrite));
 
-    TEST_IGNORE_MESSAGE(
-        "Recovery replay is not implemented yet; reclaim-after-recovery semantics cannot pass until comm_submit_fs_recover_from_db_request() replays committed tx state."
-    );
-
     TEST_ASSERT_EQUAL(
         0,
         r2fsIntegrationFixtureFormatAndMount(&fixture, R2FS_ITEST_DISK_LPA_COUNT)
@@ -231,6 +261,11 @@ RTFS_TEST(IntegrationRecovery_ReclaimAfterCrashRemount_ShouldReleaseOldCowLpas)
             &old_data_lpa
         )
     );
+    TEST_ASSERT_NOT_EQUAL_UINT32(INVALID_LPA, old_data_lpa);
+
+    TEST_ASSERT_EQUAL(0, r2fsIntegrationFlushMetadataToStore(&fixture));
+    r2fsIntegrationFixtureUnmount(&fixture);
+    TEST_ASSERT_EQUAL(0, r2fsIntegrationFixtureRemount(&fixture));
 
     TEST_ASSERT_EQUAL(
         0,
@@ -258,34 +293,13 @@ RTFS_TEST(IntegrationRecovery_ReclaimAfterCrashRemount_ShouldReleaseOldCowLpas)
     r2fsIntegrationFixtureCrash(&fixture);
     TEST_ASSERT_EQUAL(0, r2fsIntegrationFixtureRemount(&fixture));
 
-    r2fsIntegrationWaitForCommittedRecoveryJournal();
     TEST_ASSERT_EQUAL(0, cowReclaimRegistryDrainCompleted());
     TEST_ASSERT_EQUAL(0, r2fsIntegrationFlushMetadataToStore(&fixture));
 
-    TEST_ASSERT_FALSE(
-        r2fsIntegrationBlockStoreIsZeroed(
-            r2fsIntegrationFixtureBlockStore(&fixture),
-            new_inode_lpa
-        )
-    );
-    TEST_ASSERT_FALSE(
-        r2fsIntegrationBlockStoreIsZeroed(
-            r2fsIntegrationFixtureBlockStore(&fixture),
-            new_data_lpa
-        )
-    );
-    TEST_ASSERT_TRUE(
-        r2fsIntegrationBlockStoreIsZeroed(
-            r2fsIntegrationFixtureBlockStore(&fixture),
-            old_inode_lpa
-        )
-    );
-    TEST_ASSERT_TRUE(
-        r2fsIntegrationBlockStoreIsZeroed(
-            r2fsIntegrationFixtureBlockStore(&fixture),
-            old_data_lpa
-        )
-    );
+    TEST_ASSERT_TRUE(r2fsIntegrationRecoveryIsSitBitValid(&fixture, new_inode_lpa));
+    TEST_ASSERT_TRUE(r2fsIntegrationRecoveryIsSitBitValid(&fixture, new_data_lpa));
+    TEST_ASSERT_FALSE(r2fsIntegrationRecoveryIsSitBitValid(&fixture, old_inode_lpa));
+    TEST_ASSERT_FALSE(r2fsIntegrationRecoveryIsSitBitValid(&fixture, old_data_lpa));
 
     r2fsIntegrationFixtureDestroy(&fixture);
 }

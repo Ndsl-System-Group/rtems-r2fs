@@ -7,10 +7,12 @@
 #include "fs/fs_manager.h"
 #include "fs/srmap_utils.h"
 #include "inode/inode.h"
+#include "journal/journal_type.h"
 #include "rtfs_test.h"
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1380,6 +1382,99 @@ int r2fsIntegrationFixtureSetStopAfterMetaWrites(
     state->store.meta_write_count = 0;
     state->store.meta_write_limit_hit = false;
     return 0;
+}
+
+int r2fsIntegrationFixtureCorruptLatestJournalEndEntry(
+    R2fsIntegrationFixture *fixture
+)
+{
+    R2fsIntegrationFixtureState *state = r2fsIntegrationFixtureState(fixture);
+    struct RtfsSuperBlock *super_block;
+    uint64_t journal_write_tail_lpa;
+    uint64_t journal_start_lpa;
+    uint64_t journal_end_lpa;
+    uint64_t journal_size;
+    uint64_t cur_lpa;
+    uint64_t scanned_blocks;
+    uint32_t attempt;
+
+    if (state == NULL || state->store.bytes == NULL) {
+        return EINVAL;
+    }
+
+    super_block = (struct RtfsSuperBlock *)r2fsIntegrationBlockPtr(
+        &state->store,
+        0u
+    );
+    if (super_block->magic != RTFS_MAGIC_NUMBER) {
+        return EIO;
+    }
+
+    journal_start_lpa = super_block->meta_journal_blkaddr;
+    journal_end_lpa = journal_start_lpa +
+        (uint64_t)super_block->segment_count_meta_journal * BLOCK_PER_SEGMENT;
+    journal_size = journal_end_lpa - journal_start_lpa;
+    if (journal_size == 0) {
+        return EIO;
+    }
+
+    cur_lpa = journal_start_lpa +
+        ((uint64_t)super_block->meta_journal_end_blkoff % journal_size);
+    journal_write_tail_lpa = cur_lpa;
+
+    for (attempt = 0; attempt < 10000u; ++attempt) {
+        if (state->dev.metaJournalTailLpa != journal_write_tail_lpa) {
+            break;
+        }
+        sched_yield();
+    }
+    if (state->dev.metaJournalTailLpa == journal_write_tail_lpa) {
+        return ETIMEDOUT;
+    }
+
+    scanned_blocks = 0;
+
+    while (scanned_blocks < journal_size) {
+        unsigned char *block = r2fsIntegrationBlockPtr(
+            &state->store,
+            (uint32_t)cur_lpa
+        );
+        size_t off = 0;
+
+        while (off + sizeof(MetaJournalEntry) <= BLOCK_BUFFER_SIZE) {
+            MetaJournalEntry *entry = (MetaJournalEntry *)(block + off);
+
+            if (entry->len == 0) {
+                break;
+            }
+            if (entry->len < sizeof(MetaJournalEntry) ||
+                off + entry->len > BLOCK_BUFFER_SIZE) {
+                return EIO;
+            }
+
+            if (entry->type == JOURNAL_TYPE_END &&
+                entry->len == sizeof(MetaJournalEntry)) {
+                entry->len = 0;
+                entry->type = 0;
+                entry->rsv = 0;
+                return 0;
+            }
+
+            if (entry->type == JOURNAL_TYPE_NOP) {
+                break;
+            }
+
+            off += entry->len;
+        }
+
+        cur_lpa++;
+        if (cur_lpa >= journal_end_lpa) {
+            cur_lpa = journal_start_lpa;
+        }
+        ++scanned_blocks;
+    }
+
+    return ENOENT;
 }
 
 int r2fsIntegrationFixtureClearFaults(
