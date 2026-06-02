@@ -10,6 +10,17 @@ const char *logLevelStr[] = {"DEBUG", "INFO", "WARING", "ERROR"};
 #define ERRNO_MSG_LEN 128
 #define PRINT_TO_STDERR(fmt, ...) \
     vfprintf(stderr, fmt, ##__VA_ARGS__)
+static RtfsLogLevel g_rtfs_min_log_level = RTFS_LOG_DEBUG;
+
+void rtfsLogSetMinLevel(RtfsLogLevel log_level)
+{
+    g_rtfs_min_log_level = log_level;
+}
+
+RtfsLogLevel rtfsLogGetMinLevel(void)
+{
+    return g_rtfs_min_log_level;
+}
 
 static void rtfsLogVPrint(
     RtfsLogLevel log_level,
@@ -19,6 +30,10 @@ static void rtfsLogVPrint(
     va_list args
 )
 {
+    if (log_level < g_rtfs_min_log_level || log_level >= RTFS_LOG_SILENT) {
+        return;
+    }
+
     fprintf(stderr, "[%s:%u, %s]: ", funcname, lineno, logLevelStr[log_level]);
     vfprintf(stderr, fmt, args);
     fprintf(stderr, "\n");

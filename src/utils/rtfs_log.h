@@ -7,9 +7,12 @@ typedef enum RtfsLogLevel
     RTFS_LOG_DEBUG,
     RTFS_LOG_INFO,
     RTFS_LOG_WARNING,
-    RTFS_LOG_ERROR
+    RTFS_LOG_ERROR,
+    RTFS_LOG_SILENT
 } RtfsLogLevel;
 
+void rtfsLogSetMinLevel(RtfsLogLevel log_level);
+RtfsLogLevel rtfsLogGetMinLevel(void);
 void rtfsLogPrint(RtfsLogLevel log_level, const char *funcname, unsigned int lineno, const char *fmt, ...);
 void rtfsLogErrno(RtfsLogLevel log_level, const char *funcname, unsigned int lineno, int err, const char *fmt, ...);
 

@@ -6,6 +6,9 @@
 #   make test                                  - 配置、构建并运行全部测试
 #   make test-group TEST_GROUP=fs              - 定向运行某个测试组
 #   make test-filter TEST_FILTER=Recovery      - 按测试名子串定向运行
+#   make perf-test                             - 运行全部性能测试
+#   make perf-streaming                        - 运行大文件流式性能测试
+#   make perf-metadata                         - 运行小文件/元数据性能测试
 #   make test-list                             - 启动测试程序并列出已注册测试
 #   make build                                 - 构建项目
 #   make run                                   - 运行项目
@@ -54,6 +57,15 @@ test-filter:
 test-list:
 	@$(MAKE) test LIST_TESTS=1 TEST_GROUP="$(TEST_GROUP)" TEST_FILTER="$(TEST_FILTER)"
 
+perf-test:
+	@$(MAKE) test-filter TEST_GROUP=performance TEST_FILTER=Performance
+
+perf-streaming:
+	@$(MAKE) test-filter TEST_GROUP=performance TEST_FILTER=PerformanceStreaming
+
+perf-metadata:
+	@$(MAKE) test-filter TEST_GROUP=performance TEST_FILTER=PerformanceMetadata
+
 # 构建项目
 build:
 	@echo "Building RTFS FileSystem..."
@@ -71,4 +83,4 @@ clean:
 	./waf clean
 	rm -rf build/
 
-.PHONY: all configure configure-with-unit-test test test-group test-filter test-list build run clean
+.PHONY: all configure configure-with-unit-test test test-group test-filter test-list perf-test perf-streaming perf-metadata build run clean

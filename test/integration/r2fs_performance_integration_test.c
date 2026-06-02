@@ -1,8 +1,10 @@
 #include "integration/r2fs_rtems_mount_fixture.h"
+#include "rtfs_config.h"
 #include "rtfs_test.h"
 
 #include "cache/block_buffer.h"
 #include "fs/fs.h"
+#include "utils/rtfs_log.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -28,6 +30,33 @@
 #define R2FS_PERF_SMALL_FILE_COUNT 128U
 #define R2FS_PERF_SMALL_FILE_BYTES 1024U
 
+typedef struct R2fsPerfLogGuard
+{
+    RtfsLogLevel previous_level;
+} R2fsPerfLogGuard;
+
+typedef enum R2fsPerfMetricId
+{
+    R2FS_PERF_METRIC_SEQUENTIAL_WRITE = 0,
+    R2FS_PERF_METRIC_SEQUENTIAL_READ,
+    R2FS_PERF_METRIC_METADATA_CREATE,
+    R2FS_PERF_METRIC_METADATA_DELETE,
+    R2FS_PERF_METRIC_RANDOM_WRITE_IOPS,
+    R2FS_PERF_METRIC_SMALL_FILE_CREATION,
+    R2FS_PERF_METRIC_MIXED_RW_IOPS,
+    R2FS_PERF_METRIC_COUNT
+} R2fsPerfMetricId;
+
+typedef struct R2fsPerfSummary
+{
+    bool valid[R2FS_PERF_METRIC_COUNT];
+    double value[R2FS_PERF_METRIC_COUNT];
+    uint32_t ops[R2FS_PERF_METRIC_COUNT];
+    uint64_t us[R2FS_PERF_METRIC_COUNT];
+} R2fsPerfSummary;
+
+static R2fsPerfSummary g_r2fs_perf_summary;
+
 static uint64_t r2fsPerfCounterFreq(void)
 {
     return rtems_counter_frequency();
@@ -41,6 +70,246 @@ static uint64_t r2fsPerfCounterNow(void)
 static uint64_t r2fsPerfCounterToUs(uint64_t diff)
 {
     return (diff * 1000000ULL) / r2fsPerfCounterFreq();
+}
+
+static R2fsPerfLogGuard r2fsPerfBeginQuietLogging(void)
+{
+    R2fsPerfLogGuard guard;
+
+    guard.previous_level = rtfsLogGetMinLevel();
+    rtfsLogSetMinLevel(RTFS_LOG_SILENT);
+    return guard;
+}
+
+static void r2fsPerfEndQuietLogging(const R2fsPerfLogGuard *guard)
+{
+    TEST_ASSERT_NOT_NULL(guard);
+    rtfsLogSetMinLevel(guard->previous_level);
+}
+
+static double r2fsPerfBytesToMbPerSec(uint64_t bytes, uint64_t us)
+{
+    TEST_ASSERT_TRUE(us > 0u);
+    return ((double)bytes / 1000000.0) / ((double)us / 1000000.0);
+}
+
+static double r2fsPerfOpsToIops(uint32_t ops, uint64_t us)
+{
+    TEST_ASSERT_TRUE(us > 0u);
+    return (double)ops / ((double)us / 1000000.0);
+}
+
+static double r2fsPerfUsPerOp(uint32_t ops, uint64_t us)
+{
+    TEST_ASSERT_TRUE(ops > 0u);
+    TEST_ASSERT_TRUE(us > 0u);
+    return (double)us / (double)ops;
+}
+
+static void r2fsPerfRecordValue(
+    R2fsPerfMetricId metric_id,
+    double value,
+    uint32_t ops,
+    uint64_t us)
+{
+    TEST_ASSERT_TRUE(metric_id < R2FS_PERF_METRIC_COUNT);
+    g_r2fs_perf_summary.valid[metric_id] = true;
+    g_r2fs_perf_summary.value[metric_id] = value;
+    g_r2fs_perf_summary.ops[metric_id] = ops;
+    g_r2fs_perf_summary.us[metric_id] = us;
+}
+
+static void r2fsPerfRecordThroughput(
+    R2fsPerfMetricId metric_id,
+    uint64_t bytes,
+    uint64_t us)
+{
+    r2fsPerfRecordValue(
+        metric_id,
+        r2fsPerfBytesToMbPerSec(bytes, us),
+        0u,
+        us);
+}
+
+static void r2fsPerfRecordIops(
+    R2fsPerfMetricId metric_id,
+    uint32_t ops,
+    uint64_t us)
+{
+    r2fsPerfRecordValue(
+        metric_id,
+        r2fsPerfOpsToIops(ops, us),
+        ops,
+        us);
+}
+
+static void r2fsPerfRecordUsPerOp(
+    R2fsPerfMetricId metric_id,
+    uint32_t ops,
+    uint64_t us)
+{
+    r2fsPerfRecordValue(
+        metric_id,
+        r2fsPerfUsPerOp(ops, us),
+        ops,
+        us);
+}
+
+static void r2fsPerfPrintTableSeparator(void)
+{
+    printf("+---------------------------+---------------+-----------+\n");
+}
+
+static void r2fsPerfPrintTableHeader(const char *title)
+{
+    TEST_ASSERT_NOT_NULL(title);
+    printf("\n--- %s ---\n", title);
+    r2fsPerfPrintTableSeparator();
+    printf("| %-25s | %-13s | %-9s |\n", "Test Name", "Result", "Unit");
+    r2fsPerfPrintTableSeparator();
+}
+
+static void r2fsPerfPrintTableRow(
+    const char *test_name,
+    bool available,
+    double value,
+    const char *unit)
+{
+    TEST_ASSERT_NOT_NULL(test_name);
+    TEST_ASSERT_NOT_NULL(unit);
+
+    if (available)
+    {
+        printf(
+            "| %-25s | %13.3f | %-9s |\n",
+            test_name,
+            value,
+            unit);
+    }
+    else
+    {
+        printf(
+            "| %-25s | %13s | %-9s |\n",
+            test_name,
+            "N/A",
+            unit);
+    }
+}
+
+static bool r2fsPerfHasFullSummary(void)
+{
+    return g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_SEQUENTIAL_WRITE] &&
+           g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_SEQUENTIAL_READ] &&
+           g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_METADATA_CREATE] &&
+           g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_METADATA_DELETE] &&
+           g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_RANDOM_WRITE_IOPS] &&
+           g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_SMALL_FILE_CREATION] &&
+           g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_MIXED_RW_IOPS];
+}
+
+static bool r2fsPerfIsStreamingOnlyRun(void)
+{
+#ifdef RTFS_CONFIG_TEST_FILTER
+    return strstr(RTFS_CONFIG_TEST_FILTER, "PerformanceStreaming") != NULL;
+#else
+    return false;
+#endif
+}
+
+static double r2fsPerfMetadataCreateDeleteUsPerOp(void)
+{
+    uint32_t total_ops =
+        g_r2fs_perf_summary.ops[R2FS_PERF_METRIC_METADATA_CREATE] +
+        g_r2fs_perf_summary.ops[R2FS_PERF_METRIC_METADATA_DELETE];
+    uint64_t total_us =
+        g_r2fs_perf_summary.us[R2FS_PERF_METRIC_METADATA_CREATE] +
+        g_r2fs_perf_summary.us[R2FS_PERF_METRIC_METADATA_DELETE];
+
+    return r2fsPerfUsPerOp(total_ops, total_us);
+}
+
+static void r2fsPerfPrintStreamingTable(void)
+{
+    r2fsPerfPrintTableHeader("Large File Streaming Benchmark Results");
+    r2fsPerfPrintTableRow(
+        "Sequential Write",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_SEQUENTIAL_WRITE],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_SEQUENTIAL_WRITE],
+        "MB/s");
+    r2fsPerfPrintTableRow(
+        "Sequential Read",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_SEQUENTIAL_READ],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_SEQUENTIAL_READ],
+        "MB/s");
+    r2fsPerfPrintTableRow(
+        "Random Write IOPS",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_RANDOM_WRITE_IOPS],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_RANDOM_WRITE_IOPS],
+        "IOPS");
+    r2fsPerfPrintTableRow(
+        "Mixed R/W IOPS",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_MIXED_RW_IOPS],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_MIXED_RW_IOPS],
+        "IOPS");
+    r2fsPerfPrintTableSeparator();
+}
+
+static void r2fsPerfPrintMetadataTable(void)
+{
+    r2fsPerfPrintTableHeader("Small File / Metadata Benchmark Results");
+    r2fsPerfPrintTableRow(
+        "Metadata Create",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_METADATA_CREATE],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_METADATA_CREATE],
+        "us/op");
+    r2fsPerfPrintTableRow(
+        "Metadata Delete",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_METADATA_DELETE],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_METADATA_DELETE],
+        "us/op");
+    r2fsPerfPrintTableRow(
+        "Small File Creation",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_SMALL_FILE_CREATION],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_SMALL_FILE_CREATION],
+        "Files/sec");
+    r2fsPerfPrintTableSeparator();
+}
+
+static void r2fsPerfPrintFullSummaryTable(void)
+{
+    r2fsPerfPrintTableHeader("Benchmark Results");
+    r2fsPerfPrintTableRow(
+        "Sequential Write",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_SEQUENTIAL_WRITE],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_SEQUENTIAL_WRITE],
+        "MB/s");
+    r2fsPerfPrintTableRow(
+        "Sequential Read",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_SEQUENTIAL_READ],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_SEQUENTIAL_READ],
+        "MB/s");
+    r2fsPerfPrintTableRow(
+        "Metadata Create/Delete",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_METADATA_CREATE] &&
+            g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_METADATA_DELETE],
+        r2fsPerfMetadataCreateDeleteUsPerOp(),
+        "us/op");
+    r2fsPerfPrintTableRow(
+        "Random Write IOPS",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_RANDOM_WRITE_IOPS],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_RANDOM_WRITE_IOPS],
+        "IOPS");
+    r2fsPerfPrintTableRow(
+        "Small File Creation",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_SMALL_FILE_CREATION],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_SMALL_FILE_CREATION],
+        "Files/sec");
+    r2fsPerfPrintTableRow(
+        "Mixed R/W IOPS",
+        g_r2fs_perf_summary.valid[R2FS_PERF_METRIC_MIXED_RW_IOPS],
+        g_r2fs_perf_summary.value[R2FS_PERF_METRIC_MIXED_RW_IOPS],
+        "IOPS");
+    r2fsPerfPrintTableSeparator();
 }
 
 static void r2fsPerfFillPattern(
@@ -62,59 +331,6 @@ static uint32_t r2fsPerfNextRand(uint32_t *state)
     TEST_ASSERT_NOT_NULL(state);
     *state = (*state * 1103515245u) + 12345u;
     return *state;
-}
-
-static void r2fsPerfPrintThroughput(
-    const char *workload_class,
-    const char *metric,
-    uint64_t bytes,
-    uint64_t us)
-{
-    double mib_per_sec;
-
-    TEST_ASSERT_NOT_NULL(workload_class);
-    TEST_ASSERT_NOT_NULL(metric);
-    TEST_ASSERT_TRUE(us > 0u);
-
-    mib_per_sec =
-        ((double)bytes / (1024.0 * 1024.0)) /
-        ((double)us / 1000000.0);
-    printf(
-        "[ PERF ] class=%s metric=%s bytes=%llu time_us=%llu throughput_mib_s=%.3f\n",
-        workload_class,
-        metric,
-        (unsigned long long)bytes,
-        (unsigned long long)us,
-        mib_per_sec);
-}
-
-static void r2fsPerfPrintIops(
-    const char *workload_class,
-    const char *metric,
-    uint32_t ops,
-    uint64_t bytes,
-    uint64_t us)
-{
-    double iops;
-    double mib_per_sec;
-
-    TEST_ASSERT_NOT_NULL(workload_class);
-    TEST_ASSERT_NOT_NULL(metric);
-    TEST_ASSERT_TRUE(us > 0u);
-
-    iops = (double)ops / ((double)us / 1000000.0);
-    mib_per_sec =
-        ((double)bytes / (1024.0 * 1024.0)) /
-        ((double)us / 1000000.0);
-    printf(
-        "[ PERF ] class=%s metric=%s ops=%u bytes=%llu time_us=%llu iops=%.3f throughput_mib_s=%.3f\n",
-        workload_class,
-        metric,
-        ops,
-        (unsigned long long)bytes,
-        (unsigned long long)us,
-        iops,
-        mib_per_sec);
 }
 
 static void r2fsPerfEnsureFullWrite(
@@ -177,9 +393,8 @@ static void r2fsPerfSequentialWrite(
     TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureFdatasync(fd));
     end = r2fsPerfCounterNow();
 
-    r2fsPerfPrintThroughput(
-        "streaming",
-        "sequential_write",
+    r2fsPerfRecordThroughput(
+        R2FS_PERF_METRIC_SEQUENTIAL_WRITE,
         total_bytes,
         r2fsPerfCounterToUs(end - begin));
 }
@@ -205,9 +420,8 @@ static void r2fsPerfSequentialRead(
     }
     end = r2fsPerfCounterNow();
 
-    r2fsPerfPrintThroughput(
-        "streaming",
-        "sequential_read",
+    r2fsPerfRecordThroughput(
+        R2FS_PERF_METRIC_SEQUENTIAL_READ,
         total_bytes,
         r2fsPerfCounterToUs(end - begin));
 }
@@ -262,11 +476,9 @@ static void r2fsPerfRandomWriteIops(
     TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureFdatasync(fd));
     end = r2fsPerfCounterNow();
 
-    r2fsPerfPrintIops(
-        "streaming",
-        "random_write_iops",
+    r2fsPerfRecordIops(
+        R2FS_PERF_METRIC_RANDOM_WRITE_IOPS,
         op_count,
-        (uint64_t)op_count * R2FS_PERF_RANDOM_BLOCK_BYTES,
         r2fsPerfCounterToUs(end - begin));
 }
 
@@ -307,15 +519,11 @@ static void r2fsPerfMixedRwIops(
     TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureFdatasync(fd));
     end = r2fsPerfCounterNow();
 
-    printf(
-        "[ PERF ] class=streaming metric=mixed_rw_profile read_ops=%u write_ops=%u ratio=50_50\n",
-        read_ops,
-        write_ops);
-    r2fsPerfPrintIops(
-        "streaming",
-        "mixed_rw_iops",
+    TEST_ASSERT_EQUAL_UINT32(op_count / 2u, read_ops);
+    TEST_ASSERT_EQUAL_UINT32(op_count / 2u, write_ops);
+    r2fsPerfRecordIops(
+        R2FS_PERF_METRIC_MIXED_RW_IOPS,
         op_count,
-        (uint64_t)op_count * R2FS_PERF_RANDOM_BLOCK_BYTES,
         r2fsPerfCounterToUs(end - begin));
 }
 
@@ -341,11 +549,9 @@ static void r2fsPerfMetadataCreateDelete(void)
         TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureClose(fd));
     }
     create_end = r2fsPerfCounterNow();
-    r2fsPerfPrintIops(
-        "metadata",
-        "metadata_create",
+    r2fsPerfRecordUsPerOp(
+        R2FS_PERF_METRIC_METADATA_CREATE,
         R2FS_PERF_META_FILE_COUNT,
-        0u,
         r2fsPerfCounterToUs(create_end - create_begin));
 
     delete_begin = r2fsPerfCounterNow();
@@ -357,11 +563,9 @@ static void r2fsPerfMetadataCreateDelete(void)
         TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureUnlink(path));
     }
     delete_end = r2fsPerfCounterNow();
-    r2fsPerfPrintIops(
-        "metadata",
-        "metadata_delete",
+    r2fsPerfRecordUsPerOp(
+        R2FS_PERF_METRIC_METADATA_DELETE,
         R2FS_PERF_META_FILE_COUNT,
-        0u,
         r2fsPerfCounterToUs(delete_end - delete_begin));
 
     TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureRmdir(R2FS_PERF_META_DIR));
@@ -392,11 +596,9 @@ static void r2fsPerfSmallFileCreation(
     }
     end = r2fsPerfCounterNow();
 
-    r2fsPerfPrintIops(
-        "metadata",
-        "small_file_creation",
+    r2fsPerfRecordIops(
+        R2FS_PERF_METRIC_SMALL_FILE_CREATION,
         R2FS_PERF_SMALL_FILE_COUNT,
-        (uint64_t)R2FS_PERF_SMALL_FILE_COUNT * buffer_size,
         r2fsPerfCounterToUs(end - begin));
 
     for (i = 0; i < R2FS_PERF_SMALL_FILE_COUNT; ++i)
@@ -415,6 +617,7 @@ RTFS_TEST_GROUP(
     PerformanceStreaming_SequentialReadWriteRandomAndMixed_ShouldReportMetrics)
 {
     R2fsRtemsMountFixture fixture = R2FS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
+    R2fsPerfLogGuard log_guard = r2fsPerfBeginQuietLogging();
     int fd = -1;
     unsigned char stream_buffer[R2FS_PERF_STREAM_CHUNK_BYTES];
     unsigned char io_buffer[R2FS_PERF_RANDOM_BLOCK_BYTES];
@@ -483,6 +686,11 @@ RTFS_TEST_GROUP(
     TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureClose(fd));
 
     r2fsRtemsMountFixtureDestroy(&fixture);
+    r2fsPerfEndQuietLogging(&log_guard);
+    if (r2fsPerfIsStreamingOnlyRun())
+    {
+        r2fsPerfPrintStreamingTable();
+    }
 }
 
 RTFS_TEST_GROUP(
@@ -490,6 +698,7 @@ RTFS_TEST_GROUP(
     PerformanceMetadata_CreateDeleteAndSmallFiles_ShouldReportMetrics)
 {
     R2fsRtemsMountFixture fixture = R2FS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
+    R2fsPerfLogGuard log_guard = r2fsPerfBeginQuietLogging();
     unsigned char small_file_buffer[R2FS_PERF_SMALL_FILE_BYTES];
 
     /*
@@ -513,4 +722,13 @@ RTFS_TEST_GROUP(
         sizeof(small_file_buffer));
 
     r2fsRtemsMountFixtureDestroy(&fixture);
+    r2fsPerfEndQuietLogging(&log_guard);
+    if (r2fsPerfHasFullSummary())
+    {
+        r2fsPerfPrintFullSummaryTable();
+    }
+    else
+    {
+        r2fsPerfPrintMetadataTable();
+    }
 }
