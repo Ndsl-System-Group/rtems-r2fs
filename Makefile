@@ -58,7 +58,8 @@ test-list:
 	@$(MAKE) test LIST_TESTS=1 TEST_GROUP="$(TEST_GROUP)" TEST_FILTER="$(TEST_FILTER)"
 
 perf-test:
-	@$(MAKE) test-filter TEST_GROUP=performance TEST_FILTER=Performance
+	@$(MAKE) perf-streaming
+	@$(MAKE) perf-metadata
 
 perf-streaming:
 	@$(MAKE) test-filter TEST_GROUP=performance TEST_FILTER=PerformanceStreaming
