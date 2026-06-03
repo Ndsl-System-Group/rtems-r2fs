@@ -4,6 +4,7 @@
 #include "cache/block_buffer.h"
 #include "cache/node_block_cache.h"
 #include "cache/page_cache.h"
+#include "communication/memory.h"
 #include "fs/cow_reclaim_registry.h"
 #include "fs/fs_manager.h"
 #include "fs/srmap_utils.h"
@@ -11,6 +12,7 @@
 #include "fs/super_manager.h"
 #include "journal/journal_container.h"
 #include "journal/journal_process_env.h"
+#include "utils/io_utils.h"
 #include "utils/rtfs_log.h"
 
 #include <errno.h>
@@ -20,6 +22,7 @@
 #include <string.h>
 
 #define RTFS_FILE_PAGE_CACHE_EXPECT_SIZE 64
+#define RTFS_FILE_WRITEBACK_BATCH_PAGES 64
 #define RTFS_FILE_DIRTY_PAGES_NODE_CMP(a, b) \
     ((a).blkoff < (b).blkoff ? -1 : ((a).blkoff > (b).blkoff ? 1 : 0))
 
@@ -37,6 +40,14 @@ typedef struct RtfsFilePendingDataCowRelocation
     uint32_t old_lpa;
     uint32_t new_lpa;
 } RtfsFilePendingDataCowRelocation;
+
+typedef struct RtfsFileDirtyPageWriteOp
+{
+    PageEntry *page_entry;
+    uint32_t block_index;
+    uint32_t old_lpa;
+    uint32_t new_lpa;
+} RtfsFileDirtyPageWriteOp;
 
 struct RtfsFileInode
 {
@@ -69,6 +80,9 @@ struct RtfsFileInode
      * key 是文件逻辑块号，value 是 4KB page。
      */
     PageCache page_cache;
+
+    /* 串行化同一 inode 上的文件操作和提交路径。 */
+    mutex_t op_lock;
 
     /*
      * dirty data page COW 后暂存的映射切换信息。
@@ -177,6 +191,7 @@ static int rtfsFileInodePreparePageForWrite(
     file_system_manager *fs_manager,
     RtfsFileInode *file_inode,
     uint32_t block_index,
+    bool preserve_existing_content,
     PageEntryHandle *out_page
 );
 
@@ -311,8 +326,11 @@ ssize_t rtfsFileInodeRead(
         return 0;
     }
 
+    rtfsMutexLock(&file_inode->op_lock);
+
     cur_offset = (uint64_t)*offset;
     if (cur_offset >= file_inode->i_size) {
+        rtfsMutexUnlock(&file_inode->op_lock);
         return 0;
     }
 
@@ -336,6 +354,7 @@ ssize_t rtfsFileInodeRead(
                 break;
             }
             errno = EFBIG;
+            rtfsMutexUnlock(&file_inode->op_lock);
             return -1;
         }
 
@@ -357,6 +376,7 @@ ssize_t rtfsFileInodeRead(
                 break;
             }
             errno = ret;
+            rtfsMutexUnlock(&file_inode->op_lock);
             return -1;
         }
 
@@ -377,6 +397,8 @@ ssize_t rtfsFileInodeRead(
     if (bytes_read > 0) {
         rtfsFileInodeTouchAccessTime(file_inode);
     }
+
+    rtfsMutexUnlock(&file_inode->op_lock);
 
     return (ssize_t)bytes_read;
 }
@@ -407,9 +429,12 @@ ssize_t rtfsFileInodeWrite(
         return 0;
     }
 
+    rtfsMutexLock(&file_inode->op_lock);
+
     cur_offset = (uint64_t)*offset;
     if (UINT64_MAX - cur_offset < count) {
         errno = EFBIG;
+        rtfsMutexUnlock(&file_inode->op_lock);
         return -1;
     }
 
@@ -428,6 +453,7 @@ ssize_t rtfsFileInodeWrite(
                 break;
             }
             errno = EFBIG;
+            rtfsMutexUnlock(&file_inode->op_lock);
             return -1;
         }
 
@@ -442,6 +468,7 @@ ssize_t rtfsFileInodeWrite(
             fs_manager,
             file_inode,
             block_index,
+            block_offset != 0 || chunk != BLOCK_BUFFER_SIZE,
             &page_handle
         );
         if (ret != 0) {
@@ -449,6 +476,7 @@ ssize_t rtfsFileInodeWrite(
                 break;
             }
             errno = ret;
+            rtfsMutexUnlock(&file_inode->op_lock);
             return -1;
         }
 
@@ -475,6 +503,8 @@ ssize_t rtfsFileInodeWrite(
         rtfsFileInodeTouchModifyTime(file_inode);
     }
 
+    rtfsMutexUnlock(&file_inode->op_lock);
+
     return (ssize_t)bytes_written;
 }
 
@@ -494,8 +524,11 @@ int rtfsFileInodeTruncate(
         return EINVAL;
     }
 
+    rtfsMutexLock(&file_inode->op_lock);
+
     old_size = file_inode->i_size;
     if (target_size == old_size) {
+        rtfsMutexUnlock(&file_inode->op_lock);
         return 0;
     }
 
@@ -503,6 +536,7 @@ int rtfsFileInodeTruncate(
         file_inode->i_size = target_size;
         file_inode->is_dirty = true;
         rtfsFileInodeTouchModifyTime(file_inode);
+        rtfsMutexUnlock(&file_inode->op_lock);
         return 0;
     }
 
@@ -516,6 +550,7 @@ int rtfsFileInodeTruncate(
         size_t keep_bytes = (size_t)(target_size % BLOCK_BUFFER_SIZE);
 
         if (new_block_count - 1 > UINT32_MAX) {
+            rtfsMutexUnlock(&file_inode->op_lock);
             return EFBIG;
         }
 
@@ -523,9 +558,11 @@ int rtfsFileInodeTruncate(
             fs_manager,
             file_inode,
             (uint32_t)(new_block_count - 1),
+            true,
             &page_handle
         );
         if (ret != 0) {
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ret;
         }
 
@@ -549,6 +586,7 @@ int rtfsFileInodeTruncate(
         uint32_t old_lpa = INVALID_LPA;
 
         if (block_index > UINT32_MAX) {
+            rtfsMutexUnlock(&file_inode->op_lock);
             return EFBIG;
         }
 
@@ -561,11 +599,13 @@ int rtfsFileInodeTruncate(
             &old_lpa
         );
         if (ret != 0) {
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ret;
         }
 
         ret = rtfsFileInodeAppendPendingTruncateOldLpa(file_inode, old_lpa);
         if (ret != 0) {
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ret;
         }
     }
@@ -574,6 +614,7 @@ int rtfsFileInodeTruncate(
     file_inode->i_size = target_size;
     file_inode->is_dirty = true;
     rtfsFileInodeTouchModifyTime(file_inode);
+    rtfsMutexUnlock(&file_inode->op_lock);
 
     return 0;
 }
@@ -681,19 +722,24 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
         return EINVAL;
     }
 
+    rtfsMutexLock(&file_inode->op_lock);
+
     node_cache = fileSystemManagerGetNodeCache(fs_manager);
     cur_journal = fileSystemManagerGetCurJournal(fs_manager);
     if (node_cache == NULL || cur_journal == NULL) {
+        rtfsMutexUnlock(&file_inode->op_lock);
         return EINVAL;
     }
 
     ret = cowReclaimRegistryDrainCompleted();
     if (ret != 0) {
+        rtfsMutexUnlock(&file_inode->op_lock);
         return ret;
     }
 
     ret = rtfsFileInodeWritebackContentCow(fs_manager, file_inode);
     if (ret != 0) {
+        rtfsMutexUnlock(&file_inode->op_lock);
         return ret;
     }
 
@@ -705,6 +751,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
             old_data_capacity * sizeof(*old_data_lpas)
         );
         if (old_data_lpas == NULL) {
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ENOMEM;
         }
 
@@ -716,6 +763,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
         );
         if (ret != 0) {
             free(old_data_lpas);
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ret;
         }
     }
@@ -723,6 +771,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
     ret = rtfsFileInodeApplyPendingCowRelocations(fs_manager, file_inode);
     if (ret != 0) {
         free(old_data_lpas);
+        rtfsMutexUnlock(&file_inode->op_lock);
         return ret;
     }
 
@@ -730,6 +779,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
         ret = rtfsFileInodeSyncMetadataToDisk(file_inode);
         if (ret != 0) {
             free(old_data_lpas);
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ret;
         }
     }
@@ -737,6 +787,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
     ret = nodeBlockCacheWritebackDirtyContentCow(node_cache);
     if (ret != 0) {
         free(old_data_lpas);
+        rtfsMutexUnlock(&file_inode->op_lock);
         return ret;
     }
 
@@ -746,6 +797,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
         );
         if (node_relocations == NULL) {
             free(old_data_lpas);
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ENOMEM;
         }
 
@@ -758,6 +810,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
         if (ret != 0) {
             free(node_relocations);
             free(old_data_lpas);
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ret;
         }
 
@@ -770,6 +823,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
             if (old_node_lpas == NULL) {
                 free(node_relocations);
                 free(old_data_lpas);
+                rtfsMutexUnlock(&file_inode->op_lock);
                 return ENOMEM;
             }
 
@@ -789,6 +843,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
         free(old_node_lpas);
         free(node_relocations);
         free(old_data_lpas);
+        rtfsMutexUnlock(&file_inode->op_lock);
         return ret;
     }
 
@@ -806,6 +861,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
             free(old_node_lpas);
             free(node_relocations);
             free(old_data_lpas);
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ENOMEM;
         }
 
@@ -816,6 +872,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
             free(old_node_lpas);
             free(node_relocations);
             free(old_data_lpas);
+            rtfsMutexUnlock(&file_inode->op_lock);
             return ret;
         }
         journal_submitted = true;
@@ -861,6 +918,8 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
         journal_submitted ? 1 : 0
     );
 
+    rtfsMutexUnlock(&file_inode->op_lock);
+
     return 0;
 }
 
@@ -891,6 +950,7 @@ static RtfsFileInode *rtfsCreateFileInode(rtfs_ino ino)
     file_inode->disk_inode = NULL;
     file_inode->cache_handle = NULL;
     pageCacheInit(&file_inode->page_cache, RTFS_FILE_PAGE_CACHE_EXPECT_SIZE);
+    rtfsMutexInit(&file_inode->op_lock);
 
     return file_inode;
 }
@@ -905,6 +965,7 @@ static void rtfsDestroyFileInode(RtfsFileInode *file_inode)
     free(file_inode->pending_data_relocations);
     free(file_inode->pending_truncate_old_lpas);
     pageCacheDestroy(&file_inode->page_cache);
+    rtfsMutexDestroy(&file_inode->op_lock);
 
     if (file_inode->cache_handle != NULL) {
         RtfsFileInodeNodeHandle *owned_handle =
@@ -1884,20 +1945,67 @@ static int rtfsFileInodePreparePageForWrite(
     file_system_manager *fs_manager,
     RtfsFileInode *file_inode,
     uint32_t block_index,
+    bool preserve_existing_content,
     PageEntryHandle *out_page
 )
 {
-    /*
-     * 先采用保守策略：写入前保证 page 内容 ready。
-     * 这样局部覆盖旧块时不会丢失未覆盖区域；空洞页会被读路径填零。
-     * 后续如果需要优化完整块覆盖，可以在 write 路径里绕过旧块读取。
-     */
-    return rtfsFileInodePreparePageForRead(
+    PageEntryHandle page_handle;
+    PageEntry *page_entry;
+    uint32_t lpa;
+    int ret;
+
+    if (preserve_existing_content) {
+        return rtfsFileInodePreparePageForRead(
+            fs_manager,
+            file_inode,
+            block_index,
+            out_page
+        );
+    }
+
+    if (file_inode == NULL || out_page == NULL) {
+        return EINVAL;
+    }
+
+    out_page->cache = NULL;
+    out_page->entry = NULL;
+
+    page_handle = pageCacheGet(&file_inode->page_cache, block_index);
+    page_entry = page_handle.entry;
+    if (page_entry == NULL) {
+        return ENOMEM;
+    }
+
+    rtfsMutexLock(pageEntryGetLock(page_entry));
+    if (pageEntryGetState(page_entry) == PAGE_READY) {
+        rtfsMutexUnlock(pageEntryGetLock(page_entry));
+        *out_page = page_handle;
+        return 0;
+    }
+
+    if ((uint64_t)block_index >= SIZE_TO_BLOCK(file_inode->i_size)) {
+        pageEntrySetLpa(page_entry, INVALID_LPA);
+        rtfsMutexUnlock(pageEntryGetLock(page_entry));
+        *out_page = page_handle;
+        return 0;
+    }
+
+    ret = rtfsFileResolveDataLpaByBlockIndex(
         fs_manager,
         file_inode,
         block_index,
-        out_page
+        &lpa
     );
+    if (ret != 0) {
+        rtfsMutexUnlock(pageEntryGetLock(page_entry));
+        pageEntryHandleDestroy(&page_handle);
+        return ret;
+    }
+
+    pageEntrySetLpa(page_entry, lpa);
+    rtfsMutexUnlock(pageEntryGetLock(page_entry));
+    *out_page = page_handle;
+    return 0;
 }
 
 static int rtfsFileInodeAppendPendingDataRelocation(
@@ -2009,6 +2117,10 @@ static int rtfsFileInodeWriteDirtyPagesCow(
     SitOperator sit_op;
     kbtree_t(ktfipdpn) *dirty_tree;
     kbitr_t itr;
+    RtfsFileDirtyPageWriteOp *ops = NULL;
+    size_t op_capacity;
+    size_t op_count = 0;
+    size_t i;
     int ret = 0;
 
     if (fs_manager == NULL || file_inode == NULL) {
@@ -2029,26 +2141,22 @@ static int rtfsFileInodeWriteDirtyPagesCow(
         return EINVAL;
     }
 
+    op_capacity = kb_size(dirty_tree);
+    if (op_capacity == 0) {
+        return 0;
+    }
+
+    ops = (RtfsFileDirtyPageWriteOp *)calloc(op_capacity, sizeof(*ops));
+    if (ops == NULL) {
+        return ENOMEM;
+    }
+
     rtfsMutexLock(&file_inode->page_cache.dirtyPagesLock);
     for (kb_itr_first(ktfipdpn, dirty_tree, &itr);
          kb_itr_valid(&itr);
          kb_itr_next(ktfipdpn, dirty_tree, &itr)) {
         DirtyPagesNode *dirty_node = &kb_itr_key(DirtyPagesNode, &itr);
-        PageEntry *page_entry;
-        BlockBuffer *page_buffer;
-        uint32_t block_index;
-        uint32_t old_lpa;
-        uint32_t new_lpa;
-
-        block_index = dirty_node->blkoff;
-
-        rtfsMutexLock(&file_inode->page_cache.cacheLock);
-        page_entry = (PageEntry *)genericCacheManagerGet(
-            &file_inode->page_cache.cacheManager,
-            block_index,
-            false
-        );
-        rtfsMutexUnlock(&file_inode->page_cache.cacheLock);
+        PageEntry *page_entry = dirty_node->handle.entry;
 
         if (page_entry == NULL) {
             continue;
@@ -2065,44 +2173,108 @@ static int rtfsFileInodeWriteDirtyPagesCow(
             break;
         }
 
-        old_lpa = pageEntryGetLpa(page_entry);
-        page_buffer = pageEntryGetBuffer(page_entry);
-
-        new_lpa = superManagerAllocDataLpa(sp_manager);
-        if (new_lpa == INVALID_LPA) {
+        ops[op_count].page_entry = page_entry;
+        ops[op_count].block_index = dirty_node->blkoff;
+        ops[op_count].old_lpa = pageEntryGetLpa(page_entry);
+        ops[op_count].new_lpa = superManagerAllocDataLpa(sp_manager);
+        if (ops[op_count].new_lpa == INVALID_LPA) {
             rtfsMutexUnlock(pageEntryGetLock(page_entry));
             ret = ENOSPC;
             break;
         }
-
-        if (g_rtfs_file_inode_write_block_hook != NULL) {
-            ret = g_rtfs_file_inode_write_block_hook(
-                dev,
-                new_lpa,
-                blockBufferGetPtr(page_buffer)
-            );
-        } else {
-            ret = blockBufferWriteToLpaSync(page_buffer, dev, new_lpa);
-        }
-
+        ++op_count;
         rtfsMutexUnlock(pageEntryGetLock(page_entry));
-        if (ret != 0) {
-            sitInvalidateLpa(&sit_op, new_lpa);
-            break;
-        }
-
-        ret = rtfsFileInodeAppendPendingDataRelocation(
-            file_inode,
-            block_index,
-            old_lpa,
-            new_lpa
-        );
-        if (ret != 0) {
-            sitInvalidateLpa(&sit_op, new_lpa);
-            break;
-        }
     }
     rtfsMutexUnlock(&file_inode->page_cache.dirtyPagesLock);
+
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    if (g_rtfs_file_inode_write_block_hook != NULL) {
+        for (i = 0; i < op_count; ++i) {
+            ret = g_rtfs_file_inode_write_block_hook(
+                dev,
+                ops[i].new_lpa,
+                blockBufferGetPtr(pageEntryGetBuffer(ops[i].page_entry))
+            );
+            if (ret != 0) {
+                goto cleanup;
+            }
+        }
+    } else {
+        size_t max_batch_blocks = RTFS_FILE_WRITEBACK_BATCH_PAGES;
+        char *batch_buffer;
+
+        batch_buffer = (char *)comm_alloc_dma_mem(
+            max_batch_blocks * BLOCK_BUFFER_SIZE
+        );
+        if (batch_buffer == NULL) {
+            ret = ENOMEM;
+            goto cleanup;
+        }
+
+        for (i = 0; i < op_count;) {
+            size_t batch_blocks = 1;
+            size_t j;
+
+            while (i + batch_blocks < op_count &&
+                   batch_blocks < max_batch_blocks &&
+                   ops[i + batch_blocks].block_index ==
+                       ops[i].block_index + batch_blocks &&
+                   ops[i + batch_blocks].new_lpa ==
+                       ops[i].new_lpa + batch_blocks) {
+                ++batch_blocks;
+            }
+
+            for (j = 0; j < batch_blocks; ++j) {
+                memcpy(
+                    batch_buffer + j * BLOCK_BUFFER_SIZE,
+                    blockBufferGetPtr(
+                        pageEntryGetBuffer(ops[i + j].page_entry)
+                    ),
+                    BLOCK_BUFFER_SIZE
+                );
+            }
+
+            ret = comm_submit_sync_rw_request(
+                dev,
+                batch_buffer,
+                LPA_TO_LBA(ops[i].new_lpa),
+                (uint32_t)(batch_blocks * LBA_PER_LPA),
+                COMM_IO_WRITE
+            );
+            if (ret != 0) {
+                comm_free_dma_mem(batch_buffer);
+                goto cleanup;
+            }
+
+            i += batch_blocks;
+        }
+
+        comm_free_dma_mem(batch_buffer);
+    }
+
+    for (i = 0; i < op_count; ++i) {
+        ret = rtfsFileInodeAppendPendingDataRelocation(
+            file_inode,
+            ops[i].block_index,
+            ops[i].old_lpa,
+            ops[i].new_lpa
+        );
+        if (ret != 0) {
+            goto cleanup;
+        }
+    }
+
+cleanup:
+    if (ret != 0) {
+        for (i = 0; i < op_count; ++i) {
+            sitInvalidateLpa(&sit_op, ops[i].new_lpa);
+        }
+    }
+
+    free(ops);
 
     return ret;
 }

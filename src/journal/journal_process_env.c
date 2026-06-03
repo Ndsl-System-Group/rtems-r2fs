@@ -53,7 +53,6 @@ void journalProcessEnvInit(JournalProcessEnv *this, struct comm_dev *dev, uint64
 
     this->commitQueueHead = NULL;
     this->exitReq = false;
-
     atomic_init(&this->txIdToAlloc, 1);
 
     JournalProcessThreadArgs *args = malloc(sizeof(*args));

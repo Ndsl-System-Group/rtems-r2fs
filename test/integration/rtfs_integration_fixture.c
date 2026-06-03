@@ -102,33 +102,45 @@ static int rtfsIntegrationTestSyncRwHook(
 {
     RtfsIntegrationFixtureState *fixture = g_rtfs_integration_fixture_state;
     uint32_t lpa;
+    uint32_t block_count;
+    uint32_t i;
 
     (void)dev;
 
-    if (fixture == NULL || buffer == NULL || lbaCount != LBA_PER_LPA || (lba % LBA_PER_LPA) != 0)
+    if (fixture == NULL || buffer == NULL ||
+        lbaCount == 0 || (lba % LBA_PER_LPA) != 0 ||
+        (lbaCount % LBA_PER_LPA) != 0)
     {
         return EINVAL;
     }
 
     lpa = (uint32_t)(lba / LBA_PER_LPA);
-    if ((uint64_t)lpa >= fixture->store.lpa_count)
+    block_count = lbaCount / LBA_PER_LPA;
+    if ((uint64_t)lpa + block_count > fixture->store.lpa_count)
     {
         return EINVAL;
     }
 
-    if (lpa == fixture->store.fail_lpa)
-    {
-        return EIO;
-    }
-
     if (dir == COMM_IO_READ)
     {
-        if (lpa == fixture->store.fail_read_lpa)
+        for (i = 0; i < block_count; ++i)
         {
-            return EIO;
+            if (lpa + i == fixture->store.fail_lpa ||
+                lpa + i == fixture->store.fail_read_lpa)
+            {
+                return EIO;
+            }
         }
-        fixture->store.sync_read_count++;
-        memcpy(buffer, rtfsIntegrationBlockPtr(&fixture->store, lpa), RTFS_ITEST_BLOCK_SIZE);
+
+        fixture->store.sync_read_count += block_count;
+        for (i = 0; i < block_count; ++i)
+        {
+            memcpy(
+                (char *)buffer + (size_t)i * RTFS_ITEST_BLOCK_SIZE,
+                rtfsIntegrationBlockPtr(&fixture->store, lpa + i),
+                RTFS_ITEST_BLOCK_SIZE
+            );
+        }
         return 0;
     }
 
@@ -137,47 +149,68 @@ static int rtfsIntegrationTestSyncRwHook(
         return EINVAL;
     }
 
-    if (lpa == fixture->store.fail_write_lpa)
+    for (i = 0; i < block_count; ++i)
     {
-        return EIO;
-    }
+        uint32_t cur_lpa = lpa + i;
 
-    if (fixture->store.fail_next_write_countdown == 1u)
-    {
-        fixture->store.fail_next_write_countdown = 0;
-        return EIO;
-    }
-    if (fixture->store.fail_next_write_countdown > 1u)
-    {
-        fixture->store.fail_next_write_countdown--;
-    }
-
-    if (!rtfsIntegrationIsMetaLpa(fixture, lpa))
-    {
-        if (fixture->store.fail_next_data_write_countdown == 1u)
+        if (cur_lpa == fixture->store.fail_lpa ||
+            cur_lpa == fixture->store.fail_write_lpa)
         {
-            fixture->store.fail_next_data_write_countdown = 0;
             return EIO;
         }
-        if (fixture->store.fail_next_data_write_countdown > 1u)
-        {
-            fixture->store.fail_next_data_write_countdown--;
-        }
-    }
 
-    if (fixture->store.stop_after_meta_writes != 0 &&
-        rtfsIntegrationIsMetaLpa(fixture, lpa))
-    {
-        fixture->store.meta_write_count++;
-        if (fixture->store.meta_write_count > fixture->store.stop_after_meta_writes)
+        if (fixture->store.fail_next_write_countdown == 1u)
         {
-            fixture->store.meta_write_limit_hit = true;
+            fixture->store.fail_next_write_countdown = 0;
             return EIO;
         }
+        if (fixture->store.fail_next_write_countdown > 1u)
+        {
+            fixture->store.fail_next_write_countdown--;
+        }
+
+        if (!rtfsIntegrationIsMetaLpa(fixture, cur_lpa))
+        {
+            if (fixture->store.fail_next_data_write_countdown == 1u)
+            {
+                fixture->store.fail_next_data_write_countdown = 0;
+                return EIO;
+            }
+            if (fixture->store.fail_next_data_write_countdown > 1u)
+            {
+                fixture->store.fail_next_data_write_countdown--;
+            }
+        }
+
+        if (fixture->store.stop_after_meta_writes != 0 &&
+            rtfsIntegrationIsMetaLpa(fixture, cur_lpa))
+        {
+            if (fixture->store.meta_write_count + 1u >
+                fixture->store.stop_after_meta_writes)
+            {
+                fixture->store.meta_write_limit_hit = true;
+                return EIO;
+            }
+        }
     }
 
-    fixture->store.sync_write_count++;
-    memcpy(rtfsIntegrationBlockPtr(&fixture->store, lpa), buffer, RTFS_ITEST_BLOCK_SIZE);
+    fixture->store.sync_write_count += block_count;
+    for (i = 0; i < block_count; ++i)
+    {
+        uint32_t cur_lpa = lpa + i;
+
+        if (fixture->store.stop_after_meta_writes != 0 &&
+            rtfsIntegrationIsMetaLpa(fixture, cur_lpa))
+        {
+            fixture->store.meta_write_count++;
+        }
+
+        memcpy(
+            rtfsIntegrationBlockPtr(&fixture->store, cur_lpa),
+            (const char *)buffer + (size_t)i * RTFS_ITEST_BLOCK_SIZE,
+            RTFS_ITEST_BLOCK_SIZE
+        );
+    }
     return 0;
 }
 
@@ -196,7 +229,7 @@ static int rtfsIntegrationTestAsyncRwHook(
     ret = rtfsIntegrationTestSyncRwHook(dev, buffer, lba, lbaCount, dir);
     if (ret == 0 && fixture != NULL && dir == COMM_IO_WRITE)
     {
-        fixture->store.async_write_count++;
+        fixture->store.async_write_count += lbaCount / LBA_PER_LPA;
     }
 
     if (cbFunc != NULL)

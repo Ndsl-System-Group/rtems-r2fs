@@ -66,6 +66,7 @@ typedef struct JournalProcessEnv
      * @brief 下一个待分配的事务号。
      */
     atomic_uint_fast64_t txIdToAlloc;
+
 } JournalProcessEnv;
 
 
