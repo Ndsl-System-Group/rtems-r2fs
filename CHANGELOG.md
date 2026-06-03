@@ -73,7 +73,7 @@
 
 对应总文档：
 
-- [COW 元数据日志一致性总设计](/home/r2fs/codex/COW元数据日志一致性总设计.md)
+- [COW 元数据日志一致性总设计](/home/rtfs/codex/COW元数据日志一致性总设计.md)
 
 ## 3. 为完成主线而侵入过的其他模块
 
@@ -197,8 +197,8 @@
 
 所以当前只作为后续跨模块问题记录在：
 
-- [super_manager 组件说明](/home/r2fs/codex/7super_manager/组件说明.md)
-- [COW 元数据日志一致性总设计](/home/r2fs/codex/COW元数据日志一致性总设计.md)
+- [super_manager 组件说明](/home/rtfs/codex/7super_manager/组件说明.md)
+- [COW 元数据日志一致性总设计](/home/rtfs/codex/COW元数据日志一致性总设计.md)
 
 ### 5.2 非 fs_manager 范围的死代码清理
 

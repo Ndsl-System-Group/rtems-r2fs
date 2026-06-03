@@ -1,4 +1,4 @@
-#include "integration/r2fs_integration_fixture.h"
+#include "integration/rtfs_integration_fixture.h"
 #include "rtfs_test.h"
 
 #include "cache/block_buffer.h"
@@ -11,15 +11,14 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 
-#define R2FS_ITEST_META_PARENT "/meta"
-#define R2FS_ITEST_META_FILE "/meta/a.txt"
+#define RTFS_ITEST_META_PARENT "/meta"
+#define RTFS_ITEST_META_FILE "/meta/a.txt"
 
-static const unsigned char *r2fsIntegrationRawBlockPtr(
-    const R2fsIntegrationFixture *fixture,
-    uint32_t lpa
-)
+static const unsigned char *rtfsIntegrationRawBlockPtr(
+    const RtfsIntegrationFixture *fixture,
+    uint32_t lpa)
 {
-    const R2fsIntegrationBlockStore *store = r2fsIntegrationFixtureBlockStore(fixture);
+    const RtfsIntegrationBlockStore *store = rtfsIntegrationFixtureBlockStore(fixture);
 
     TEST_ASSERT_NOT_NULL(fixture);
     TEST_ASSERT_NOT_NULL(store);
@@ -28,66 +27,59 @@ static const unsigned char *r2fsIntegrationRawBlockPtr(
     return store->bytes + (uint64_t)lpa * BLOCK_BUFFER_SIZE;
 }
 
-static const struct RtfsSuperBlock *r2fsIntegrationRawSuperBlock(
-    const R2fsIntegrationFixture *fixture
-)
+static const struct RtfsSuperBlock *rtfsIntegrationRawSuperBlock(
+    const RtfsIntegrationFixture *fixture)
 {
-    return (const struct RtfsSuperBlock *)r2fsIntegrationRawBlockPtr(fixture, 0);
+    return (const struct RtfsSuperBlock *)rtfsIntegrationRawBlockPtr(fixture, 0);
 }
 
-static struct RtfsNatEntry r2fsIntegrationReadNatEntry(
-    const R2fsIntegrationFixture *fixture,
-    uint32_t nid
-)
+static struct RtfsNatEntry rtfsIntegrationReadNatEntry(
+    const RtfsIntegrationFixture *fixture,
+    uint32_t nid)
 {
     const struct RtfsSuperBlock *super_block;
     const struct RtfsNatBlock *nat_block;
     uint32_t nat_lpa;
     uint32_t nat_idx;
 
-    super_block = r2fsIntegrationRawSuperBlock(fixture);
+    super_block = rtfsIntegrationRawSuperBlock(fixture);
     nat_lpa = super_block->nat_blkaddr + nid / NAT_ENTRY_PER_BLOCK;
     nat_idx = nid % NAT_ENTRY_PER_BLOCK;
-    nat_block = (const struct RtfsNatBlock *)r2fsIntegrationRawBlockPtr(
+    nat_block = (const struct RtfsNatBlock *)rtfsIntegrationRawBlockPtr(
         fixture,
-        nat_lpa
-    );
+        nat_lpa);
     return nat_block->entries[nat_idx];
 }
 
-static const struct RtfsNode *r2fsIntegrationReadNodeAtLpa(
-    const R2fsIntegrationFixture *fixture,
-    uint32_t lpa
-)
+static const struct RtfsNode *rtfsIntegrationReadNodeAtLpa(
+    const RtfsIntegrationFixture *fixture,
+    uint32_t lpa)
 {
     TEST_ASSERT_NOT_EQUAL_UINT32(INVALID_LPA, lpa);
-    return (const struct RtfsNode *)r2fsIntegrationRawBlockPtr(fixture, lpa);
+    return (const struct RtfsNode *)rtfsIntegrationRawBlockPtr(fixture, lpa);
 }
 
-static struct RtfsSummary r2fsIntegrationReadSrmapEntry(
-    const R2fsIntegrationFixture *fixture,
-    uint32_t lpa
-)
+static struct RtfsSummary rtfsIntegrationReadSrmapEntry(
+    const RtfsIntegrationFixture *fixture,
+    uint32_t lpa)
 {
     const struct RtfsSuperBlock *super_block;
     const struct RtfsSummaryBlock *summary_block;
     uint32_t srmap_lpa;
     uint32_t srmap_idx;
 
-    super_block = r2fsIntegrationRawSuperBlock(fixture);
+    super_block = rtfsIntegrationRawSuperBlock(fixture);
     srmap_lpa = super_block->srmap_blkaddr + lpa / ENTRIES_IN_SUM;
     srmap_idx = lpa % ENTRIES_IN_SUM;
-    summary_block = (const struct RtfsSummaryBlock *)r2fsIntegrationRawBlockPtr(
+    summary_block = (const struct RtfsSummaryBlock *)rtfsIntegrationRawBlockPtr(
         fixture,
-        srmap_lpa
-    );
+        srmap_lpa);
     return summary_block->entries[srmap_idx];
 }
 
-static bool r2fsIntegrationIsSitBitValid(
-    const R2fsIntegrationFixture *fixture,
-    uint32_t lpa
-)
+static bool rtfsIntegrationIsSitBitValid(
+    const RtfsIntegrationFixture *fixture,
+    uint32_t lpa)
 {
     const struct RtfsSuperBlock *super_block;
     const struct RtfsSitBlock *sit_block;
@@ -100,7 +92,7 @@ static bool r2fsIntegrationIsSitBitValid(
 
     TEST_ASSERT_NOT_EQUAL_UINT32(INVALID_LPA, lpa);
 
-    super_block = r2fsIntegrationRawSuperBlock(fixture);
+    super_block = rtfsIntegrationRawSuperBlock(fixture);
     seg_id = (lpa - super_block->segment0_blkaddr) / BLOCK_PER_SEGMENT;
     seg_off = (lpa - super_block->segment0_blkaddr) % BLOCK_PER_SEGMENT;
     sit_lpa = super_block->sit_blkaddr + seg_id / SIT_ENTRY_PER_BLOCK;
@@ -108,44 +100,44 @@ static bool r2fsIntegrationIsSitBitValid(
     byte_idx = seg_off / 8u;
     bit_off = seg_off % 8u;
 
-    sit_block = (const struct RtfsSitBlock *)r2fsIntegrationRawBlockPtr(
+    sit_block = (const struct RtfsSitBlock *)rtfsIntegrationRawBlockPtr(
         fixture,
-        sit_lpa
-    );
+        sit_lpa);
     return (sit_block->entries[sit_idx].valid_map[byte_idx] & (1u << bit_off)) != 0u;
 }
 
-static uint32_t r2fsIntegrationReadFirstDataLpaForPath(
-    R2fsIntegrationFixture *fixture,
+static uint32_t rtfsIntegrationReadFirstDataLpaForPath(
+    RtfsIntegrationFixture *fixture,
     const char *path,
     uint32_t *out_ino,
-    uint32_t *out_inode_lpa
-)
+    uint32_t *out_inode_lpa)
 {
     struct stat st;
     struct RtfsNatEntry nat_entry;
     const struct RtfsNode *inode_node;
 
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationStatPath(fixture, path, &st));
-    nat_entry = r2fsIntegrationReadNatEntry(fixture, (uint32_t)st.st_ino);
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationStatPath(fixture, path, &st));
+    nat_entry = rtfsIntegrationReadNatEntry(fixture, (uint32_t)st.st_ino);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)st.st_ino, nat_entry.ino);
     TEST_ASSERT_NOT_EQUAL_UINT32(INVALID_LPA, nat_entry.block_addr);
 
-    inode_node = r2fsIntegrationReadNodeAtLpa(fixture, nat_entry.block_addr);
+    inode_node = rtfsIntegrationReadNodeAtLpa(fixture, nat_entry.block_addr);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)st.st_ino, inode_node->footer.nid);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)st.st_ino, inode_node->footer.ino);
     TEST_ASSERT_TRUE(S_ISREG(st.st_mode));
 
-    if (out_ino != NULL) {
+    if (out_ino != NULL)
+    {
         *out_ino = (uint32_t)st.st_ino;
     }
-    if (out_inode_lpa != NULL) {
+    if (out_inode_lpa != NULL)
+    {
         *out_inode_lpa = nat_entry.block_addr;
     }
     return inode_node->i.i_addr[0];
 }
 
-static void r2fsIntegrationWaitForCommittedJournal(void)
+static void rtfsIntegrationWaitForCommittedJournal(void)
 {
     JournalProcessEnv *env = journalProcessEnvGetInstance();
     uint64_t next_tx_id;
@@ -159,7 +151,7 @@ static void r2fsIntegrationWaitForCommittedJournal(void)
 
 RTFS_TEST(IntegrationMetadata_StatvfsCreateRemoveReclaim_ShouldTrackFreeFileSlots)
 {
-    R2fsIntegrationFixture fixture;
+    RtfsIntegrationFixture fixture;
     struct statvfs before_stvfs;
     struct statvfs after_create_stvfs;
     struct statvfs after_unlink_stvfs;
@@ -176,52 +168,46 @@ RTFS_TEST(IntegrationMetadata_StatvfsCreateRemoveReclaim_ShouldTrackFreeFileSlot
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationFixtureFormatAndMount(&fixture, R2FS_ITEST_DISK_LPA_COUNT)
-    );
+        rtfsIntegrationFixtureFormatAndMount(&fixture, RTFS_ITEST_DISK_LPA_COUNT));
 
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationStatvfsRoot(&fixture, &before_stvfs));
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationMkdir(&fixture, R2FS_ITEST_META_PARENT, 0755));
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationCreateFile(&fixture, R2FS_ITEST_META_FILE, 0644));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationStatvfsRoot(&fixture, &before_stvfs));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationMkdir(&fixture, RTFS_ITEST_META_PARENT, 0755));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationCreateFile(&fixture, RTFS_ITEST_META_FILE, 0644));
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationWriteFile(
+        rtfsIntegrationWriteFile(
             &fixture,
-            R2FS_ITEST_META_FILE,
+            RTFS_ITEST_META_FILE,
             payload,
-            sizeof(payload)
-        )
-    );
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationStatPath(&fixture, R2FS_ITEST_META_FILE, &st));
+            sizeof(payload)));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationStatPath(&fixture, RTFS_ITEST_META_FILE, &st));
     TEST_ASSERT_TRUE(S_ISREG(st.st_mode));
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationStatvfsRoot(&fixture, &after_create_stvfs));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationStatvfsRoot(&fixture, &after_create_stvfs));
 
     TEST_ASSERT_EQUAL_UINT32(
         (uint32_t)(before_stvfs.f_ffree - 2u),
-        (uint32_t)after_create_stvfs.f_ffree
-    );
+        (uint32_t)after_create_stvfs.f_ffree);
 
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationRemove(&fixture, R2FS_ITEST_META_FILE));
-    TEST_ASSERT_EQUAL(ENOENT, r2fsIntegrationStatPath(&fixture, R2FS_ITEST_META_FILE, &st));
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationStatvfsRoot(&fixture, &after_unlink_stvfs));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationRemove(&fixture, RTFS_ITEST_META_FILE));
+    TEST_ASSERT_EQUAL(ENOENT, rtfsIntegrationStatPath(&fixture, RTFS_ITEST_META_FILE, &st));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationStatvfsRoot(&fixture, &after_unlink_stvfs));
     TEST_ASSERT_EQUAL_UINT32(
         (uint32_t)after_create_stvfs.f_ffree,
-        (uint32_t)after_unlink_stvfs.f_ffree
-    );
+        (uint32_t)after_unlink_stvfs.f_ffree);
 
-    r2fsIntegrationWaitForCommittedJournal();
+    rtfsIntegrationWaitForCommittedJournal();
     TEST_ASSERT_EQUAL(0, cowReclaimRegistryDrainCompleted());
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationStatvfsRoot(&fixture, &after_reclaim_stvfs));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationStatvfsRoot(&fixture, &after_reclaim_stvfs));
     TEST_ASSERT_EQUAL_UINT32(
         (uint32_t)(after_unlink_stvfs.f_ffree + 1u),
-        (uint32_t)after_reclaim_stvfs.f_ffree
-    );
+        (uint32_t)after_reclaim_stvfs.f_ffree);
 
-    r2fsIntegrationFixtureDestroy(&fixture);
+    rtfsIntegrationFixtureDestroy(&fixture);
 }
 
 RTFS_TEST(IntegrationMetadata_SingleWriteNatSitSrmap_ShouldStayConsistent)
 {
-    R2fsIntegrationFixture fixture;
+    RtfsIntegrationFixture fixture;
     uint32_t ino = 0;
     uint32_t inode_lpa = INVALID_LPA;
     uint32_t data_lpa;
@@ -239,46 +225,42 @@ RTFS_TEST(IntegrationMetadata_SingleWriteNatSitSrmap_ShouldStayConsistent)
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationFixtureFormatAndMount(&fixture, R2FS_ITEST_DISK_LPA_COUNT)
-    );
+        rtfsIntegrationFixtureFormatAndMount(&fixture, RTFS_ITEST_DISK_LPA_COUNT));
 
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationMkdir(&fixture, R2FS_ITEST_META_PARENT, 0755));
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationCreateFile(&fixture, R2FS_ITEST_META_FILE, 0644));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationMkdir(&fixture, RTFS_ITEST_META_PARENT, 0755));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationCreateFile(&fixture, RTFS_ITEST_META_FILE, 0644));
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationWriteFile(
+        rtfsIntegrationWriteFile(
             &fixture,
-            R2FS_ITEST_META_FILE,
+            RTFS_ITEST_META_FILE,
             payload,
-            sizeof(payload)
-        )
-    );
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationFlushMetadataToStore(&fixture));
+            sizeof(payload)));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationFlushMetadataToStore(&fixture));
 
-    data_lpa = r2fsIntegrationReadFirstDataLpaForPath(
+    data_lpa = rtfsIntegrationReadFirstDataLpaForPath(
         &fixture,
-        R2FS_ITEST_META_FILE,
+        RTFS_ITEST_META_FILE,
         &ino,
-        &inode_lpa
-    );
+        &inode_lpa);
     TEST_ASSERT_NOT_EQUAL_UINT32(INVALID_LPA, data_lpa);
 
-    TEST_ASSERT_TRUE(r2fsIntegrationIsSitBitValid(&fixture, inode_lpa));
-    TEST_ASSERT_TRUE(r2fsIntegrationIsSitBitValid(&fixture, data_lpa));
+    TEST_ASSERT_TRUE(rtfsIntegrationIsSitBitValid(&fixture, inode_lpa));
+    TEST_ASSERT_TRUE(rtfsIntegrationIsSitBitValid(&fixture, data_lpa));
 
-    node_srmap = r2fsIntegrationReadSrmapEntry(&fixture, inode_lpa);
+    node_srmap = rtfsIntegrationReadSrmapEntry(&fixture, inode_lpa);
     TEST_ASSERT_EQUAL_UINT32(ino, node_srmap.nid);
 
-    data_srmap = r2fsIntegrationReadSrmapEntry(&fixture, data_lpa);
+    data_srmap = rtfsIntegrationReadSrmapEntry(&fixture, data_lpa);
     TEST_ASSERT_EQUAL_UINT32(ino, data_srmap.nid);
     TEST_ASSERT_EQUAL_UINT32(0u, data_srmap.ofs_in_node);
 
-    r2fsIntegrationFixtureDestroy(&fixture);
+    rtfsIntegrationFixtureDestroy(&fixture);
 }
 
 RTFS_TEST(IntegrationMetadata_CowOverwriteBeforeReclaim_ShouldKeepOldLpaValidUntilTxComplete)
 {
-    R2fsIntegrationFixture fixture;
+    RtfsIntegrationFixture fixture;
     uint32_t ino = 0;
     uint32_t old_inode_lpa = INVALID_LPA;
     uint32_t old_data_lpa;
@@ -299,75 +281,65 @@ RTFS_TEST(IntegrationMetadata_CowOverwriteBeforeReclaim_ShouldKeepOldLpaValidUnt
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationFixtureFormatAndMount(&fixture, R2FS_ITEST_DISK_LPA_COUNT)
-    );
+        rtfsIntegrationFixtureFormatAndMount(&fixture, RTFS_ITEST_DISK_LPA_COUNT));
 
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationMkdir(&fixture, R2FS_ITEST_META_PARENT, 0755));
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationCreateFile(&fixture, R2FS_ITEST_META_FILE, 0644));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationMkdir(&fixture, RTFS_ITEST_META_PARENT, 0755));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationCreateFile(&fixture, RTFS_ITEST_META_FILE, 0644));
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationWriteFile(
+        rtfsIntegrationWriteFile(
             &fixture,
-            R2FS_ITEST_META_FILE,
+            RTFS_ITEST_META_FILE,
             initial,
-            sizeof(initial)
-        )
-    );
+            sizeof(initial)));
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationReadCurrentFileMapping(
+        rtfsIntegrationReadCurrentFileMapping(
             &fixture,
-            R2FS_ITEST_META_FILE,
+            RTFS_ITEST_META_FILE,
             &ino,
             &old_inode_lpa,
-            &old_data_lpa
-        )
-    );
+            &old_data_lpa));
     TEST_ASSERT_NOT_EQUAL_UINT32(INVALID_LPA, old_data_lpa);
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationWriteAt(
+        rtfsIntegrationWriteAt(
             &fixture,
-            R2FS_ITEST_META_FILE,
+            RTFS_ITEST_META_FILE,
             0,
             overwrite,
-            sizeof(overwrite)
-        )
-    );
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationFlushMetadataToStore(&fixture));
+            sizeof(overwrite)));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationFlushMetadataToStore(&fixture));
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsIntegrationReadCurrentFileMapping(
+        rtfsIntegrationReadCurrentFileMapping(
             &fixture,
-            R2FS_ITEST_META_FILE,
+            RTFS_ITEST_META_FILE,
             NULL,
             &new_inode_lpa,
-            &new_data_lpa
-        )
-    );
+            &new_data_lpa));
     TEST_ASSERT_NOT_EQUAL_UINT32(old_data_lpa, new_data_lpa);
     TEST_ASSERT_NOT_EQUAL_UINT32(old_inode_lpa, new_inode_lpa);
 
-    TEST_ASSERT_TRUE(r2fsIntegrationIsSitBitValid(&fixture, old_data_lpa));
-    TEST_ASSERT_TRUE(r2fsIntegrationIsSitBitValid(&fixture, old_inode_lpa));
-    TEST_ASSERT_TRUE(r2fsIntegrationIsSitBitValid(&fixture, new_data_lpa));
-    TEST_ASSERT_TRUE(r2fsIntegrationIsSitBitValid(&fixture, new_inode_lpa));
+    TEST_ASSERT_TRUE(rtfsIntegrationIsSitBitValid(&fixture, old_data_lpa));
+    TEST_ASSERT_TRUE(rtfsIntegrationIsSitBitValid(&fixture, old_inode_lpa));
+    TEST_ASSERT_TRUE(rtfsIntegrationIsSitBitValid(&fixture, new_data_lpa));
+    TEST_ASSERT_TRUE(rtfsIntegrationIsSitBitValid(&fixture, new_inode_lpa));
 
-    r2fsIntegrationWaitForCommittedJournal();
+    rtfsIntegrationWaitForCommittedJournal();
     TEST_ASSERT_EQUAL(0, cowReclaimRegistryDrainCompleted());
-    TEST_ASSERT_EQUAL(0, r2fsIntegrationFlushMetadataToStore(&fixture));
+    TEST_ASSERT_EQUAL(0, rtfsIntegrationFlushMetadataToStore(&fixture));
 
-    TEST_ASSERT_FALSE(r2fsIntegrationIsSitBitValid(&fixture, old_data_lpa));
-    TEST_ASSERT_FALSE(r2fsIntegrationIsSitBitValid(&fixture, old_inode_lpa));
-    TEST_ASSERT_TRUE(r2fsIntegrationIsSitBitValid(&fixture, new_data_lpa));
-    TEST_ASSERT_TRUE(r2fsIntegrationIsSitBitValid(&fixture, new_inode_lpa));
+    TEST_ASSERT_FALSE(rtfsIntegrationIsSitBitValid(&fixture, old_data_lpa));
+    TEST_ASSERT_FALSE(rtfsIntegrationIsSitBitValid(&fixture, old_inode_lpa));
+    TEST_ASSERT_TRUE(rtfsIntegrationIsSitBitValid(&fixture, new_data_lpa));
+    TEST_ASSERT_TRUE(rtfsIntegrationIsSitBitValid(&fixture, new_inode_lpa));
     TEST_ASSERT_EQUAL_UINT32(
         ino,
-        r2fsIntegrationReadSrmapEntry(&fixture, new_data_lpa).nid
-    );
+        rtfsIntegrationReadSrmapEntry(&fixture, new_data_lpa).nid);
 
-    r2fsIntegrationFixtureDestroy(&fixture);
+    rtfsIntegrationFixtureDestroy(&fixture);
 }

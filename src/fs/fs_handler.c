@@ -25,33 +25,32 @@
 #include "utils/rtfs_log.h"
 
 
-static RtfsRuntimeInodeView *r2fsGetNodeView(
-    const rtems_filesystem_location_info_t *loc
-)
+static RtfsRuntimeInodeView *rtfsGetNodeView(
+    const rtems_filesystem_location_info_t *loc)
 {
     return loc != NULL ? (RtfsRuntimeInodeView *)loc->node_access : NULL;
 }
 
-static const char *r2fsGetNodeName(
-    const rtems_filesystem_location_info_t *loc
-)
+static const char *rtfsGetNodeName(
+    const rtems_filesystem_location_info_t *loc)
 {
     return loc != NULL ? (const char *)loc->node_access_2 : NULL;
 }
 
-static char *r2fsDupName(
+static char *rtfsDupName(
     const char *name,
-    size_t namelen
-)
+    size_t namelen)
 {
     char *copy;
 
-    if (name == NULL) {
+    if (name == NULL)
+    {
         return NULL;
     }
 
     copy = malloc(namelen + 1);
-    if (copy == NULL) {
+    if (copy == NULL)
+    {
         return NULL;
     }
 
@@ -60,11 +59,11 @@ static char *r2fsDupName(
     return copy;
 }
 
-static void r2fsClearLocationName(
-    rtems_filesystem_location_info_t *loc
-)
+static void rtfsClearLocationName(
+    rtems_filesystem_location_info_t *loc)
 {
-    if (loc == NULL) {
+    if (loc == NULL)
+    {
         return;
     }
 
@@ -72,26 +71,28 @@ static void r2fsClearLocationName(
     loc->node_access_2 = NULL;
 }
 
-static int r2fsReplaceLocationName(
+static int rtfsReplaceLocationName(
     rtems_filesystem_location_info_t *loc,
     const char *name,
-    size_t namelen
-)
+    size_t namelen)
 {
     char *replacement;
 
-    if (loc == NULL) {
+    if (loc == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (name == NULL) {
-        r2fsClearLocationName(loc);
+    if (name == NULL)
+    {
+        rtfsClearLocationName(loc);
         return 0;
     }
 
-    replacement = r2fsDupName(name, namelen);
-    if (replacement == NULL) {
+    replacement = rtfsDupName(name, namelen);
+    if (replacement == NULL)
+    {
         errno = ENOMEM;
         return -1;
     }
@@ -101,71 +102,60 @@ static int r2fsReplaceLocationName(
     return 0;
 }
 
-static int r2fsResolveTargetInodeHandle(
+static int rtfsResolveTargetInodeHandle(
     const rtems_filesystem_location_info_t *loc,
     RtfsRuntimeInodeView **out_view,
     file_system_manager **out_fs_manager,
     NodeBlockCacheEntryHandle *out_handle,
-    struct RtfsNode **out_node
-);
+    struct RtfsNode **out_node);
 
-static uint64_t r2fsGetTimestampTick(void);
-static void r2fsTouchInodeTimes(struct RtfsInode *inode, uint64_t now);
-static int r2fsAdjustParentDirectoryNlink(
+static uint64_t rtfsGetTimestampTick(void);
+static void rtfsTouchInodeTimes(struct RtfsInode *inode, uint64_t now);
+static int rtfsAdjustParentDirectoryNlink(
     const rtems_filesystem_location_info_t *parentloc,
-    int delta
-);
-static int r2fsAdjustParentDirectoryNlinkWithHandle(
+    int delta);
+static int rtfsAdjustParentDirectoryNlinkWithHandle(
     NodeBlockCacheEntryHandle *parent_handle,
     RtfsRuntimeInodeView *parent_view,
-    int delta
-);
-static int r2fsTargetIsRemovableEmptyObject(
+    int delta);
+static int rtfsTargetIsRemovableEmptyObject(
     const RtfsRuntimeInodeView *target_view,
-    struct RtfsNode *target_node
-);
-static int r2fsMarkTargetInodeUnlinked(
+    struct RtfsNode *target_node);
+static int rtfsMarkTargetInodeUnlinked(
     const RtfsRuntimeInodeView *target_view,
     NodeBlockCacheEntryHandle *target_handle,
-    struct RtfsNode *target_node
-);
-static void r2fsDestroyHandleArray(
+    struct RtfsNode *target_node);
+static void rtfsDestroyHandleArray(
     NodeBlockCacheEntryHandle *handles,
-    size_t count
-);
-static void r2fsDeleteAndDestroyHandleArray(
+    size_t count);
+static void rtfsDeleteAndDestroyHandleArray(
     NodeBlockCacheEntryHandle *handles,
-    size_t count
-);
-static int r2fsCollectTargetReclaimPlan(
+    size_t count);
+static int rtfsCollectTargetReclaimPlan(
     file_system_manager *fs_manager,
     const RtfsRuntimeInodeView *target_view,
     const struct RtfsNode *target_node,
     uint32_t **out_data_lpas,
     size_t *out_data_count,
     NodeBlockCacheEntryHandle **out_deleted_handles,
-    size_t *out_deleted_handle_count
-);
-static int r2fsAppendUniqueLpasToArray(
+    size_t *out_deleted_handle_count);
+static int rtfsAppendUniqueLpasToArray(
     const uint32_t *src,
     size_t src_count,
     uint32_t **dst,
     size_t *dst_count,
-    size_t *dst_capacity
-);
-static int r2fsCollectDirPendingOldDataLpasAppend(
+    size_t *dst_capacity);
+static int rtfsCollectDirPendingOldDataLpasAppend(
     RtfsDirInode *dir_inode,
     uint32_t **dst,
     size_t *dst_count,
-    size_t *dst_capacity
-);
-static int r2fsCommitDirtyDirsAndNodesWithTxId(
+    size_t *dst_capacity);
+static int rtfsCommitDirtyDirsAndNodesWithTxId(
     file_system_manager *fs_manager,
     RtfsDirInode *first_dir,
     RtfsDirInode *second_dir,
-    uint64_t *out_tx_id
-);
-static int r2fsRenameAcrossParents(
+    uint64_t *out_tx_id);
+static int rtfsRenameAcrossParents(
     const rtems_filesystem_location_info_t *oldparentloc,
     const rtems_filesystem_location_info_t *oldloc,
     const rtems_filesystem_location_info_t *newparentloc,
@@ -173,59 +163,55 @@ static int r2fsRenameAcrossParents(
     const char *new_name,
     size_t new_namelen,
     const RtfsRuntimeInodeView *source_view,
-    const RtfsDirLookupResult *existing_target
-);
-static int r2fsSubmitJournalContainer(
+    const RtfsDirLookupResult *existing_target);
+static int rtfsSubmitJournalContainer(
     JournalContainer *journal,
-    uint64_t *out_tx_id
-);
-static JournalContainer *r2fsCloneJournalContainer(
-    const JournalContainer *src
-);
-static fsfilcnt_t r2fsStatvfsGetTotalFileSlots(
-    const RtfsSuperBlock *super_block
-);
-static fsfilcnt_t r2fsStatvfsCountFreeNids(
+    uint64_t *out_tx_id);
+static JournalContainer *rtfsCloneJournalContainer(
+    const JournalContainer *src);
+static fsfilcnt_t rtfsStatvfsGetTotalFileSlots(
+    const RtfsSuperBlock *super_block);
+static fsfilcnt_t rtfsStatvfsCountFreeNids(
     file_system_manager *fs_manager,
-    const RtfsSuperBlock *super_block
-);
+    const RtfsSuperBlock *super_block);
 
-static rtfs_ino r2fsGetRootIno(file_system_manager *fs_manager)
+static rtfs_ino rtfsGetRootIno(file_system_manager *fs_manager)
 {
     RtfsSuperBlock *super_block = fileSystemManagerGetSuperBlkMem(fs_manager);
 
-    if (super_block != NULL && super_block->root_ino != 0) {
+    if (super_block != NULL && super_block->root_ino != 0)
+    {
         return super_block->root_ino;
     }
 
     return 1;
 }
 
-static fsfilcnt_t r2fsStatvfsGetTotalFileSlots(
-    const RtfsSuperBlock *super_block
-)
+static fsfilcnt_t rtfsStatvfsGetTotalFileSlots(
+    const RtfsSuperBlock *super_block)
 {
     fsfilcnt_t total;
 
-    if (super_block == NULL || super_block->segment_count_nat == 0) {
+    if (super_block == NULL || super_block->segment_count_nat == 0)
+    {
         return 0;
     }
 
     total = (fsfilcnt_t)super_block->segment_count_nat *
-        (fsfilcnt_t)BLOCK_PER_SEGMENT *
-        (fsfilcnt_t)NAT_ENTRY_PER_BLOCK;
+            (fsfilcnt_t)BLOCK_PER_SEGMENT *
+            (fsfilcnt_t)NAT_ENTRY_PER_BLOCK;
 
-    if (total > 0) {
+    if (total > 0)
+    {
         total -= 1; /* nid 0 is INVALID_NID, not allocatable */
     }
 
     return total;
 }
 
-static fsfilcnt_t r2fsStatvfsCountFreeNids(
+static fsfilcnt_t rtfsStatvfsCountFreeNids(
     file_system_manager *fs_manager,
-    const RtfsSuperBlock *super_block
-)
+    const RtfsSuperBlock *super_block)
 {
     NatLpaMapping nat_mapping;
     SitNatCache *nat_cache;
@@ -233,24 +219,28 @@ static fsfilcnt_t r2fsStatvfsCountFreeNids(
     fsfilcnt_t free_count = 0;
     uint32_t current_nid;
 
-    if (fs_manager == NULL || super_block == NULL) {
+    if (fs_manager == NULL || super_block == NULL)
+    {
         return 0;
     }
 
     nat_cache = fileSystemManagerGetNatCache(fs_manager);
-    if (nat_cache == NULL) {
+    if (nat_cache == NULL)
+    {
         return 0;
     }
 
-    total_slots = r2fsStatvfsGetTotalFileSlots(super_block);
-    if (total_slots == 0) {
+    total_slots = rtfsStatvfsGetTotalFileSlots(super_block);
+    if (total_slots == 0)
+    {
         return 0;
     }
 
     natLpaMappingInit(&nat_mapping, fs_manager);
     current_nid = super_block->next_free_nid;
 
-    while (current_nid != INVALID_NID && free_count < total_slots) {
+    while (current_nid != INVALID_NID && free_count < total_slots)
+    {
         NatNidPos pos;
         SitNatCacheEntryHandle nat_handle;
         struct RtfsNatEntry *nat_entry;
@@ -260,7 +250,8 @@ static fsfilcnt_t r2fsStatvfsCountFreeNids(
         nat_handle = sitNatCacheGet(nat_cache, pos.lpa);
         nat_entry = &sitNatCacheEntryHandleGetNatBlockPtr(&nat_handle)->entries[pos.idx];
 
-        if (nat_entry->ino != INVALID_NID) {
+        if (nat_entry->ino != INVALID_NID)
+        {
             sitNatCacheEntryHandleDestroy(&nat_handle);
             break;
         }
@@ -269,7 +260,8 @@ static fsfilcnt_t r2fsStatvfsCountFreeNids(
         sitNatCacheEntryHandleDestroy(&nat_handle);
 
         free_count++;
-        if (next_nid == current_nid) {
+        if (next_nid == current_nid)
+        {
             break;
         }
         current_nid = next_nid;
@@ -278,75 +270,79 @@ static fsfilcnt_t r2fsStatvfsCountFreeNids(
     return free_count;
 }
 
-static void r2fsSetHandlers(rtems_filesystem_location_info_t *loc)
+static void rtfsSetHandlers(rtems_filesystem_location_info_t *loc)
 {
-    RtfsRuntimeInodeView *view = r2fsGetNodeView(loc);
+    RtfsRuntimeInodeView *view = rtfsGetNodeView(loc);
 
-    if (loc == NULL || view == NULL) {
+    if (loc == NULL || view == NULL)
+    {
         return;
     }
 
-    if (rtfsInodeIsDirectoryType(view->file_type)) {
+    if (rtfsInodeIsDirectoryType(view->file_type))
+    {
         loc->handlers = &rtfsDirhandlers;
-    } else {
+    }
+    else
+    {
         loc->handlers = &rtfsFilehandlers;
     }
 }
 
-static file_system_manager *r2fsGetFsManagerFromLoc(
-    const rtems_filesystem_location_info_t *loc
-)
+static file_system_manager *rtfsGetFsManagerFromLoc(
+    const rtems_filesystem_location_info_t *loc)
 {
     return (loc != NULL && loc->mt_entry != NULL)
-        ? (file_system_manager *)loc->mt_entry->fs_info
-        : NULL;
+               ? (file_system_manager *)loc->mt_entry->fs_info
+               : NULL;
 }
 
-static super_manager *r2fsGetSuperManagerFromLoc(
-    const rtems_filesystem_location_info_t *loc
-)
+static super_manager *rtfsGetSuperManagerFromLoc(
+    const rtems_filesystem_location_info_t *loc)
 {
-    file_system_manager *fs_manager = r2fsGetFsManagerFromLoc(loc);
+    file_system_manager *fs_manager = rtfsGetFsManagerFromLoc(loc);
 
     return fileSystemManagerGetSuperManager(fs_manager);
 }
 
-static int r2fsReplaceNodeView(
+static int rtfsReplaceNodeView(
     rtems_filesystem_location_info_t *loc,
-    const RtfsRuntimeInodeView *view
-)
+    const RtfsRuntimeInodeView *view)
 {
     RtfsRuntimeInodeView *replacement;
 
-    if (loc == NULL || view == NULL) {
+    if (loc == NULL || view == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
     replacement = rtfsRuntimeInodeViewClone(view);
-    if (replacement == NULL) {
+    if (replacement == NULL)
+    {
         errno = ENOMEM;
         return -1;
     }
 
     free(loc->node_access);
     loc->node_access = replacement;
-    r2fsSetHandlers(loc);
+    rtfsSetHandlers(loc);
     return 0;
 }
 
-static int r2fsSetLocationNode(
+static int rtfsSetLocationNode(
     rtems_filesystem_location_info_t *loc,
     const RtfsRuntimeInodeView *view,
     const char *name,
-    size_t namelen
-)
+    size_t namelen)
 {
-    if (r2fsReplaceNodeView(loc, view) != 0) {
+    if (rtfsReplaceNodeView(loc, view) != 0)
+    {
         return -1;
     }
 
-    if (r2fsReplaceLocationName(loc, name, namelen) != 0) {
+    if (rtfsReplaceLocationName(loc, name, namelen) != 0)
+    {
         free(loc->node_access);
         loc->node_access = NULL;
         loc->handlers = NULL;
@@ -356,99 +352,109 @@ static int r2fsSetLocationNode(
     return 0;
 }
 
-static int r2fsValidateNodeLoc(
+static int rtfsValidateNodeLoc(
     const rtems_filesystem_location_info_t *loc,
-    RtfsRuntimeInodeView **view_out
-)
+    RtfsRuntimeInodeView **view_out)
 {
-    RtfsRuntimeInodeView *view = r2fsGetNodeView(loc);
+    RtfsRuntimeInodeView *view = rtfsGetNodeView(loc);
 
-    if (loc == NULL || view == NULL) {
+    if (loc == NULL || view == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (view_out != NULL) {
+    if (view_out != NULL)
+    {
         *view_out = view;
     }
 
     return 0;
 }
 
-static int r2fsValidateParentDir(
+static int rtfsValidateParentDir(
     const rtems_filesystem_location_info_t *parentloc,
     const char *name,
     size_t namelen,
-    RtfsRuntimeInodeView **view_out
-)
+    RtfsRuntimeInodeView **view_out)
 {
     RtfsRuntimeInodeView *parent_view;
 
-    if (r2fsValidateNodeLoc(parentloc, &parent_view) != 0) {
+    if (rtfsValidateNodeLoc(parentloc, &parent_view) != 0)
+    {
         return -1;
     }
 
-    if (!rtfsInodeIsDirectoryType(parent_view->file_type)) {
+    if (!rtfsInodeIsDirectoryType(parent_view->file_type))
+    {
         errno = ENOTDIR;
         return -1;
     }
 
-    if (name == NULL) {
+    if (name == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (namelen == 0) {
+    if (namelen == 0)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (namelen > RTFS_NAME_LEN) {
+    if (namelen > RTFS_NAME_LEN)
+    {
         errno = ENAMETOOLONG;
         return -1;
     }
 
     if ((namelen == 1 && name[0] == '.') ||
-        (namelen == 2 && name[0] == '.' && name[1] == '.')) {
+        (namelen == 2 && name[0] == '.' && name[1] == '.'))
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (view_out != NULL) {
+    if (view_out != NULL)
+    {
         *view_out = parent_view;
     }
 
     return 0;
 }
 
-static int r2fsResolveParentDirInode(
+static int rtfsResolveParentDirInode(
     const rtems_filesystem_location_info_t *parentloc,
     RtfsDirInode **out_dir_inode,
     RtfsRuntimeInodeView **out_parent_view,
-    file_system_manager **out_fs_manager
-)
+    file_system_manager **out_fs_manager)
 {
     RtfsRuntimeInodeView *parent_view;
     file_system_manager *fs_manager;
     RtfsDirInodeBuildRequest request;
     int ret;
 
-    if (parentloc == NULL || out_dir_inode == NULL) {
+    if (parentloc == NULL || out_dir_inode == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (r2fsValidateNodeLoc(parentloc, &parent_view) != 0) {
+    if (rtfsValidateNodeLoc(parentloc, &parent_view) != 0)
+    {
         return -1;
     }
 
-    if (!rtfsInodeIsDirectoryType(parent_view->file_type)) {
+    if (!rtfsInodeIsDirectoryType(parent_view->file_type))
+    {
         errno = ENOTDIR;
         return -1;
     }
 
-    fs_manager = r2fsGetFsManagerFromLoc(parentloc);
-    if (fs_manager == NULL) {
+    fs_manager = rtfsGetFsManagerFromLoc(parentloc);
+    if (fs_manager == NULL)
+    {
         errno = EIO;
         return -1;
     }
@@ -457,48 +463,55 @@ static int r2fsResolveParentDirInode(
     request.mode = RTFS_DIR_BUILD_ON_DEMAND;
 
     ret = rtfsDirInodeResolve(fs_manager, NULL, &request, out_dir_inode);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         errno = ret;
         return -1;
     }
 
-    if (out_parent_view != NULL) {
+    if (out_parent_view != NULL)
+    {
         *out_parent_view = parent_view;
     }
-    if (out_fs_manager != NULL) {
+    if (out_fs_manager != NULL)
+    {
         *out_fs_manager = fs_manager;
     }
     return 0;
 }
 
-static int r2fsResolveNameInParent(
+static int rtfsResolveNameInParent(
     const rtems_filesystem_location_info_t *parentloc,
     const char *name,
     size_t namelen,
-    RtfsDirLookupResult *out_result
-)
+    RtfsDirLookupResult *out_result)
 {
     RtfsRuntimeInodeView *parent_view;
     file_system_manager *fs_manager;
     RtfsDirInode *dir_inode;
     int ret;
 
-    if (r2fsValidateParentDir(parentloc, name, namelen, &parent_view) != 0) {
+    if (rtfsValidateParentDir(parentloc, name, namelen, &parent_view) != 0)
+    {
         return -1;
     }
 
-    if (r2fsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0) {
+    if (rtfsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0)
+    {
         return -1;
     }
 
-    do {
+    do
+    {
         ret = rtfsDirInodeLookup(dir_inode, name, namelen, out_result);
-        if (ret != ENOENT || rtfsDirInodeIsFullyLoaded(dir_inode)) {
+        if (ret != ENOENT || rtfsDirInodeIsFullyLoaded(dir_inode))
+        {
             break;
         }
 
         ret = rtfsDirInodeResolveNext(fs_manager, parent_view->ino, dir_inode);
-        if (ret != 0) {
+        if (ret != 0)
+        {
             rtfsDirInodePut(dir_inode);
             errno = ret;
             return -1;
@@ -507,7 +520,8 @@ static int r2fsResolveNameInParent(
 
     rtfsDirInodePut(dir_inode);
 
-    if (ret != 0) {
+    if (ret != 0)
+    {
         errno = ret;
         return -1;
     }
@@ -515,64 +529,68 @@ static int r2fsResolveNameInParent(
     return 0;
 }
 
-static int r2fsLookupNameInParent(
+static int rtfsLookupNameInParent(
     const rtems_filesystem_location_info_t *parentloc,
     const char *name,
-    RtfsDirLookupResult *out_result
-)
+    RtfsDirLookupResult *out_result)
 {
-    if (name == NULL) {
+    if (name == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    return r2fsResolveNameInParent(parentloc, name, strlen(name), out_result);
+    return rtfsResolveNameInParent(parentloc, name, strlen(name), out_result);
 }
 
-static int r2fsNameExistsInParent(
+static int rtfsNameExistsInParent(
     const rtems_filesystem_location_info_t *parentloc,
-    const char *name
-)
+    const char *name)
 {
     RtfsDirLookupResult result;
 
-    if (r2fsLookupNameInParent(parentloc, name, &result) == 0) {
+    if (rtfsLookupNameInParent(parentloc, name, &result) == 0)
+    {
         return 1;
     }
 
-    if (errno == ENOENT) {
+    if (errno == ENOENT)
+    {
         return 0;
     }
 
     return -1;
 }
 
-static int r2fsRemoveNameFromParent(
+static int rtfsRemoveNameFromParent(
     const rtems_filesystem_location_info_t *parentloc,
-    const char *name
-)
+    const char *name)
 {
     RtfsDirInode *dir_inode;
     file_system_manager *fs_manager;
     int ret;
 
-    if (name == NULL || name[0] == '\0') {
+    if (name == NULL || name[0] == '\0')
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (r2fsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0) {
+    if (rtfsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0)
+    {
         return -1;
     }
 
     ret = rtfsDirInodeRemoveEntry(dir_inode, name);
-    if (ret == 0) {
+    if (ret == 0)
+    {
         ret = rtfsDirInodeCommitCowWriteback(fs_manager, dir_inode);
     }
 
     rtfsDirInodePut(dir_inode);
 
-    if (ret != 0) {
+    if (ret != 0)
+    {
         errno = ret;
         return -1;
     }
@@ -580,33 +598,36 @@ static int r2fsRemoveNameFromParent(
     return 0;
 }
 
-static int r2fsAddNameToParent(
+static int rtfsAddNameToParent(
     const rtems_filesystem_location_info_t *parentloc,
     const char *name,
-    const RtfsRuntimeInodeView *child_view
-)
+    const RtfsRuntimeInodeView *child_view)
 {
     RtfsDirInode *dir_inode;
     file_system_manager *fs_manager;
     int ret;
 
-    if (name == NULL || name[0] == '\0' || child_view == NULL) {
+    if (name == NULL || name[0] == '\0' || child_view == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (r2fsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0) {
+    if (rtfsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0)
+    {
         return -1;
     }
 
     ret = rtfsDirInodeAddEntry(dir_inode, name, child_view);
-    if (ret == 0) {
+    if (ret == 0)
+    {
         ret = rtfsDirInodeCommitCowWriteback(fs_manager, dir_inode);
     }
 
     rtfsDirInodePut(dir_inode);
 
-    if (ret != 0) {
+    if (ret != 0)
+    {
         errno = ret;
         return -1;
     }
@@ -614,11 +635,11 @@ static int r2fsAddNameToParent(
     return 0;
 }
 
-static void r2fsRollbackCreatedInode(
-    NodeBlockCacheEntryHandle *inode_handle
-)
+static void rtfsRollbackCreatedInode(
+    NodeBlockCacheEntryHandle *inode_handle)
 {
-    if (inode_handle == NULL || nodeBlockCacheEntryHandleIsEmpty(inode_handle)) {
+    if (inode_handle == NULL || nodeBlockCacheEntryHandleIsEmpty(inode_handle))
+    {
         return;
     }
 
@@ -628,33 +649,29 @@ static void r2fsRollbackCreatedInode(
     inode_handle->entry = NULL;
 }
 
-static int r2fsRenameWithinSameParent(
+static int rtfsRenameWithinSameParent(
     const rtems_filesystem_location_info_t *parentloc,
     const rtems_filesystem_location_info_t *oldloc,
     const char *old_name,
     const char *new_name,
     size_t new_namelen,
     const RtfsRuntimeInodeView *source_view,
-    const RtfsDirLookupResult *existing_target
-)
+    const RtfsDirLookupResult *existing_target)
 {
     RtfsDirInode *dir_inode;
     file_system_manager *fs_manager;
     RtfsRuntimeInodeView *parent_view = NULL;
     NodeBlockCacheEntryHandle parent_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *parent_node = NULL;
     NodeBlockCacheEntryHandle source_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *source_node;
     NodeBlockCacheEntryHandle replaced_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *replaced_node = NULL;
     uint32_t *replaced_data_lpas = NULL;
     size_t replaced_data_count = 0;
@@ -670,41 +687,44 @@ static int r2fsRenameWithinSameParent(
     int ret;
 
     if (parentloc == NULL || oldloc == NULL || old_name == NULL || new_name == NULL ||
-        source_view == NULL) {
+        source_view == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (r2fsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0) {
+    if (rtfsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0)
+    {
         return -1;
     }
 
-    ret = r2fsResolveTargetInodeHandle(
+    ret = rtfsResolveTargetInodeHandle(
         parentloc,
         &parent_view,
         NULL,
         &parent_handle,
-        &parent_node
-    );
-    if (ret != 0) {
+        &parent_node);
+    if (ret != 0)
+    {
         rtfsDirInodePut(dir_inode);
         return -1;
     }
 
-    ret = r2fsResolveTargetInodeHandle(
+    ret = rtfsResolveTargetInodeHandle(
         oldloc,
         NULL,
         NULL,
         &source_handle,
-        &source_node
-    );
-    if (ret != 0) {
+        &source_node);
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&parent_handle);
         rtfsDirInodePut(dir_inode);
         return -1;
     }
 
-    if (target_exists) {
+    if (target_exists)
+    {
         rtems_filesystem_location_info_t target_loc;
         RtfsRuntimeInodeView target_view_copy = existing_target->inode_view;
 
@@ -713,7 +733,8 @@ static int r2fsRenameWithinSameParent(
         target_loc.node_access = &target_view_copy;
 
         if (rtfsInodeIsDirectoryType(source_view->file_type) &&
-            !rtfsInodeIsDirectoryType(existing_target->inode_view.file_type)) {
+            !rtfsInodeIsDirectoryType(existing_target->inode_view.file_type))
+        {
             nodeBlockCacheEntryHandleDestroy(&parent_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             rtfsDirInodePut(dir_inode);
@@ -722,7 +743,8 @@ static int r2fsRenameWithinSameParent(
         }
 
         if (!rtfsInodeIsDirectoryType(source_view->file_type) &&
-            rtfsInodeIsDirectoryType(existing_target->inode_view.file_type)) {
+            rtfsInodeIsDirectoryType(existing_target->inode_view.file_type))
+        {
             nodeBlockCacheEntryHandleDestroy(&parent_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             rtfsDirInodePut(dir_inode);
@@ -730,60 +752,62 @@ static int r2fsRenameWithinSameParent(
             return -1;
         }
 
-        ret = r2fsResolveTargetInodeHandle(
+        ret = rtfsResolveTargetInodeHandle(
             &target_loc,
             NULL,
             NULL,
             &replaced_handle,
-            &replaced_node
-        );
-        if (ret != 0) {
+            &replaced_node);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&parent_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             rtfsDirInodePut(dir_inode);
             return -1;
         }
 
-        ret = r2fsCollectTargetReclaimPlan(
+        ret = rtfsCollectTargetReclaimPlan(
             fs_manager,
             &existing_target->inode_view,
             replaced_node,
             &replaced_data_lpas,
             &replaced_data_count,
             &replaced_deleted_handles,
-            &replaced_deleted_handle_count
-        );
-        if (ret != 0) {
+            &replaced_deleted_handle_count);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&parent_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             rtfsDirInodePut(dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             errno = ret;
             return -1;
         }
 
-        ret = r2fsTargetIsRemovableEmptyObject(&existing_target->inode_view, replaced_node);
-        if (ret != 0) {
+        ret = rtfsTargetIsRemovableEmptyObject(&existing_target->inode_view, replaced_node);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&parent_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             rtfsDirInodePut(dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             errno = ret;
             return -1;
         }
 
         ret = rtfsDirInodeRemoveEntry(dir_inode, new_name);
-        if (ret != 0) {
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&parent_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             rtfsDirInodePut(dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             errno = ret;
             return -1;
         }
@@ -791,8 +815,10 @@ static int r2fsRenameWithinSameParent(
     }
 
     ret = rtfsDirInodeAddEntry(dir_inode, new_name, source_view);
-    if (ret != 0) {
-        if (removed_target) {
+    if (ret != 0)
+    {
+        if (removed_target)
+        {
             (void)rtfsDirInodeAddEntry(dir_inode, new_name, &existing_target->inode_view);
         }
         nodeBlockCacheEntryHandleDestroy(&replaced_handle);
@@ -800,16 +826,18 @@ static int r2fsRenameWithinSameParent(
         nodeBlockCacheEntryHandleDestroy(&source_handle);
         rtfsDirInodePut(dir_inode);
         free(replaced_data_lpas);
-        r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+        rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
         errno = ret;
         return -1;
     }
     added_new_source = true;
 
     ret = rtfsDirInodeRemoveEntry(dir_inode, old_name);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         (void)rtfsDirInodeRemoveEntry(dir_inode, new_name);
-        if (removed_target) {
+        if (removed_target)
+        {
             (void)rtfsDirInodeAddEntry(dir_inode, new_name, &existing_target->inode_view);
         }
         nodeBlockCacheEntryHandleDestroy(&replaced_handle);
@@ -817,7 +845,7 @@ static int r2fsRenameWithinSameParent(
         nodeBlockCacheEntryHandleDestroy(&source_handle);
         rtfsDirInodePut(dir_inode);
         free(replaced_data_lpas);
-        r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+        rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
         errno = ret;
         return -1;
     }
@@ -826,28 +854,31 @@ static int r2fsRenameWithinSameParent(
     memset(source_node->i.i_name, 0, sizeof(source_node->i.i_name));
     memcpy(source_node->i.i_name, new_name, new_namelen);
     source_node->i.i_namelen = (uint32_t)new_namelen;
-    r2fsTouchInodeTimes(&source_node->i, r2fsGetTimestampTick());
+    rtfsTouchInodeTimes(&source_node->i, rtfsGetTimestampTick());
     nodeBlockCacheEntryHandleMarkDirty(&source_handle);
 
-    if (target_exists) {
-        if (r2fsMarkTargetInodeUnlinked(&existing_target->inode_view, &replaced_handle, replaced_node) != 0) {
+    if (target_exists)
+    {
+        if (rtfsMarkTargetInodeUnlinked(&existing_target->inode_view, &replaced_handle, replaced_node) != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&parent_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             rtfsDirInodePut(dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             return -1;
         }
 
         if (rtfsInodeIsDirectoryType(existing_target->inode_view.file_type) &&
-            r2fsAdjustParentDirectoryNlinkWithHandle(&parent_handle, parent_view, -1) != 0) {
+            rtfsAdjustParentDirectoryNlinkWithHandle(&parent_handle, parent_view, -1) != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&parent_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             rtfsDirInodePut(dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             return -1;
         }
     }
@@ -856,43 +887,45 @@ static int r2fsRenameWithinSameParent(
     rtfsDirInodePut(dir_inode);
     nodeBlockCacheEntryHandleDestroy(&parent_handle);
 
-    if (ret != 0) {
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&replaced_handle);
         nodeBlockCacheEntryHandleDestroy(&source_handle);
         free(replaced_data_lpas);
-        r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+        rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
         errno = ret;
         return -1;
     }
 
-    if (target_exists) {
-        if (tx_id != 0) {
+    if (target_exists)
+    {
+        if (tx_id != 0)
+        {
             size_t i;
 
             deferred_delete_handle_count = replaced_deleted_handle_count + 1;
             deferred_delete_handles = (NodeBlockCacheEntryHandle *)calloc(
                 deferred_delete_handle_count,
-                sizeof(*deferred_delete_handles)
-            );
-            if (deferred_delete_handles == NULL) {
+                sizeof(*deferred_delete_handles));
+            if (deferred_delete_handles == NULL)
+            {
                 nodeBlockCacheEntryHandleDestroy(&replaced_handle);
                 nodeBlockCacheEntryHandleDestroy(&source_handle);
                 free(replaced_data_lpas);
-                r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+                rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
                 errno = ENOMEM;
                 return -1;
             }
 
-            for (i = 0; i < replaced_deleted_handle_count; ++i) {
+            for (i = 0; i < replaced_deleted_handle_count; ++i)
+            {
                 nodeBlockCacheEntryHandleCopy(
                     &deferred_delete_handles[i],
-                    &replaced_deleted_handles[replaced_deleted_handle_count - 1 - i]
-                );
+                    &replaced_deleted_handles[replaced_deleted_handle_count - 1 - i]);
             }
             nodeBlockCacheEntryHandleCopy(
                 &deferred_delete_handles[replaced_deleted_handle_count],
-                &replaced_handle
-            );
+                &replaced_handle);
 
             ret = cowReclaimRegistryRegister(
                 tx_id,
@@ -901,19 +934,21 @@ static int r2fsRenameWithinSameParent(
                 NULL,
                 0,
                 deferred_delete_handles,
-                deferred_delete_handle_count
-            );
-            r2fsDestroyHandleArray(deferred_delete_handles, deferred_delete_handle_count);
-            if (ret != 0) {
+                deferred_delete_handle_count);
+            rtfsDestroyHandleArray(deferred_delete_handles, deferred_delete_handle_count);
+            if (ret != 0)
+            {
                 nodeBlockCacheEntryHandleDestroy(&replaced_handle);
                 nodeBlockCacheEntryHandleDestroy(&source_handle);
                 free(replaced_data_lpas);
-                r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+                rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
                 errno = ret;
                 return -1;
             }
-        } else {
-            r2fsDeleteAndDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+        }
+        else
+        {
+            rtfsDeleteAndDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             replaced_deleted_handles = NULL;
             replaced_deleted_handle_count = 0;
             nodeBlockCacheEntryHandleDeleteNode(&replaced_handle);
@@ -921,7 +956,7 @@ static int r2fsRenameWithinSameParent(
     }
 
     free(replaced_data_lpas);
-    r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+    rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
     nodeBlockCacheEntryHandleDestroy(&replaced_handle);
     nodeBlockCacheEntryHandleDestroy(&source_handle);
 
@@ -930,70 +965,76 @@ static int r2fsRenameWithinSameParent(
     return 0;
 }
 
-static int r2fsResolveTargetInodeHandle(
+static int rtfsResolveTargetInodeHandle(
     const rtems_filesystem_location_info_t *loc,
     RtfsRuntimeInodeView **out_view,
     file_system_manager **out_fs_manager,
     NodeBlockCacheEntryHandle *out_handle,
-    struct RtfsNode **out_node
-)
+    struct RtfsNode **out_node)
 {
     RtfsRuntimeInodeView *view;
     file_system_manager *fs_manager;
     NodeBlockCache *node_cache;
     NodeBlockCacheEntryHandle handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     int ret;
 
-    if (loc == NULL || out_handle == NULL || out_node == NULL) {
+    if (loc == NULL || out_handle == NULL || out_node == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (r2fsValidateNodeLoc(loc, &view) != 0) {
+    if (rtfsValidateNodeLoc(loc, &view) != 0)
+    {
         return -1;
     }
 
-    fs_manager = r2fsGetFsManagerFromLoc(loc);
+    fs_manager = rtfsGetFsManagerFromLoc(loc);
     node_cache = fileSystemManagerGetNodeCache(fs_manager);
-    if (fs_manager == NULL || node_cache == NULL) {
+    if (fs_manager == NULL || node_cache == NULL)
+    {
         errno = EIO;
         return -1;
     }
 
     ret = rtfsInodeLoaderEnsureCached(fs_manager, view->ino);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         errno = ret;
         return -1;
     }
 
     handle = nodeBlockCacheGet(node_cache, (uint32_t)view->ino);
-    if (nodeBlockCacheEntryHandleIsEmpty(&handle)) {
+    if (nodeBlockCacheEntryHandleIsEmpty(&handle))
+    {
         errno = ENOENT;
         return -1;
     }
 
     *out_node = nodeBlockCacheEntryGetNodeBlockPtr(handle.entry);
     *out_handle = handle;
-    if (out_view != NULL) {
+    if (out_view != NULL)
+    {
         *out_view = view;
     }
-    if (out_fs_manager != NULL) {
+    if (out_fs_manager != NULL)
+    {
         *out_fs_manager = fs_manager;
     }
     return 0;
 }
 
-static uint64_t r2fsGetTimestampTick(void)
+static uint64_t rtfsGetTimestampTick(void)
 {
     return (uint64_t)rtems_counter_read();
 }
 
-static void r2fsTouchInodeTimes(struct RtfsInode *inode, uint64_t now)
+static void rtfsTouchInodeTimes(struct RtfsInode *inode, uint64_t now)
 {
-    if (inode == NULL) {
+    if (inode == NULL)
+    {
         return;
     }
 
@@ -1004,168 +1045,184 @@ static void r2fsTouchInodeTimes(struct RtfsInode *inode, uint64_t now)
     inode->i_ctime_nsec = 0;
 }
 
-static int r2fsAdjustParentDirectoryNlink(
+static int rtfsAdjustParentDirectoryNlink(
     const rtems_filesystem_location_info_t *parentloc,
-    int delta
-)
+    int delta)
 {
     RtfsRuntimeInodeView *parent_view;
     file_system_manager *fs_manager;
     NodeBlockCacheEntryHandle parent_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *parent_node;
     int ret;
 
-    if (parentloc == NULL || delta == 0) {
+    if (parentloc == NULL || delta == 0)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    ret = r2fsResolveTargetInodeHandle(
+    ret = rtfsResolveTargetInodeHandle(
         parentloc,
         &parent_view,
         &fs_manager,
         &parent_handle,
-        &parent_node
-    );
-    if (ret != 0) {
+        &parent_node);
+    if (ret != 0)
+    {
         return -1;
     }
 
-    ret = r2fsAdjustParentDirectoryNlinkWithHandle(&parent_handle, parent_view, delta);
+    ret = rtfsAdjustParentDirectoryNlinkWithHandle(&parent_handle, parent_view, delta);
     nodeBlockCacheEntryHandleDestroy(&parent_handle);
     return ret;
 }
 
-static int r2fsAdjustParentDirectoryNlinkWithHandle(
+static int rtfsAdjustParentDirectoryNlinkWithHandle(
     NodeBlockCacheEntryHandle *parent_handle,
     RtfsRuntimeInodeView *parent_view,
-    int delta
-)
+    int delta)
 {
     struct RtfsNode *parent_node;
 
     if (parent_handle == NULL || parent_view == NULL || delta == 0 ||
-        nodeBlockCacheEntryHandleIsEmpty(parent_handle)) {
+        nodeBlockCacheEntryHandleIsEmpty(parent_handle))
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (!rtfsInodeIsDirectoryType(parent_view->file_type)) {
+    if (!rtfsInodeIsDirectoryType(parent_view->file_type))
+    {
         errno = ENOTDIR;
         return -1;
     }
 
     parent_node = nodeBlockCacheEntryGetNodeBlockPtr(parent_handle->entry);
-    if (parent_node == NULL) {
+    if (parent_node == NULL)
+    {
         errno = EIO;
         return -1;
     }
 
-    if (delta < 0) {
+    if (delta < 0)
+    {
         uint32_t decrement = (uint32_t)(-delta);
 
-        if (parent_node->i.i_nlink < decrement) {
+        if (parent_node->i.i_nlink < decrement)
+        {
             errno = EINVAL;
             return -1;
         }
         parent_node->i.i_nlink -= decrement;
-    } else {
+    }
+    else
+    {
         parent_node->i.i_nlink += (uint32_t)delta;
     }
 
-    r2fsTouchInodeTimes(&parent_node->i, r2fsGetTimestampTick());
+    rtfsTouchInodeTimes(&parent_node->i, rtfsGetTimestampTick());
     nodeBlockCacheEntryHandleMarkDirty(parent_handle);
     return 0;
 }
 
-static int r2fsTargetIsRemovableEmptyObject(
+static int rtfsTargetIsRemovableEmptyObject(
     const RtfsRuntimeInodeView *target_view,
-    struct RtfsNode *target_node
-)
+    struct RtfsNode *target_node)
 {
     const struct RtfsInode *inode;
 
-    if (target_view == NULL || target_node == NULL) {
+    if (target_view == NULL || target_node == NULL)
+    {
         return EINVAL;
     }
 
     inode = &target_node->i;
 
-    if (rtfsInodeIsDirectoryType(target_view->file_type)) {
-        if (inode->i_dentry_num != 0) {
+    if (rtfsInodeIsDirectoryType(target_view->file_type))
+    {
+        if (inode->i_dentry_num != 0)
+        {
             return ENOTEMPTY;
         }
         return 0;
     }
 
-    if (target_view->file_type == RTFS_FT_REG_FILE) {
+    if (target_view->file_type == RTFS_FT_REG_FILE)
+    {
         return 0;
     }
 
-    if (target_view->file_type != RTFS_FT_REG_FILE) {
+    if (target_view->file_type != RTFS_FT_REG_FILE)
+    {
         return ENOTSUP;
     }
 
     return 0;
 }
 
-static int r2fsMarkTargetInodeUnlinked(
+static int rtfsMarkTargetInodeUnlinked(
     const RtfsRuntimeInodeView *target_view,
     NodeBlockCacheEntryHandle *target_handle,
-    struct RtfsNode *target_node
-)
+    struct RtfsNode *target_node)
 {
     if (target_view == NULL || target_handle == NULL || target_node == NULL ||
-        nodeBlockCacheEntryHandleIsEmpty(target_handle)) {
+        nodeBlockCacheEntryHandleIsEmpty(target_handle))
+    {
         errno = EINVAL;
         return -1;
     }
 
     target_node->i.i_nlink = 0;
-    if (rtfsInodeIsDirectoryType(target_view->file_type)) {
+    if (rtfsInodeIsDirectoryType(target_view->file_type))
+    {
         target_node->i.i_pino = 0;
     }
-    r2fsTouchInodeTimes(&target_node->i, r2fsGetTimestampTick());
+    rtfsTouchInodeTimes(&target_node->i, rtfsGetTimestampTick());
     nodeBlockCacheEntryHandleMarkDirty(target_handle);
     return 0;
 }
 
-static int r2fsAppendUniqueUint32(
+static int rtfsAppendUniqueUint32(
     uint32_t value,
     uint32_t **array,
     size_t *count,
-    size_t *capacity
-)
+    size_t *capacity)
 {
     size_t i;
     uint32_t *new_array;
     size_t new_capacity;
 
-    if (array == NULL || count == NULL || capacity == NULL) {
+    if (array == NULL || count == NULL || capacity == NULL)
+    {
         return EINVAL;
     }
 
-    if (value == INVALID_LPA || value == INVALID_NID) {
+    if (value == INVALID_LPA || value == INVALID_NID)
+    {
         return 0;
     }
 
-    if (value >= 0x80000000u) {
+    if (value >= 0x80000000u)
+    {
         return 0;
     }
 
-    for (i = 0; i < *count; ++i) {
-        if ((*array)[i] == value) {
+    for (i = 0; i < *count; ++i)
+    {
+        if ((*array)[i] == value)
+        {
             return 0;
         }
     }
 
-    if (*count == *capacity) {
+    if (*count == *capacity)
+    {
         new_capacity = (*capacity == 0) ? 8 : (*capacity * 2);
         new_array = (uint32_t *)realloc(*array, new_capacity * sizeof(**array));
-        if (new_array == NULL) {
+        if (new_array == NULL)
+        {
             return ENOMEM;
         }
         *array = new_array;
@@ -1176,19 +1233,21 @@ static int r2fsAppendUniqueUint32(
     return 0;
 }
 
-static void r2fsDestroyHandleArray(
+static void rtfsDestroyHandleArray(
     NodeBlockCacheEntryHandle *handles,
-    size_t count
-)
+    size_t count)
 {
     size_t i;
 
-    if (handles == NULL) {
+    if (handles == NULL)
+    {
         return;
     }
 
-    for (i = 0; i < count; ++i) {
-        if (!nodeBlockCacheEntryHandleIsEmpty(&handles[i])) {
+    for (i = 0; i < count; ++i)
+    {
+        if (!nodeBlockCacheEntryHandleIsEmpty(&handles[i]))
+        {
             nodeBlockCacheEntryHandleDestroy(&handles[i]);
         }
     }
@@ -1196,19 +1255,21 @@ static void r2fsDestroyHandleArray(
     free(handles);
 }
 
-static void r2fsDeleteAndDestroyHandleArray(
+static void rtfsDeleteAndDestroyHandleArray(
     NodeBlockCacheEntryHandle *handles,
-    size_t count
-)
+    size_t count)
 {
     size_t i;
 
-    if (handles == NULL) {
+    if (handles == NULL)
+    {
         return;
     }
 
-    for (i = 0; i < count; ++i) {
-        if (!nodeBlockCacheEntryHandleIsEmpty(&handles[i])) {
+    for (i = 0; i < count; ++i)
+    {
+        if (!nodeBlockCacheEntryHandleIsEmpty(&handles[i]))
+        {
             nodeBlockCacheEntryHandleDeleteNode(&handles[i]);
             nodeBlockCacheEntryHandleDestroy(&handles[i]);
         }
@@ -1217,38 +1278,42 @@ static void r2fsDeleteAndDestroyHandleArray(
     free(handles);
 }
 
-static int r2fsAppendUniqueDeletedHandleCopy(
+static int rtfsAppendUniqueDeletedHandleCopy(
     const NodeBlockCacheEntryHandle *handle,
     NodeBlockCacheEntryHandle **array,
     size_t *count,
-    size_t *capacity
-)
+    size_t *capacity)
 {
     size_t i;
     NodeBlockCacheEntryHandle *new_array;
     size_t new_capacity;
 
-    if (handle == NULL || array == NULL || count == NULL || capacity == NULL) {
+    if (handle == NULL || array == NULL || count == NULL || capacity == NULL)
+    {
         return EINVAL;
     }
 
-    if (nodeBlockCacheEntryHandleIsEmpty((NodeBlockCacheEntryHandle *)handle)) {
+    if (nodeBlockCacheEntryHandleIsEmpty((NodeBlockCacheEntryHandle *)handle))
+    {
         return 0;
     }
 
-    for (i = 0; i < *count; ++i) {
-        if ((*array)[i].entry == handle->entry) {
+    for (i = 0; i < *count; ++i)
+    {
+        if ((*array)[i].entry == handle->entry)
+        {
             return 0;
         }
     }
 
-    if (*count == *capacity) {
+    if (*count == *capacity)
+    {
         new_capacity = (*capacity == 0) ? 4 : (*capacity * 2);
         new_array = (NodeBlockCacheEntryHandle *)realloc(
             *array,
-            new_capacity * sizeof(**array)
-        );
-        if (new_array == NULL) {
+            new_capacity * sizeof(**array));
+        if (new_array == NULL)
+        {
             return ENOMEM;
         }
         *array = new_array;
@@ -1260,7 +1325,7 @@ static int r2fsAppendUniqueDeletedHandleCopy(
     return 0;
 }
 
-static int r2fsCollectDirectNodeReclaimPlan(
+static int rtfsCollectDirectNodeReclaimPlan(
     NodeBlockCacheHelper *helper,
     uint32_t direct_nid,
     uint32_t parent_nid,
@@ -1269,13 +1334,11 @@ static int r2fsCollectDirectNodeReclaimPlan(
     size_t *data_capacity,
     NodeBlockCacheEntryHandle **deleted_handles,
     size_t *deleted_handle_count,
-    size_t *deleted_handle_capacity
-)
+    size_t *deleted_handle_capacity)
 {
     NodeBlockCacheEntryHandle direct_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *direct_node;
     size_t i;
     int ret;
@@ -1283,7 +1346,8 @@ static int r2fsCollectDirectNodeReclaimPlan(
     if (helper == NULL || direct_nid == INVALID_NID ||
         data_lpas == NULL || data_count == NULL || data_capacity == NULL ||
         deleted_handles == NULL || deleted_handle_count == NULL ||
-        deleted_handle_capacity == NULL) {
+        deleted_handle_capacity == NULL)
+    {
         return EINVAL;
     }
 
@@ -1291,37 +1355,39 @@ static int r2fsCollectDirectNodeReclaimPlan(
         helper,
         direct_nid,
         parent_nid,
-        &direct_handle
-    );
-    if (ret != 0) {
+        &direct_handle);
+    if (ret != 0)
+    {
         return ret;
     }
 
-    ret = r2fsAppendUniqueDeletedHandleCopy(
+    ret = rtfsAppendUniqueDeletedHandleCopy(
         &direct_handle,
         deleted_handles,
         deleted_handle_count,
-        deleted_handle_capacity
-    );
-    if (ret != 0) {
+        deleted_handle_capacity);
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&direct_handle);
         return ret;
     }
 
     direct_node = nodeBlockCacheEntryGetNodeBlockPtr(direct_handle.entry);
-    if (direct_node == NULL) {
+    if (direct_node == NULL)
+    {
         nodeBlockCacheEntryHandleDestroy(&direct_handle);
         return EIO;
     }
 
-    for (i = 0; i < DEF_ADDRS_PER_BLOCK; ++i) {
-        ret = r2fsAppendUniqueUint32(
+    for (i = 0; i < DEF_ADDRS_PER_BLOCK; ++i)
+    {
+        ret = rtfsAppendUniqueUint32(
             direct_node->dn.addr[i],
             data_lpas,
             data_count,
-            data_capacity
-        );
-        if (ret != 0) {
+            data_capacity);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&direct_handle);
             return ret;
         }
@@ -1331,7 +1397,7 @@ static int r2fsCollectDirectNodeReclaimPlan(
     return 0;
 }
 
-static int r2fsCollectIndirectNodeReclaimPlan(
+static int rtfsCollectIndirectNodeReclaimPlan(
     NodeBlockCacheHelper *helper,
     uint32_t indirect_nid,
     uint32_t parent_nid,
@@ -1340,13 +1406,11 @@ static int r2fsCollectIndirectNodeReclaimPlan(
     size_t *data_capacity,
     NodeBlockCacheEntryHandle **deleted_handles,
     size_t *deleted_handle_count,
-    size_t *deleted_handle_capacity
-)
+    size_t *deleted_handle_capacity)
 {
     NodeBlockCacheEntryHandle indirect_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *indirect_node;
     size_t i;
     int ret;
@@ -1354,7 +1418,8 @@ static int r2fsCollectIndirectNodeReclaimPlan(
     if (helper == NULL || indirect_nid == INVALID_NID ||
         data_lpas == NULL || data_count == NULL || data_capacity == NULL ||
         deleted_handles == NULL || deleted_handle_count == NULL ||
-        deleted_handle_capacity == NULL) {
+        deleted_handle_capacity == NULL)
+    {
         return EINVAL;
     }
 
@@ -1362,35 +1427,38 @@ static int r2fsCollectIndirectNodeReclaimPlan(
         helper,
         indirect_nid,
         parent_nid,
-        &indirect_handle
-    );
-    if (ret != 0) {
+        &indirect_handle);
+    if (ret != 0)
+    {
         return ret;
     }
 
-    ret = r2fsAppendUniqueDeletedHandleCopy(
+    ret = rtfsAppendUniqueDeletedHandleCopy(
         &indirect_handle,
         deleted_handles,
         deleted_handle_count,
-        deleted_handle_capacity
-    );
-    if (ret != 0) {
+        deleted_handle_capacity);
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&indirect_handle);
         return ret;
     }
 
     indirect_node = nodeBlockCacheEntryGetNodeBlockPtr(indirect_handle.entry);
-    if (indirect_node == NULL) {
+    if (indirect_node == NULL)
+    {
         nodeBlockCacheEntryHandleDestroy(&indirect_handle);
         return EIO;
     }
 
-    for (i = 0; i < NIDS_PER_BLOCK; ++i) {
-        if (indirect_node->in.nid[i] == INVALID_NID) {
+    for (i = 0; i < NIDS_PER_BLOCK; ++i)
+    {
+        if (indirect_node->in.nid[i] == INVALID_NID)
+        {
             continue;
         }
 
-        ret = r2fsCollectDirectNodeReclaimPlan(
+        ret = rtfsCollectDirectNodeReclaimPlan(
             helper,
             indirect_node->in.nid[i],
             indirect_nid,
@@ -1399,9 +1467,9 @@ static int r2fsCollectIndirectNodeReclaimPlan(
             data_capacity,
             deleted_handles,
             deleted_handle_count,
-            deleted_handle_capacity
-        );
-        if (ret != 0) {
+            deleted_handle_capacity);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&indirect_handle);
             return ret;
         }
@@ -1411,7 +1479,7 @@ static int r2fsCollectIndirectNodeReclaimPlan(
     return 0;
 }
 
-static int r2fsCollectDoubleIndirectNodeReclaimPlan(
+static int rtfsCollectDoubleIndirectNodeReclaimPlan(
     NodeBlockCacheHelper *helper,
     uint32_t double_indirect_nid,
     uint32_t parent_nid,
@@ -1420,13 +1488,11 @@ static int r2fsCollectDoubleIndirectNodeReclaimPlan(
     size_t *data_capacity,
     NodeBlockCacheEntryHandle **deleted_handles,
     size_t *deleted_handle_count,
-    size_t *deleted_handle_capacity
-)
+    size_t *deleted_handle_capacity)
 {
     NodeBlockCacheEntryHandle dind_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *dind_node;
     size_t i;
     int ret;
@@ -1434,7 +1500,8 @@ static int r2fsCollectDoubleIndirectNodeReclaimPlan(
     if (helper == NULL || double_indirect_nid == INVALID_NID ||
         data_lpas == NULL || data_count == NULL || data_capacity == NULL ||
         deleted_handles == NULL || deleted_handle_count == NULL ||
-        deleted_handle_capacity == NULL) {
+        deleted_handle_capacity == NULL)
+    {
         return EINVAL;
     }
 
@@ -1442,35 +1509,38 @@ static int r2fsCollectDoubleIndirectNodeReclaimPlan(
         helper,
         double_indirect_nid,
         parent_nid,
-        &dind_handle
-    );
-    if (ret != 0) {
+        &dind_handle);
+    if (ret != 0)
+    {
         return ret;
     }
 
-    ret = r2fsAppendUniqueDeletedHandleCopy(
+    ret = rtfsAppendUniqueDeletedHandleCopy(
         &dind_handle,
         deleted_handles,
         deleted_handle_count,
-        deleted_handle_capacity
-    );
-    if (ret != 0) {
+        deleted_handle_capacity);
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&dind_handle);
         return ret;
     }
 
     dind_node = nodeBlockCacheEntryGetNodeBlockPtr(dind_handle.entry);
-    if (dind_node == NULL) {
+    if (dind_node == NULL)
+    {
         nodeBlockCacheEntryHandleDestroy(&dind_handle);
         return EIO;
     }
 
-    for (i = 0; i < NIDS_PER_BLOCK; ++i) {
-        if (dind_node->in.nid[i] == INVALID_NID) {
+    for (i = 0; i < NIDS_PER_BLOCK; ++i)
+    {
+        if (dind_node->in.nid[i] == INVALID_NID)
+        {
             continue;
         }
 
-        ret = r2fsCollectIndirectNodeReclaimPlan(
+        ret = rtfsCollectIndirectNodeReclaimPlan(
             helper,
             dind_node->in.nid[i],
             double_indirect_nid,
@@ -1479,9 +1549,9 @@ static int r2fsCollectDoubleIndirectNodeReclaimPlan(
             data_capacity,
             deleted_handles,
             deleted_handle_count,
-            deleted_handle_capacity
-        );
-        if (ret != 0) {
+            deleted_handle_capacity);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&dind_handle);
             return ret;
         }
@@ -1491,14 +1561,13 @@ static int r2fsCollectDoubleIndirectNodeReclaimPlan(
     return 0;
 }
 
-static int r2fsCollectRegularFileReclaimPlan(
+static int rtfsCollectRegularFileReclaimPlan(
     file_system_manager *fs_manager,
     const struct RtfsNode *target_node,
     uint32_t **out_data_lpas,
     size_t *out_data_count,
     NodeBlockCacheEntryHandle **out_deleted_handles,
-    size_t *out_deleted_handle_count
-)
+    size_t *out_deleted_handle_count)
 {
     NodeBlockCacheHelper helper;
     size_t i;
@@ -1512,7 +1581,8 @@ static int r2fsCollectRegularFileReclaimPlan(
 
     if (fs_manager == NULL || target_node == NULL ||
         out_data_lpas == NULL || out_data_count == NULL ||
-        out_deleted_handles == NULL || out_deleted_handle_count == NULL) {
+        out_deleted_handles == NULL || out_deleted_handle_count == NULL)
+    {
         return EINVAL;
     }
 
@@ -1523,24 +1593,27 @@ static int r2fsCollectRegularFileReclaimPlan(
 
     nodeBlockCacheHelperInit(&helper, fs_manager);
 
-    for (i = 0; i < DEF_ADDRS_PER_INODE; ++i) {
-        ret = r2fsAppendUniqueUint32(
+    for (i = 0; i < DEF_ADDRS_PER_INODE; ++i)
+    {
+        ret = rtfsAppendUniqueUint32(
             target_node->i.i_addr[i],
             &data_lpas,
             &data_count,
-            &data_capacity
-        );
-        if (ret != 0) {
+            &data_capacity);
+        if (ret != 0)
+        {
             goto out;
         }
     }
 
-    for (i = 0; i < 2; ++i) {
-        if (target_node->i.i_nid[i] == INVALID_NID) {
+    for (i = 0; i < 2; ++i)
+    {
+        if (target_node->i.i_nid[i] == INVALID_NID)
+        {
             continue;
         }
 
-        ret = r2fsCollectDirectNodeReclaimPlan(
+        ret = rtfsCollectDirectNodeReclaimPlan(
             &helper,
             target_node->i.i_nid[i],
             target_node->footer.nid,
@@ -1549,19 +1622,21 @@ static int r2fsCollectRegularFileReclaimPlan(
             &data_capacity,
             &deleted_handles,
             &deleted_handle_count,
-            &deleted_handle_capacity
-        );
-        if (ret != 0) {
+            &deleted_handle_capacity);
+        if (ret != 0)
+        {
             goto out;
         }
     }
 
-    for (i = 2; i < 4; ++i) {
-        if (target_node->i.i_nid[i] == INVALID_NID) {
+    for (i = 2; i < 4; ++i)
+    {
+        if (target_node->i.i_nid[i] == INVALID_NID)
+        {
             continue;
         }
 
-        ret = r2fsCollectIndirectNodeReclaimPlan(
+        ret = rtfsCollectIndirectNodeReclaimPlan(
             &helper,
             target_node->i.i_nid[i],
             target_node->footer.nid,
@@ -1570,15 +1645,16 @@ static int r2fsCollectRegularFileReclaimPlan(
             &data_capacity,
             &deleted_handles,
             &deleted_handle_count,
-            &deleted_handle_capacity
-        );
-        if (ret != 0) {
+            &deleted_handle_capacity);
+        if (ret != 0)
+        {
             goto out;
         }
     }
 
-    if (target_node->i.i_nid[4] != INVALID_NID) {
-        ret = r2fsCollectDoubleIndirectNodeReclaimPlan(
+    if (target_node->i.i_nid[4] != INVALID_NID)
+    {
+        ret = rtfsCollectDoubleIndirectNodeReclaimPlan(
             &helper,
             target_node->i.i_nid[4],
             target_node->footer.nid,
@@ -1587,9 +1663,9 @@ static int r2fsCollectRegularFileReclaimPlan(
             &data_capacity,
             &deleted_handles,
             &deleted_handle_count,
-            &deleted_handle_capacity
-        );
-        if (ret != 0) {
+            &deleted_handle_capacity);
+        if (ret != 0)
+        {
             goto out;
         }
     }
@@ -1601,29 +1677,30 @@ static int r2fsCollectRegularFileReclaimPlan(
     ret = 0;
 
 out:
-    if (ret != 0) {
+    if (ret != 0)
+    {
         free(data_lpas);
-        r2fsDestroyHandleArray(deleted_handles, deleted_handle_count);
+        rtfsDestroyHandleArray(deleted_handles, deleted_handle_count);
     }
     nodeBlockCacheHelperDestroy(&helper);
     return ret;
 }
 
-static int r2fsCollectTargetReclaimPlan(
+static int rtfsCollectTargetReclaimPlan(
     file_system_manager *fs_manager,
     const RtfsRuntimeInodeView *target_view,
     const struct RtfsNode *target_node,
     uint32_t **out_data_lpas,
     size_t *out_data_count,
     NodeBlockCacheEntryHandle **out_deleted_handles,
-    size_t *out_deleted_handle_count
-)
+    size_t *out_deleted_handle_count)
 {
     int ret;
 
     if (fs_manager == NULL || target_view == NULL || target_node == NULL ||
         out_data_lpas == NULL || out_data_count == NULL ||
-        out_deleted_handles == NULL || out_deleted_handle_count == NULL) {
+        out_deleted_handles == NULL || out_deleted_handle_count == NULL)
+    {
         return EINVAL;
     }
 
@@ -1632,39 +1709,41 @@ static int r2fsCollectTargetReclaimPlan(
     *out_deleted_handles = NULL;
     *out_deleted_handle_count = 0;
 
-    if (target_view->file_type != RTFS_FT_REG_FILE) {
+    if (target_view->file_type != RTFS_FT_REG_FILE)
+    {
         return 0;
     }
 
-    ret = r2fsCollectRegularFileReclaimPlan(
+    ret = rtfsCollectRegularFileReclaimPlan(
         fs_manager,
         target_node,
         out_data_lpas,
         out_data_count,
         out_deleted_handles,
-        out_deleted_handle_count
-    );
+        out_deleted_handle_count);
     return ret;
 }
 
-static int r2fsAppendUniqueLpasToArray(
+static int rtfsAppendUniqueLpasToArray(
     const uint32_t *src,
     size_t src_count,
     uint32_t **dst,
     size_t *dst_count,
-    size_t *dst_capacity
-)
+    size_t *dst_capacity)
 {
     size_t i;
     int ret;
 
-    if ((src_count != 0 && src == NULL) || dst == NULL || dst_count == NULL || dst_capacity == NULL) {
+    if ((src_count != 0 && src == NULL) || dst == NULL || dst_count == NULL || dst_capacity == NULL)
+    {
         return EINVAL;
     }
 
-    for (i = 0; i < src_count; ++i) {
-        ret = r2fsAppendUniqueUint32(src[i], dst, dst_count, dst_capacity);
-        if (ret != 0) {
+    for (i = 0; i < src_count; ++i)
+    {
+        ret = rtfsAppendUniqueUint32(src[i], dst, dst_count, dst_capacity);
+        if (ret != 0)
+        {
             return ret;
         }
     }
@@ -1672,29 +1751,30 @@ static int r2fsAppendUniqueLpasToArray(
     return 0;
 }
 
-static int r2fsCollectDirPendingOldDataLpasAppend(
+static int rtfsCollectDirPendingOldDataLpasAppend(
     RtfsDirInode *dir_inode,
     uint32_t **dst,
     size_t *dst_count,
-    size_t *dst_capacity
-)
+    size_t *dst_capacity)
 {
     uint32_t *scratch = NULL;
     size_t scratch_count = 0;
     int ret;
 
-    if (dir_inode == NULL || dst == NULL || dst_count == NULL || dst_capacity == NULL) {
+    if (dir_inode == NULL || dst == NULL || dst_count == NULL || dst_capacity == NULL)
+    {
         return EINVAL;
     }
 
-    if (rtfsDirInodeGetLoadedBlockCount(dir_inode) == 0) {
+    if (rtfsDirInodeGetLoadedBlockCount(dir_inode) == 0)
+    {
         return 0;
     }
 
     scratch = (uint32_t *)malloc(
-        rtfsDirInodeGetLoadedBlockCount(dir_inode) * sizeof(*scratch)
-    );
-    if (scratch == NULL) {
+        rtfsDirInodeGetLoadedBlockCount(dir_inode) * sizeof(*scratch));
+    if (scratch == NULL)
+    {
         return ENOMEM;
     }
 
@@ -1702,28 +1782,26 @@ static int r2fsCollectDirPendingOldDataLpasAppend(
         dir_inode,
         scratch,
         rtfsDirInodeGetLoadedBlockCount(dir_inode),
-        &scratch_count
-    );
-    if (ret == 0) {
-        ret = r2fsAppendUniqueLpasToArray(
+        &scratch_count);
+    if (ret == 0)
+    {
+        ret = rtfsAppendUniqueLpasToArray(
             scratch,
             scratch_count,
             dst,
             dst_count,
-            dst_capacity
-        );
+            dst_capacity);
     }
 
     free(scratch);
     return ret;
 }
 
-static int r2fsCommitDirtyDirsAndNodesWithTxId(
+static int rtfsCommitDirtyDirsAndNodesWithTxId(
     file_system_manager *fs_manager,
     RtfsDirInode *first_dir,
     RtfsDirInode *second_dir,
-    uint64_t *out_tx_id
-)
+    uint64_t *out_tx_id)
 {
     NodeBlockCache *node_cache;
     JournalContainer *cur_journal;
@@ -1739,77 +1817,86 @@ static int r2fsCommitDirtyDirsAndNodesWithTxId(
     bool journal_submitted = false;
     int ret;
 
-    if (fs_manager == NULL || first_dir == NULL || second_dir == NULL) {
+    if (fs_manager == NULL || first_dir == NULL || second_dir == NULL)
+    {
         return EINVAL;
     }
 
     node_cache = fileSystemManagerGetNodeCache(fs_manager);
     cur_journal = fileSystemManagerGetCurJournal(fs_manager);
-    if (node_cache == NULL || cur_journal == NULL) {
+    if (node_cache == NULL || cur_journal == NULL)
+    {
         return EINVAL;
     }
 
     ret = cowReclaimRegistryDrainCompleted();
-    if (ret != 0) {
+    if (ret != 0)
+    {
         return ret;
     }
 
     ret = rtfsDirInodeWritebackContentCow(fs_manager, first_dir);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         return ret;
     }
 
-    ret = r2fsCollectDirPendingOldDataLpasAppend(
+    ret = rtfsCollectDirPendingOldDataLpasAppend(
         first_dir,
         &old_data_lpas,
         &old_data_count,
-        &old_data_capacity
-    );
-    if (ret != 0) {
+        &old_data_capacity);
+    if (ret != 0)
+    {
         free(old_data_lpas);
         return ret;
     }
 
     ret = rtfsDirInodeWritebackContentCow(fs_manager, second_dir);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         free(old_data_lpas);
         return ret;
     }
 
-    ret = r2fsCollectDirPendingOldDataLpasAppend(
+    ret = rtfsCollectDirPendingOldDataLpasAppend(
         second_dir,
         &old_data_lpas,
         &old_data_count,
-        &old_data_capacity
-    );
-    if (ret != 0) {
+        &old_data_capacity);
+    if (ret != 0)
+    {
         free(old_data_lpas);
         return ret;
     }
 
     ret = rtfsDirInodeApplyPendingCowRelocations(fs_manager, first_dir);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         free(old_data_lpas);
         return ret;
     }
 
     ret = rtfsDirInodeApplyPendingCowRelocations(fs_manager, second_dir);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         free(old_data_lpas);
         return ret;
     }
 
     ret = nodeBlockCacheWritebackDirtyContentCow(node_cache);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         free(old_data_lpas);
         return ret;
     }
 
-    if (node_cache->curSize > 0) {
+    if (node_cache->curSize > 0)
+    {
         node_relocations = (NodeBlockCacheCowRelocation *)malloc(
-            node_cache->curSize * sizeof(*node_relocations)
-        );
-        if (node_relocations == NULL) {
+            node_cache->curSize * sizeof(*node_relocations));
+        if (node_relocations == NULL)
+        {
             free(old_data_lpas);
             return ENOMEM;
         }
@@ -1818,26 +1905,30 @@ static int r2fsCommitDirtyDirsAndNodesWithTxId(
             node_cache,
             node_relocations,
             node_cache->curSize,
-            &old_node_count
-        );
-        if (ret != 0) {
+            &old_node_count);
+        if (ret != 0)
+        {
             free(node_relocations);
             free(old_data_lpas);
             return ret;
         }
 
-        if (old_node_count > 0) {
+        if (old_node_count > 0)
+        {
             size_t valid_old_node_count = 0;
 
             old_node_lpas = (uint32_t *)malloc(old_node_count * sizeof(*old_node_lpas));
-            if (old_node_lpas == NULL) {
+            if (old_node_lpas == NULL)
+            {
                 free(node_relocations);
                 free(old_data_lpas);
                 return ENOMEM;
             }
 
-            for (i = 0; i < old_node_count; ++i) {
-                if (node_relocations[i].oldLpa == INVALID_LPA) {
+            for (i = 0; i < old_node_count; ++i)
+            {
+                if (node_relocations[i].oldLpa == INVALID_LPA)
+                {
                     continue;
                 }
                 old_node_lpas[valid_old_node_count++] = node_relocations[i].oldLpa;
@@ -1847,24 +1938,28 @@ static int r2fsCommitDirtyDirsAndNodesWithTxId(
     }
 
     ret = nodeBlockCacheApplyPendingCowRelocations(node_cache);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         free(old_node_lpas);
         free(node_relocations);
         free(old_data_lpas);
         return ret;
     }
 
-    if (!journalContainerIsEmpty(cur_journal)) {
-        to_commit = r2fsCloneJournalContainer(cur_journal);
-        if (to_commit == NULL) {
+    if (!journalContainerIsEmpty(cur_journal))
+    {
+        to_commit = rtfsCloneJournalContainer(cur_journal);
+        if (to_commit == NULL)
+        {
             free(old_node_lpas);
             free(node_relocations);
             free(old_data_lpas);
             return ENOMEM;
         }
 
-        ret = r2fsSubmitJournalContainer(to_commit, &tx_id);
-        if (ret != 0) {
+        ret = rtfsSubmitJournalContainer(to_commit, &tx_id);
+        if (ret != 0)
+        {
             journalContainerDestroy(to_commit);
             free(to_commit);
             free(old_node_lpas);
@@ -1877,7 +1972,8 @@ static int r2fsCommitDirtyDirsAndNodesWithTxId(
         journalContainerInit(cur_journal);
     }
 
-    if (journal_submitted) {
+    if (journal_submitted)
+    {
         (void)cowReclaimRegistryRegister(
             tx_id,
             old_data_lpas,
@@ -1885,20 +1981,20 @@ static int r2fsCommitDirtyDirsAndNodesWithTxId(
             old_node_lpas,
             old_node_count,
             NULL,
-            0
-        );
+            0);
     }
 
     free(old_node_lpas);
     free(node_relocations);
     free(old_data_lpas);
-    if (out_tx_id != NULL) {
+    if (out_tx_id != NULL)
+    {
         *out_tx_id = tx_id;
     }
     return 0;
 }
 
-static int r2fsRenameAcrossParents(
+static int rtfsRenameAcrossParents(
     const rtems_filesystem_location_info_t *oldparentloc,
     const rtems_filesystem_location_info_t *oldloc,
     const rtems_filesystem_location_info_t *newparentloc,
@@ -1906,8 +2002,7 @@ static int r2fsRenameAcrossParents(
     const char *new_name,
     size_t new_namelen,
     const RtfsRuntimeInodeView *source_view,
-    const RtfsDirLookupResult *existing_target
-)
+    const RtfsDirLookupResult *existing_target)
 {
     RtfsDirInode *old_dir_inode = NULL;
     RtfsDirInode *new_dir_inode = NULL;
@@ -1917,23 +2012,19 @@ static int r2fsRenameAcrossParents(
     RtfsRuntimeInodeView *new_parent_view = NULL;
     NodeBlockCacheEntryHandle old_parent_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     NodeBlockCacheEntryHandle new_parent_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *old_parent_node = NULL;
     struct RtfsNode *new_parent_node = NULL;
     NodeBlockCacheEntryHandle source_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *source_node = NULL;
     NodeBlockCacheEntryHandle replaced_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *replaced_node = NULL;
     uint32_t *replaced_data_lpas = NULL;
     size_t replaced_data_count = 0;
@@ -1946,72 +2037,74 @@ static int r2fsRenameAcrossParents(
     int ret;
 
     if (oldparentloc == NULL || oldloc == NULL || newparentloc == NULL ||
-        old_name == NULL || new_name == NULL || source_view == NULL) {
+        old_name == NULL || new_name == NULL || source_view == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (r2fsResolveParentDirInode(
+    if (rtfsResolveParentDirInode(
             oldparentloc,
             &old_dir_inode,
             &old_parent_view,
-            &old_fs_manager
-        ) != 0) {
+            &old_fs_manager) != 0)
+    {
         return -1;
     }
 
-    if (r2fsResolveParentDirInode(
+    if (rtfsResolveParentDirInode(
             newparentloc,
             &new_dir_inode,
             &new_parent_view,
-            &new_fs_manager
-        ) != 0) {
+            &new_fs_manager) != 0)
+    {
         rtfsDirInodePut(old_dir_inode);
         return -1;
     }
 
-    if (old_fs_manager != new_fs_manager) {
+    if (old_fs_manager != new_fs_manager)
+    {
         rtfsDirInodePut(new_dir_inode);
         rtfsDirInodePut(old_dir_inode);
         errno = EXDEV;
         return -1;
     }
 
-    ret = r2fsResolveTargetInodeHandle(
+    ret = rtfsResolveTargetInodeHandle(
         oldparentloc,
         NULL,
         NULL,
         &old_parent_handle,
-        &old_parent_node
-    );
-    if (ret != 0) {
+        &old_parent_node);
+    if (ret != 0)
+    {
         rtfsDirInodePut(new_dir_inode);
         rtfsDirInodePut(old_dir_inode);
         return -1;
     }
 
-    ret = r2fsResolveTargetInodeHandle(
+    ret = rtfsResolveTargetInodeHandle(
         newparentloc,
         NULL,
         NULL,
         &new_parent_handle,
-        &new_parent_node
-    );
-    if (ret != 0) {
+        &new_parent_node);
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&old_parent_handle);
         rtfsDirInodePut(new_dir_inode);
         rtfsDirInodePut(old_dir_inode);
         return -1;
     }
 
-    ret = r2fsResolveTargetInodeHandle(
+    ret = rtfsResolveTargetInodeHandle(
         oldloc,
         NULL,
         NULL,
         &source_handle,
-        &source_node
-    );
-    if (ret != 0) {
+        &source_node);
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
         nodeBlockCacheEntryHandleDestroy(&old_parent_handle);
         rtfsDirInodePut(new_dir_inode);
@@ -2019,7 +2112,8 @@ static int r2fsRenameAcrossParents(
         return -1;
     }
 
-    if (target_exists) {
+    if (target_exists)
+    {
         rtems_filesystem_location_info_t target_loc;
         RtfsRuntimeInodeView target_view_copy = existing_target->inode_view;
 
@@ -2028,7 +2122,8 @@ static int r2fsRenameAcrossParents(
         target_loc.node_access = &target_view_copy;
 
         if (rtfsInodeIsDirectoryType(source_view->file_type) &&
-            !rtfsInodeIsDirectoryType(existing_target->inode_view.file_type)) {
+            !rtfsInodeIsDirectoryType(existing_target->inode_view.file_type))
+        {
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
             nodeBlockCacheEntryHandleDestroy(&old_parent_handle);
@@ -2039,7 +2134,8 @@ static int r2fsRenameAcrossParents(
         }
 
         if (!rtfsInodeIsDirectoryType(source_view->file_type) &&
-            rtfsInodeIsDirectoryType(existing_target->inode_view.file_type)) {
+            rtfsInodeIsDirectoryType(existing_target->inode_view.file_type))
+        {
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
             nodeBlockCacheEntryHandleDestroy(&old_parent_handle);
@@ -2049,14 +2145,14 @@ static int r2fsRenameAcrossParents(
             return -1;
         }
 
-        ret = r2fsResolveTargetInodeHandle(
+        ret = rtfsResolveTargetInodeHandle(
             &target_loc,
             NULL,
             NULL,
             &replaced_handle,
-            &replaced_node
-        );
-        if (ret != 0) {
+            &replaced_node);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
             nodeBlockCacheEntryHandleDestroy(&old_parent_handle);
@@ -2065,16 +2161,16 @@ static int r2fsRenameAcrossParents(
             return -1;
         }
 
-        ret = r2fsCollectTargetReclaimPlan(
+        ret = rtfsCollectTargetReclaimPlan(
             old_fs_manager,
             &existing_target->inode_view,
             replaced_node,
             &replaced_data_lpas,
             &replaced_data_count,
             &replaced_deleted_handles,
-            &replaced_deleted_handle_count
-        );
-        if (ret != 0) {
+            &replaced_deleted_handle_count);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
@@ -2082,13 +2178,14 @@ static int r2fsRenameAcrossParents(
             rtfsDirInodePut(new_dir_inode);
             rtfsDirInodePut(old_dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             errno = ret;
             return -1;
         }
 
-        ret = r2fsTargetIsRemovableEmptyObject(&existing_target->inode_view, replaced_node);
-        if (ret != 0) {
+        ret = rtfsTargetIsRemovableEmptyObject(&existing_target->inode_view, replaced_node);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
@@ -2096,13 +2193,14 @@ static int r2fsRenameAcrossParents(
             rtfsDirInodePut(new_dir_inode);
             rtfsDirInodePut(old_dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             errno = ret;
             return -1;
         }
 
         ret = rtfsDirInodeRemoveEntry(new_dir_inode, new_name);
-        if (ret != 0) {
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
@@ -2110,15 +2208,17 @@ static int r2fsRenameAcrossParents(
             rtfsDirInodePut(new_dir_inode);
             rtfsDirInodePut(old_dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             errno = ret;
             return -1;
         }
     }
 
     ret = rtfsDirInodeAddEntry(new_dir_inode, new_name, source_view);
-    if (ret != 0) {
-        if (target_exists) {
+    if (ret != 0)
+    {
+        if (target_exists)
+        {
             (void)rtfsDirInodeAddEntry(new_dir_inode, new_name, &existing_target->inode_view);
         }
         nodeBlockCacheEntryHandleDestroy(&replaced_handle);
@@ -2128,15 +2228,17 @@ static int r2fsRenameAcrossParents(
         rtfsDirInodePut(new_dir_inode);
         rtfsDirInodePut(old_dir_inode);
         free(replaced_data_lpas);
-        r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+        rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
         errno = ret;
         return -1;
     }
 
     ret = rtfsDirInodeRemoveEntry(old_dir_inode, old_name);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         (void)rtfsDirInodeRemoveEntry(new_dir_inode, new_name);
-        if (target_exists) {
+        if (target_exists)
+        {
             (void)rtfsDirInodeAddEntry(new_dir_inode, new_name, &existing_target->inode_view);
         }
         nodeBlockCacheEntryHandleDestroy(&replaced_handle);
@@ -2146,18 +2248,19 @@ static int r2fsRenameAcrossParents(
         rtfsDirInodePut(new_dir_inode);
         rtfsDirInodePut(old_dir_inode);
         free(replaced_data_lpas);
-        r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+        rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
         errno = ret;
         return -1;
     }
 
-    if (rtfsInodeIsDirectoryType(source_view->file_type)) {
-        ret = r2fsAdjustParentDirectoryNlinkWithHandle(
+    if (rtfsInodeIsDirectoryType(source_view->file_type))
+    {
+        ret = rtfsAdjustParentDirectoryNlinkWithHandle(
             &old_parent_handle,
             old_parent_view,
-            -1
-        );
-        if (ret != 0) {
+            -1);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
@@ -2165,16 +2268,16 @@ static int r2fsRenameAcrossParents(
             rtfsDirInodePut(new_dir_inode);
             rtfsDirInodePut(old_dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             return -1;
         }
 
-        ret = r2fsAdjustParentDirectoryNlinkWithHandle(
+        ret = rtfsAdjustParentDirectoryNlinkWithHandle(
             &new_parent_handle,
             new_parent_view,
-            1
-        );
-        if (ret != 0) {
+            1);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
@@ -2182,13 +2285,15 @@ static int r2fsRenameAcrossParents(
             rtfsDirInodePut(new_dir_inode);
             rtfsDirInodePut(old_dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             return -1;
         }
     }
 
-    if (target_exists) {
-        if (r2fsMarkTargetInodeUnlinked(&existing_target->inode_view, &replaced_handle, replaced_node) != 0) {
+    if (target_exists)
+    {
+        if (rtfsMarkTargetInodeUnlinked(&existing_target->inode_view, &replaced_handle, replaced_node) != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&replaced_handle);
             nodeBlockCacheEntryHandleDestroy(&source_handle);
             nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
@@ -2196,17 +2301,18 @@ static int r2fsRenameAcrossParents(
             rtfsDirInodePut(new_dir_inode);
             rtfsDirInodePut(old_dir_inode);
             free(replaced_data_lpas);
-            r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+            rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             return -1;
         }
 
-        if (rtfsInodeIsDirectoryType(existing_target->inode_view.file_type)) {
-            ret = r2fsAdjustParentDirectoryNlinkWithHandle(
+        if (rtfsInodeIsDirectoryType(existing_target->inode_view.file_type))
+        {
+            ret = rtfsAdjustParentDirectoryNlinkWithHandle(
                 &new_parent_handle,
                 new_parent_view,
-                -1
-            );
-            if (ret != 0) {
+                -1);
+            if (ret != 0)
+            {
                 nodeBlockCacheEntryHandleDestroy(&replaced_handle);
                 nodeBlockCacheEntryHandleDestroy(&source_handle);
                 nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
@@ -2214,7 +2320,7 @@ static int r2fsRenameAcrossParents(
                 rtfsDirInodePut(new_dir_inode);
                 rtfsDirInodePut(old_dir_inode);
                 free(replaced_data_lpas);
-                r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+                rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
                 return -1;
             }
         }
@@ -2224,15 +2330,14 @@ static int r2fsRenameAcrossParents(
     memset(source_node->i.i_name, 0, sizeof(source_node->i.i_name));
     memcpy(source_node->i.i_name, new_name, new_namelen);
     source_node->i.i_namelen = (uint32_t)new_namelen;
-    r2fsTouchInodeTimes(&source_node->i, r2fsGetTimestampTick());
+    rtfsTouchInodeTimes(&source_node->i, rtfsGetTimestampTick());
     nodeBlockCacheEntryHandleMarkDirty(&source_handle);
 
-    ret = r2fsCommitDirtyDirsAndNodesWithTxId(
+    ret = rtfsCommitDirtyDirsAndNodesWithTxId(
         old_fs_manager,
         old_dir_inode,
         new_dir_inode,
-        &tx_id
-    );
+        &tx_id);
 
     nodeBlockCacheEntryHandleDestroy(&source_handle);
     nodeBlockCacheEntryHandleDestroy(&new_parent_handle);
@@ -2240,41 +2345,43 @@ static int r2fsRenameAcrossParents(
     rtfsDirInodePut(new_dir_inode);
     rtfsDirInodePut(old_dir_inode);
 
-    if (ret != 0) {
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&replaced_handle);
         free(replaced_data_lpas);
-        r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+        rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
         errno = ret;
         return -1;
     }
 
-    if (target_exists) {
-        if (tx_id != 0) {
+    if (target_exists)
+    {
+        if (tx_id != 0)
+        {
             size_t i;
 
             deferred_delete_handle_count = replaced_deleted_handle_count + 1;
             deferred_delete_handles = (NodeBlockCacheEntryHandle *)calloc(
                 deferred_delete_handle_count,
-                sizeof(*deferred_delete_handles)
-            );
-            if (deferred_delete_handles == NULL) {
+                sizeof(*deferred_delete_handles));
+            if (deferred_delete_handles == NULL)
+            {
                 nodeBlockCacheEntryHandleDestroy(&replaced_handle);
                 free(replaced_data_lpas);
-                r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+                rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
                 errno = ENOMEM;
                 return -1;
             }
 
-            for (i = 0; i < replaced_deleted_handle_count; ++i) {
+            for (i = 0; i < replaced_deleted_handle_count; ++i)
+            {
                 nodeBlockCacheEntryHandleCopy(
                     &deferred_delete_handles[i],
-                    &replaced_deleted_handles[replaced_deleted_handle_count - 1 - i]
-                );
+                    &replaced_deleted_handles[replaced_deleted_handle_count - 1 - i]);
             }
             nodeBlockCacheEntryHandleCopy(
                 &deferred_delete_handles[replaced_deleted_handle_count],
-                &replaced_handle
-            );
+                &replaced_handle);
 
             ret = cowReclaimRegistryRegister(
                 tx_id,
@@ -2283,18 +2390,20 @@ static int r2fsRenameAcrossParents(
                 NULL,
                 0,
                 deferred_delete_handles,
-                deferred_delete_handle_count
-            );
-            r2fsDestroyHandleArray(deferred_delete_handles, deferred_delete_handle_count);
-            if (ret != 0) {
+                deferred_delete_handle_count);
+            rtfsDestroyHandleArray(deferred_delete_handles, deferred_delete_handle_count);
+            if (ret != 0)
+            {
                 nodeBlockCacheEntryHandleDestroy(&replaced_handle);
                 free(replaced_data_lpas);
-                r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+                rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
                 errno = ret;
                 return -1;
             }
-        } else {
-            r2fsDeleteAndDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+        }
+        else
+        {
+            rtfsDeleteAndDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
             replaced_deleted_handles = NULL;
             replaced_deleted_handle_count = 0;
             nodeBlockCacheEntryHandleDeleteNode(&replaced_handle);
@@ -2302,38 +2411,42 @@ static int r2fsRenameAcrossParents(
     }
 
     free(replaced_data_lpas);
-    r2fsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
+    rtfsDestroyHandleArray(replaced_deleted_handles, replaced_deleted_handle_count);
     nodeBlockCacheEntryHandleDestroy(&replaced_handle);
     (void)tx_id;
     return 0;
 }
 
-static JournalContainer *r2fsCloneJournalContainer(
-    const JournalContainer *src
-)
+static JournalContainer *rtfsCloneJournalContainer(
+    const JournalContainer *src)
 {
     JournalContainer *dst;
     size_t i;
 
-    if (src == NULL) {
+    if (src == NULL)
+    {
         return NULL;
     }
 
     dst = (JournalContainer *)malloc(sizeof(*dst));
-    if (dst == NULL) {
+    if (dst == NULL)
+    {
         return NULL;
     }
 
     journalContainerInit(dst);
-    for (i = 0; i < kv_size(src->superBlockJournal); ++i) {
+    for (i = 0; i < kv_size(src->superBlockJournal); ++i)
+    {
         SuperBlockJournalEntry entry = kv_A(src->superBlockJournal, i);
         journalContainerAppendSuperBlockJournalEntry(dst, &entry);
     }
-    for (i = 0; i < kv_size(src->natJournal); ++i) {
+    for (i = 0; i < kv_size(src->natJournal); ++i)
+    {
         NatJournalEntry entry = kv_A(src->natJournal, i);
         journalContainerAppendNatJournalEntry(dst, &entry);
     }
-    for (i = 0; i < kv_size(src->sitJournal); ++i) {
+    for (i = 0; i < kv_size(src->sitJournal); ++i)
+    {
         SitJournalEntry entry = kv_A(src->sitJournal, i);
         journalContainerAppendSitJournalEntry(dst, &entry);
     }
@@ -2341,27 +2454,29 @@ static JournalContainer *r2fsCloneJournalContainer(
     return dst;
 }
 
-static int r2fsUnlinkFromParentAndCommit(
+static int rtfsUnlinkFromParentAndCommit(
     const rtems_filesystem_location_info_t *parentloc,
     const char *name,
-    uint64_t *out_tx_id
-)
+    uint64_t *out_tx_id)
 {
     RtfsDirInode *dir_inode;
     file_system_manager *fs_manager;
     int ret;
 
-    if (parentloc == NULL || name == NULL || out_tx_id == NULL) {
+    if (parentloc == NULL || name == NULL || out_tx_id == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
-    if (r2fsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0) {
+    if (rtfsResolveParentDirInode(parentloc, &dir_inode, NULL, &fs_manager) != 0)
+    {
         return -1;
     }
 
     ret = rtfsDirInodeRemoveEntry(dir_inode, name);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         rtfsDirInodePut(dir_inode);
         errno = ret;
         return -1;
@@ -2369,7 +2484,8 @@ static int r2fsUnlinkFromParentAndCommit(
     RTFS_LOG(RTFS_LOG_INFO, "unlink commit begin name=%s", name);
     ret = rtfsDirInodeCommitCowWritebackWithTxId(fs_manager, dir_inode, out_tx_id);
     rtfsDirInodePut(dir_inode);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         errno = ret;
         return -1;
     }
@@ -2377,19 +2493,18 @@ static int r2fsUnlinkFromParentAndCommit(
         RTFS_LOG_INFO,
         "unlink commit end name=%s tx_id=%llu",
         name,
-        (unsigned long long)(out_tx_id != NULL ? *out_tx_id : 0)
-    );
+        (unsigned long long)(out_tx_id != NULL ? *out_tx_id : 0));
     return 0;
 }
 
-static int r2fsSubmitJournalContainer(
+static int rtfsSubmitJournalContainer(
     JournalContainer *journal,
-    uint64_t *out_tx_id
-)
+    uint64_t *out_tx_id)
 {
     uint64_t tx_id = 0;
 
-    if (journal == NULL) {
+    if (journal == NULL)
+    {
         return EINVAL;
     }
 
@@ -2399,7 +2514,8 @@ static int r2fsSubmitJournalContainer(
         journalContainerSetTxId(journal, tx_id);
     }
 
-    if (out_tx_id != NULL) {
+    if (out_tx_id != NULL)
+    {
         *out_tx_id = tx_id;
     }
 
@@ -2411,10 +2527,9 @@ static int r2fsSubmitJournalContainer(
     return 0;
 }
 
-static int r2fsCommitDirtyNodeOnlyWithTxId(
+static int rtfsCommitDirtyNodeOnlyWithTxId(
     file_system_manager *fs_manager,
-    uint64_t *out_tx_id
-)
+    uint64_t *out_tx_id)
 {
     NodeBlockCache *node_cache;
     JournalContainer *cur_journal;
@@ -2426,31 +2541,36 @@ static int r2fsCommitDirtyNodeOnlyWithTxId(
     uint64_t tx_id = 0;
     int ret;
 
-    if (fs_manager == NULL) {
+    if (fs_manager == NULL)
+    {
         return EINVAL;
     }
 
     node_cache = fileSystemManagerGetNodeCache(fs_manager);
     cur_journal = fileSystemManagerGetCurJournal(fs_manager);
-    if (node_cache == NULL || cur_journal == NULL) {
+    if (node_cache == NULL || cur_journal == NULL)
+    {
         return EINVAL;
     }
 
     ret = cowReclaimRegistryDrainCompleted();
-    if (ret != 0) {
+    if (ret != 0)
+    {
         return ret;
     }
 
     ret = nodeBlockCacheWritebackDirtyContentCow(node_cache);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         return ret;
     }
 
-    if (node_cache->curSize > 0) {
+    if (node_cache->curSize > 0)
+    {
         node_relocations = (NodeBlockCacheCowRelocation *)malloc(
-            node_cache->curSize * sizeof(*node_relocations)
-        );
-        if (node_relocations == NULL) {
+            node_cache->curSize * sizeof(*node_relocations));
+        if (node_relocations == NULL)
+        {
             return ENOMEM;
         }
 
@@ -2458,43 +2578,50 @@ static int r2fsCommitDirtyNodeOnlyWithTxId(
             node_cache,
             node_relocations,
             node_cache->curSize,
-            &old_node_count
-        );
-        if (ret != 0) {
+            &old_node_count);
+        if (ret != 0)
+        {
             free(node_relocations);
             return ret;
         }
 
-        if (old_node_count > 0) {
+        if (old_node_count > 0)
+        {
             old_node_lpas = (uint32_t *)malloc(old_node_count * sizeof(*old_node_lpas));
-            if (old_node_lpas == NULL) {
+            if (old_node_lpas == NULL)
+            {
                 free(node_relocations);
                 return ENOMEM;
             }
 
-            for (i = 0; i < old_node_count; ++i) {
+            for (i = 0; i < old_node_count; ++i)
+            {
                 old_node_lpas[i] = node_relocations[i].oldLpa;
             }
         }
     }
 
     ret = nodeBlockCacheApplyPendingCowRelocations(node_cache);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         free(old_node_lpas);
         free(node_relocations);
         return ret;
     }
 
-    if (!journalContainerIsEmpty(cur_journal)) {
-        to_commit = r2fsCloneJournalContainer(cur_journal);
-        if (to_commit == NULL) {
+    if (!journalContainerIsEmpty(cur_journal))
+    {
+        to_commit = rtfsCloneJournalContainer(cur_journal);
+        if (to_commit == NULL)
+        {
             free(old_node_lpas);
             free(node_relocations);
             return ENOMEM;
         }
 
-        ret = r2fsSubmitJournalContainer(to_commit, &tx_id);
-        if (ret != 0) {
+        ret = rtfsSubmitJournalContainer(to_commit, &tx_id);
+        if (ret != 0)
+        {
             journalContainerDestroy(to_commit);
             free(to_commit);
             free(old_node_lpas);
@@ -2511,36 +2638,36 @@ static int r2fsCommitDirtyNodeOnlyWithTxId(
             old_node_lpas,
             old_node_count,
             NULL,
-            0
-        );
+            0);
     }
 
     free(old_node_lpas);
     free(node_relocations);
-    if (out_tx_id != NULL) {
+    if (out_tx_id != NULL)
+    {
         *out_tx_id = tx_id;
     }
     return 0;
 }
 
-static int r2fsCommitDirtyNodeOnly(file_system_manager *fs_manager)
+static int rtfsCommitDirtyNodeOnly(file_system_manager *fs_manager)
 {
-    return r2fsCommitDirtyNodeOnlyWithTxId(fs_manager, NULL);
+    return rtfsCommitDirtyNodeOnlyWithTxId(fs_manager, NULL);
 }
 
-static void r2fsInitCreatedInode(
+static void rtfsInitCreatedInode(
     struct RtfsNode *node,
     rtfs_ino parent_ino,
     const char *name,
     size_t namelen,
     mode_t mode,
-    bool is_dir
-)
+    bool is_dir)
 {
     struct RtfsInode *inode = &node->i;
     uint32_t nid;
 
-    if (node == NULL) {
+    if (node == NULL)
+    {
         return;
     }
 
@@ -2557,10 +2684,12 @@ static void r2fsInitCreatedInode(
     inode->i_blocks = 0;
     inode->i_dentry_num = 0;
     inode->i_current_depth = 0;
-    if (is_dir) {
+    if (is_dir)
+    {
         inode->i_inline = RTFS_INLINE_DENTRY;
     }
-    if (name != NULL && namelen > 0) {
+    if (name != NULL && namelen > 0)
+    {
         memcpy(inode->i_name, name, namelen);
     }
 
@@ -2570,10 +2699,9 @@ static void r2fsInitCreatedInode(
 
 // ****************************** Initialize API ******************************
 
-int r2fsInitialize(
+int rtfsInitialize(
     rtems_filesystem_mount_table_entry_t *mt_entry,
-    const void *data
-)
+    const void *data)
 {
     comm_dev *dev;
     file_system_manager *fs_manager;
@@ -2581,40 +2709,45 @@ int r2fsInitialize(
     rtfs_ino root_ino;
     int ret;
 
-    if (mt_entry == NULL || mt_entry->mt_fs_root == NULL) {
+    if (mt_entry == NULL || mt_entry->mt_fs_root == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
     dev = (comm_dev *)(data != NULL ? data : mt_entry->dev);
     ret = comm_submit_fs_recover_from_db_request(dev);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         errno = ret == ENOMEM ? ENOMEM : EBUSY;
         return -1;
     }
 
     ret = fileSystemManagerSetup(dev);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         errno = ret == -ENOMEM ? ENOMEM : EBUSY;
         return -1;
     }
 
     fs_manager = fileSystemManagerGetInstance();
-    if (fs_manager == NULL) {
+    if (fs_manager == NULL)
+    {
         errno = EIO;
         return -1;
     }
 
-    root_ino = r2fsGetRootIno(fs_manager);
+    root_ino = rtfsGetRootIno(fs_manager);
     root_view = rtfsRuntimeInodeViewCreate(root_ino, root_ino, RTFS_FT_DIR);
-    if (root_view == NULL) {
+    if (root_view == NULL)
+    {
         fileSystemManagerFini();
         errno = ENOMEM;
         return -1;
     }
 
     mt_entry->fs_info = fs_manager;
-    mt_entry->ops = &r2fsFsHandler;
+    mt_entry->ops = &rtfsFsHandler;
     mt_entry->mt_fs_root->location.node_access = root_view;
     mt_entry->mt_fs_root->location.node_access_2 = NULL;
     mt_entry->mt_fs_root->location.handlers = &rtfsDirhandlers;
@@ -2624,37 +2757,39 @@ int r2fsInitialize(
 
 // ****************************** Handler API ******************************
 
-void r2fsLock(const rtems_filesystem_mount_table_entry_t *mt_entry)
+void rtfsLock(const rtems_filesystem_mount_table_entry_t *mt_entry)
 {
     file_system_manager *fs_manager = mt_entry->fs_info;
 
     fileSystemManagerMetaLock(fs_manager);
 }
 
-void r2fsUnlock(const rtems_filesystem_mount_table_entry_t *mt_entry)
+void rtfsUnlock(const rtems_filesystem_mount_table_entry_t *mt_entry)
 {
     file_system_manager *fs_manager = mt_entry->fs_info;
 
     fileSystemManagerMetaUnlock(fs_manager);
 }
 
-static bool r2fsAreNodesEqual(
+static bool rtfsAreNodesEqual(
     const rtems_filesystem_location_info_t *a,
-    const rtems_filesystem_location_info_t *b
-)
+    const rtems_filesystem_location_info_t *b)
 {
-    const RtfsRuntimeInodeView *a_view = r2fsGetNodeView(a);
-    const RtfsRuntimeInodeView *b_view = r2fsGetNodeView(b);
+    const RtfsRuntimeInodeView *a_view = rtfsGetNodeView(a);
+    const RtfsRuntimeInodeView *b_view = rtfsGetNodeView(b);
 
-    if (a == NULL || b == NULL) {
+    if (a == NULL || b == NULL)
+    {
         return 0;
     }
 
-    if (a->mt_entry != b->mt_entry) {
+    if (a->mt_entry != b->mt_entry)
+    {
         return 0;
     }
 
-    if (a_view == NULL || b_view == NULL) {
+    if (a_view == NULL || b_view == NULL)
+    {
         return a_view == b_view;
     }
 
@@ -2663,10 +2798,9 @@ static bool r2fsAreNodesEqual(
 
 // ****************** Handler EvalPath API *******************
 
-static bool r2fsFsIsDirectory(
+static bool rtfsFsIsDirectory(
     rtems_filesystem_eval_path_context_t *ctx,
-    void *arg
-)
+    void *arg)
 {
     rtems_filesystem_location_info_t *currentloc;
     RtfsRuntimeInodeView *view;
@@ -2674,16 +2808,15 @@ static bool r2fsFsIsDirectory(
     (void)arg;
 
     currentloc = rtems_filesystem_eval_path_get_currentloc(ctx);
-    view = r2fsGetNodeView(currentloc);
+    view = rtfsGetNodeView(currentloc);
     return view != NULL && rtfsInodeIsDirectoryType(view->file_type);
 }
 
-static rtems_filesystem_eval_path_generic_status r2fsFsEvalToken(
+static rtems_filesystem_eval_path_generic_status rtfsFsEvalToken(
     rtems_filesystem_eval_path_context_t *ctx,
     void *arg,
     const char *token,
-    size_t tokenlen
-)
+    size_t tokenlen)
 {
     rtems_filesystem_location_info_t *currentloc;
     RtfsRuntimeInodeView *current_view;
@@ -2696,15 +2829,17 @@ static rtems_filesystem_eval_path_generic_status r2fsFsEvalToken(
     (void)arg;
 
     currentloc = rtems_filesystem_eval_path_get_currentloc(ctx);
-    current_view = r2fsGetNodeView(currentloc);
-    fs_manager = r2fsGetFsManagerFromLoc(currentloc);
+    current_view = rtfsGetNodeView(currentloc);
+    fs_manager = rtfsGetFsManagerFromLoc(currentloc);
 
-    if (current_view == NULL) {
+    if (current_view == NULL)
+    {
         rtems_filesystem_eval_path_error(ctx, EIO);
         return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_DONE;
     }
 
-    if (rtems_filesystem_is_current_directory(token, tokenlen)) {
+    if (rtems_filesystem_is_current_directory(token, tokenlen))
+    {
         rtems_filesystem_eval_path_clear_token(ctx);
         return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_CONTINUE;
     }
@@ -2713,19 +2848,23 @@ static rtems_filesystem_eval_path_generic_status r2fsFsEvalToken(
     request.mode = RTFS_DIR_BUILD_ON_DEMAND;
 
     ret = rtfsDirInodeResolve(fs_manager, NULL, &request, &dir_inode);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         rtems_filesystem_eval_path_error(ctx, ret);
         return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_DONE;
     }
 
-    do {
+    do
+    {
         ret = rtfsDirInodeLookup(dir_inode, token, tokenlen, &lookup_result);
-        if (ret != ENOENT || rtfsDirInodeIsFullyLoaded(dir_inode)) {
+        if (ret != ENOENT || rtfsDirInodeIsFullyLoaded(dir_inode))
+        {
             break;
         }
 
         ret = rtfsDirInodeResolveNext(fs_manager, current_view->ino, dir_inode);
-        if (ret != 0) {
+        if (ret != 0)
+        {
             rtfsDirInodePut(dir_inode);
             rtems_filesystem_eval_path_error(ctx, ret);
             return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_DONE;
@@ -2734,47 +2873,49 @@ static rtems_filesystem_eval_path_generic_status r2fsFsEvalToken(
 
     rtfsDirInodePut(dir_inode);
 
-    if (ret == ENOENT) {
+    if (ret == ENOENT)
+    {
         return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_NO_ENTRY;
     }
 
-    if (ret != 0) {
+    if (ret != 0)
+    {
         rtems_filesystem_eval_path_error(ctx, ret);
         return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_DONE;
     }
 
-    if (r2fsSetLocationNode(currentloc, &lookup_result.inode_view, token, tokenlen) != 0) {
+    if (rtfsSetLocationNode(currentloc, &lookup_result.inode_view, token, tokenlen) != 0)
+    {
         rtems_filesystem_eval_path_error(ctx, errno);
         return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_DONE;
     }
 
     rtems_filesystem_eval_path_clear_token(ctx);
-    if (rtems_filesystem_eval_path_has_path(ctx)) {
+    if (rtems_filesystem_eval_path_has_path(ctx))
+    {
         return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_CONTINUE;
     }
 
     return RTEMS_FILESYSTEM_EVAL_PATH_GENERIC_DONE;
 }
 
-static const rtems_filesystem_eval_path_generic_config r2fsFsEvalConfig = {
-    .is_directory = r2fsFsIsDirectory,
-    .eval_token = r2fsFsEvalToken
-};
+static const rtems_filesystem_eval_path_generic_config rtfsFsEvalConfig = {
+    .is_directory = rtfsFsIsDirectory,
+    .eval_token = rtfsFsEvalToken};
 
-static void r2fsEvalPath(rtems_filesystem_eval_path_context_t *ctx)
+static void rtfsEvalPath(rtems_filesystem_eval_path_context_t *ctx)
 {
-    rtems_filesystem_eval_path_generic(ctx, NULL, &r2fsFsEvalConfig);
+    rtems_filesystem_eval_path_generic(ctx, NULL, &rtfsFsEvalConfig);
 }
 
 // ****************** Handler Other API *******************
 
-int r2fsMknod(
+int rtfsMknod(
     const rtems_filesystem_location_info_t *parentloc,
     const char *name,
     size_t namelen,
     mode_t mode,
-    dev_t dev
-)
+    dev_t dev)
 {
     RtfsRuntimeInodeView *parent_view;
     file_system_manager *fs_manager;
@@ -2783,12 +2924,10 @@ int r2fsMknod(
     NodeBlockCacheHelper helper;
     NodeBlockCacheEntryHandle inode_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     NodeBlockCacheEntryHandle parent_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *parent_node = NULL;
     struct RtfsNode *created_inode;
     RtfsRuntimeInodeView child_view;
@@ -2798,34 +2937,39 @@ int r2fsMknod(
 
     (void)dev;
 
-    if (r2fsValidateParentDir(parentloc, name, namelen, &parent_view) != 0) {
+    if (rtfsValidateParentDir(parentloc, name, namelen, &parent_view) != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "mknod input invalid");
         return -1;
     }
 
-    if (!S_ISDIR(mode) && !S_ISREG(mode)) {
+    if (!S_ISDIR(mode) && !S_ISREG(mode))
+    {
         errno = ENOTSUP;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "mknod mode unsupported: %u", (unsigned int)mode);
         return -1;
     }
 
-    fs_manager = r2fsGetFsManagerFromLoc(parentloc);
-    sp_manager = r2fsGetSuperManagerFromLoc(parentloc);
+    fs_manager = rtfsGetFsManagerFromLoc(parentloc);
+    sp_manager = rtfsGetSuperManagerFromLoc(parentloc);
     node_cache = fileSystemManagerGetNodeCache(fs_manager);
-    if (fs_manager == NULL || sp_manager == NULL || node_cache == NULL) {
+    if (fs_manager == NULL || sp_manager == NULL || node_cache == NULL)
+    {
         errno = EIO;
         RTFS_ERRNO_LOG(RTFS_LOG_ERROR, errno, "mknod cannot get fs_manager/super_manager/node_cache");
         return -1;
     }
 
     is_dir = S_ISDIR(mode);
-    ret = r2fsNameExistsInParent(parentloc, name);
-    if (ret > 0) {
+    ret = rtfsNameExistsInParent(parentloc, name);
+    if (ret > 0)
+    {
         errno = EEXIST;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "mknod target already exists");
         return -1;
     }
-    if (ret < 0) {
+    if (ret < 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "mknod failed to probe target existence");
         return -1;
     }
@@ -2833,32 +2977,35 @@ int r2fsMknod(
     nodeBlockCacheHelperInit(&helper, fs_manager);
     inode_handle = nodeBlockCacheHelperCreateInodeEntry(&helper);
     nodeBlockCacheHelperDestroy(&helper);
-    if (nodeBlockCacheEntryHandleIsEmpty(&inode_handle)) {
+    if (nodeBlockCacheEntryHandleIsEmpty(&inode_handle))
+    {
         errno = ENOSPC;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "mknod failed to create inode entry");
         return -1;
     }
 
     created_inode = nodeBlockCacheEntryGetNodeBlockPtr(inode_handle.entry);
-    r2fsInitCreatedInode(created_inode, parent_view->ino, name, namelen, mode, is_dir);
+    rtfsInitCreatedInode(created_inode, parent_view->ino, name, namelen, mode, is_dir);
     nodeBlockCacheEntryHandleMarkDirty(&inode_handle);
 
-    if (is_dir) {
-        ret = r2fsResolveTargetInodeHandle(
+    if (is_dir)
+    {
+        ret = rtfsResolveTargetInodeHandle(
             parentloc,
             NULL,
             NULL,
             &parent_handle,
-            &parent_node
-        );
-        if (ret != 0) {
-            r2fsRollbackCreatedInode(&inode_handle);
+            &parent_node);
+        if (ret != 0)
+        {
+            rtfsRollbackCreatedInode(&inode_handle);
             return -1;
         }
 
-        if (r2fsAdjustParentDirectoryNlinkWithHandle(&parent_handle, parent_view, 1) != 0) {
+        if (rtfsAdjustParentDirectoryNlinkWithHandle(&parent_handle, parent_view, 1) != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&parent_handle);
-            r2fsRollbackCreatedInode(&inode_handle);
+            rtfsRollbackCreatedInode(&inode_handle);
             return -1;
         }
         parent_nlink_adjusted = true;
@@ -2868,8 +3015,7 @@ int r2fsMknod(
         &child_view,
         created_inode->footer.ino,
         parent_view->ino,
-        is_dir ? RTFS_FT_DIR : RTFS_FT_REG_FILE
-    );
+        is_dir ? RTFS_FT_DIR : RTFS_FT_REG_FILE);
 
     RTFS_LOG(
         RTFS_LOG_INFO,
@@ -2878,17 +3024,18 @@ int r2fsMknod(
         (unsigned long long)parent_view->ino,
         (int)namelen,
         name,
-        (unsigned int)mode
-    );
+        (unsigned int)mode);
 
-    ret = r2fsAddNameToParent(parentloc, name, &child_view);
-    if (ret != 0) {
+    ret = rtfsAddNameToParent(parentloc, name, &child_view);
+    if (ret != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "mknod failed to add parent dentry");
-        if (parent_nlink_adjusted) {
-            (void)r2fsAdjustParentDirectoryNlinkWithHandle(&parent_handle, parent_view, -1);
+        if (parent_nlink_adjusted)
+        {
+            (void)rtfsAdjustParentDirectoryNlinkWithHandle(&parent_handle, parent_view, -1);
         }
         nodeBlockCacheEntryHandleDestroy(&parent_handle);
-        r2fsRollbackCreatedInode(&inode_handle);
+        rtfsRollbackCreatedInode(&inode_handle);
         return -1;
     }
 
@@ -2897,10 +3044,9 @@ int r2fsMknod(
     return 0;
 }
 
-int r2fsRmnod(
+int rtfsRmnod(
     const rtems_filesystem_location_info_t *parentloc,
-    const rtems_filesystem_location_info_t *loc
-)
+    const rtems_filesystem_location_info_t *loc)
 {
     RtfsRuntimeInodeView *parent_view;
     RtfsRuntimeInodeView *target_view;
@@ -2911,8 +3057,7 @@ int r2fsRmnod(
     size_t target_deleted_handle_count = 0;
     NodeBlockCacheEntryHandle target_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     NodeBlockCacheEntryHandle *deferred_delete_handles = NULL;
     size_t deferred_delete_handle_count = 0;
     struct RtfsNode *target_node;
@@ -2920,26 +3065,30 @@ int r2fsRmnod(
     uint64_t tx_id = 0;
     int ret;
 
-    if (r2fsValidateNodeLoc(parentloc, &parent_view) != 0 ||
-        r2fsValidateNodeLoc(loc, &target_view) != 0) {
+    if (rtfsValidateNodeLoc(parentloc, &parent_view) != 0 ||
+        rtfsValidateNodeLoc(loc, &target_view) != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod input invalid");
         return -1;
     }
 
-    if (!rtfsInodeIsDirectoryType(parent_view->file_type)) {
+    if (!rtfsInodeIsDirectoryType(parent_view->file_type))
+    {
         errno = ENOTDIR;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod parent is not a directory");
         return -1;
     }
 
-    if (parent_view->ino == target_view->ino) {
+    if (parent_view->ino == target_view->ino)
+    {
         errno = EBUSY;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod refuses to remove mount/root node");
         return -1;
     }
 
-    target_name = r2fsGetNodeName(loc);
-    if (target_name == NULL || target_name[0] == '\0') {
+    target_name = rtfsGetNodeName(loc);
+    if (target_name == NULL || target_name[0] == '\0')
+    {
         errno = EINVAL;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod target name is unavailable");
         return -1;
@@ -2950,70 +3099,73 @@ int r2fsRmnod(
         "rmnod requested for target ino=%llu under parent ino=%llu, name=%s",
         (unsigned long long)target_view->ino,
         (unsigned long long)parent_view->ino,
-        target_name
-    );
+        target_name);
 
-    if (r2fsResolveTargetInodeHandle(
+    if (rtfsResolveTargetInodeHandle(
             loc,
             &target_view,
             &fs_manager,
             &target_handle,
-            &target_node
-        ) != 0) {
+            &target_node) != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod failed to resolve target inode");
         return -1;
     }
 
-    ret = r2fsCollectTargetReclaimPlan(
+    ret = rtfsCollectTargetReclaimPlan(
         fs_manager,
         target_view,
         target_node,
         &target_data_lpas,
         &target_data_count,
         &target_deleted_handles,
-        &target_deleted_handle_count
-    );
-    if (ret != 0) {
+        &target_deleted_handle_count);
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&target_handle);
         free(target_data_lpas);
-        r2fsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
+        rtfsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
         errno = ret;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod failed to collect reclaim plan for target");
         return -1;
     }
 
-    ret = r2fsTargetIsRemovableEmptyObject(target_view, target_node);
-    if (ret != 0) {
+    ret = rtfsTargetIsRemovableEmptyObject(target_view, target_node);
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&target_handle);
         free(target_data_lpas);
-        r2fsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
+        rtfsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
         errno = ret;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod target is not removable by current model");
         return -1;
     }
 
-    if (r2fsMarkTargetInodeUnlinked(target_view, &target_handle, target_node) != 0) {
+    if (rtfsMarkTargetInodeUnlinked(target_view, &target_handle, target_node) != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&target_handle);
         free(target_data_lpas);
-        r2fsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
+        rtfsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod failed to mark target inode unlinked");
         return -1;
     }
 
     if (rtfsInodeIsDirectoryType(target_view->file_type) &&
-        r2fsAdjustParentDirectoryNlink(parentloc, -1) != 0) {
+        rtfsAdjustParentDirectoryNlink(parentloc, -1) != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&target_handle);
         free(target_data_lpas);
-        r2fsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
+        rtfsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod failed to adjust parent directory nlink");
         return -1;
     }
 
-    ret = r2fsUnlinkFromParentAndCommit(parentloc, target_name, &tx_id);
-    if (ret != 0) {
+    ret = rtfsUnlinkFromParentAndCommit(parentloc, target_name, &tx_id);
+    if (ret != 0)
+    {
         nodeBlockCacheEntryHandleDestroy(&target_handle);
         free(target_data_lpas);
-        r2fsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
+        rtfsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod failed to unlink from parent");
         return -1;
     }
@@ -3022,19 +3174,19 @@ int r2fsRmnod(
         RTFS_LOG_INFO,
         "rmnod commit result target ino=%llu tx_id=%llu",
         (unsigned long long)target_view->ino,
-        (unsigned long long)tx_id
-    );
+        (unsigned long long)tx_id);
 
-    if (tx_id != 0) {
+    if (tx_id != 0)
+    {
         deferred_delete_handle_count = target_deleted_handle_count + 1;
         deferred_delete_handles = (NodeBlockCacheEntryHandle *)calloc(
             deferred_delete_handle_count,
-            sizeof(*deferred_delete_handles)
-        );
-        if (deferred_delete_handles == NULL) {
+            sizeof(*deferred_delete_handles));
+        if (deferred_delete_handles == NULL)
+        {
             nodeBlockCacheEntryHandleDestroy(&target_handle);
             free(target_data_lpas);
-            r2fsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
+            rtfsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
             errno = ENOMEM;
             RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod failed to allocate deferred delete handles");
             return -1;
@@ -3043,17 +3195,16 @@ int r2fsRmnod(
         {
             size_t i;
 
-            for (i = 0; i < target_deleted_handle_count; ++i) {
+            for (i = 0; i < target_deleted_handle_count; ++i)
+            {
                 nodeBlockCacheEntryHandleCopy(
                     &deferred_delete_handles[i],
-                    &target_deleted_handles[target_deleted_handle_count - 1 - i]
-                );
+                    &target_deleted_handles[target_deleted_handle_count - 1 - i]);
             }
         }
         nodeBlockCacheEntryHandleCopy(
             &deferred_delete_handles[target_deleted_handle_count],
-            &target_handle
-        );
+            &target_handle);
 
         ret = cowReclaimRegistryRegister(
             tx_id,
@@ -3062,55 +3213,58 @@ int r2fsRmnod(
             NULL,
             0,
             deferred_delete_handles,
-            deferred_delete_handle_count
-        );
-        r2fsDestroyHandleArray(deferred_delete_handles, deferred_delete_handle_count);
-        if (ret != 0) {
+            deferred_delete_handle_count);
+        rtfsDestroyHandleArray(deferred_delete_handles, deferred_delete_handle_count);
+        if (ret != 0)
+        {
             nodeBlockCacheEntryHandleDestroy(&target_handle);
             free(target_data_lpas);
-            r2fsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
+            rtfsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
             errno = ret;
             RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rmnod failed to register deferred reclaim");
             return -1;
         }
-    } else {
-        r2fsDeleteAndDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
+    }
+    else
+    {
+        rtfsDeleteAndDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
         nodeBlockCacheEntryHandleDeleteNode(&target_handle);
     }
 
     free(target_data_lpas);
-    if (tx_id != 0) {
-        r2fsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
+    if (tx_id != 0)
+    {
+        rtfsDestroyHandleArray(target_deleted_handles, target_deleted_handle_count);
     }
     nodeBlockCacheEntryHandleDestroy(&target_handle);
     return 0;
 }
 
-int r2fsFchmod(const rtems_filesystem_location_info_t *loc, mode_t mode)
+int rtfsFchmod(const rtems_filesystem_location_info_t *loc, mode_t mode)
 {
     RtfsRuntimeInodeView *view;
     file_system_manager *fs_manager;
     NodeBlockCacheEntryHandle inode_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *inode_node;
     int ret;
 
-    if (r2fsValidateNodeLoc(loc, &view) != 0) {
+    if (rtfsValidateNodeLoc(loc, &view) != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "fchmod input invalid");
         return -1;
     }
 
-    fs_manager = r2fsGetFsManagerFromLoc(loc);
-    ret = r2fsResolveTargetInodeHandle(
+    fs_manager = rtfsGetFsManagerFromLoc(loc);
+    ret = rtfsResolveTargetInodeHandle(
         loc,
         NULL,
         NULL,
         &inode_handle,
-        &inode_node
-    );
-    if (ret != 0) {
+        &inode_node);
+    if (ret != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "fchmod failed to resolve target inode");
         return -1;
     }
@@ -3119,16 +3273,16 @@ int r2fsFchmod(const rtems_filesystem_location_info_t *loc, mode_t mode)
         RTFS_LOG_INFO,
         "fchmod requested for ino=%llu, mode=%u",
         (unsigned long long)view->ino,
-        (unsigned int)mode
-    );
+        (unsigned int)mode);
 
     inode_node->i.i_mode = (uint16_t)(mode & 07777);
-    r2fsTouchInodeTimes(&inode_node->i, r2fsGetTimestampTick());
+    rtfsTouchInodeTimes(&inode_node->i, rtfsGetTimestampTick());
     nodeBlockCacheEntryHandleMarkDirty(&inode_handle);
     nodeBlockCacheEntryHandleDestroy(&inode_handle);
 
-    ret = r2fsCommitDirtyNodeOnly(fs_manager);
-    if (ret != 0) {
+    ret = rtfsCommitDirtyNodeOnly(fs_manager);
+    if (ret != 0)
+    {
         errno = ret;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "fchmod failed to commit dirty inode");
         return -1;
@@ -3137,15 +3291,15 @@ int r2fsFchmod(const rtems_filesystem_location_info_t *loc, mode_t mode)
     return 0;
 }
 
-int r2fsChown(
+int rtfsChown(
     const rtems_filesystem_location_info_t *loc,
     uid_t owner,
-    gid_t group
-)
+    gid_t group)
 {
     RtfsRuntimeInodeView *view;
 
-    if (r2fsValidateNodeLoc(loc, &view) != 0) {
+    if (rtfsValidateNodeLoc(loc, &view) != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "chown input invalid");
         return -1;
     }
@@ -3155,8 +3309,7 @@ int r2fsChown(
         "chown requested for ino=%llu, owner=%u, group=%u",
         (unsigned long long)view->ino,
         (unsigned int)owner,
-        (unsigned int)group
-    );
+        (unsigned int)group);
 
     // TODO: RtfsRuntimeInodeView 当前不承载 owner/group。
     // TODO: 接入 inode cache 后更新磁盘 inode 的属主字段。
@@ -3165,29 +3318,33 @@ int r2fsChown(
     return -1;
 }
 
-int r2fsCloneNode(rtems_filesystem_location_info_t *loc)
+int rtfsCloneNode(rtems_filesystem_location_info_t *loc)
 {
-    RtfsRuntimeInodeView *view = r2fsGetNodeView(loc);
+    RtfsRuntimeInodeView *view = rtfsGetNodeView(loc);
     RtfsRuntimeInodeView *clone;
     const char *name;
     char *name_clone = NULL;
 
-    if (view == NULL) {
+    if (view == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
     clone = rtfsRuntimeInodeViewClone(view);
-    if (clone == NULL) {
+    if (clone == NULL)
+    {
         errno = ENOMEM;
         RTFS_ERRNO_LOG(RTFS_LOG_ERROR, errno, "clone node failed");
         return -1;
     }
 
-    name = r2fsGetNodeName(loc);
-    if (name != NULL) {
-        name_clone = r2fsDupName(name, strlen(name));
-        if (name_clone == NULL) {
+    name = rtfsGetNodeName(loc);
+    if (name != NULL)
+    {
+        name_clone = rtfsDupName(name, strlen(name));
+        if (name_clone == NULL)
+        {
             free(clone);
             errno = ENOMEM;
             return -1;
@@ -3196,13 +3353,14 @@ int r2fsCloneNode(rtems_filesystem_location_info_t *loc)
 
     loc->node_access = clone;
     loc->node_access_2 = name_clone;
-    r2fsSetHandlers(loc);
+    rtfsSetHandlers(loc);
     return 0;
 }
 
-void r2fsFreeNode(const rtems_filesystem_location_info_t *loc)
+void rtfsFreeNode(const rtems_filesystem_location_info_t *loc)
 {
-    if (loc == NULL) {
+    if (loc == NULL)
+    {
         return;
     }
 
@@ -3211,35 +3369,38 @@ void r2fsFreeNode(const rtems_filesystem_location_info_t *loc)
     free((void *)loc->node_access_2);
 }
 
-int r2fsMount(rtems_filesystem_mount_table_entry_t *mt_entry)
+int rtfsMount(rtems_filesystem_mount_table_entry_t *mt_entry)
 {
     RTFS_LOG(RTFS_LOG_INFO, "mount requested for nested file system");
     return rtems_filesystem_default_mount(mt_entry);
 }
 
-int r2fsUnmount(rtems_filesystem_mount_table_entry_t *mt_entry)
+int rtfsUnmount(rtems_filesystem_mount_table_entry_t *mt_entry)
 {
     RTFS_LOG(RTFS_LOG_INFO, "unmount requested for nested file system");
     return rtems_filesystem_default_unmount(mt_entry);
 }
 
-void r2fsUnmountMe(rtems_filesystem_mount_table_entry_t *temp_mt_entry)
+void rtfsUnmountMe(rtems_filesystem_mount_table_entry_t *temp_mt_entry)
 {
     file_system_manager *fs_manager;
 
-    if (temp_mt_entry == NULL) {
+    if (temp_mt_entry == NULL)
+    {
         return;
     }
 
     RTFS_LOG(RTFS_LOG_INFO, "unmount file system instance");
 
     fs_manager = (file_system_manager *)temp_mt_entry->fs_info;
-    if (fs_manager != NULL) {
+    if (fs_manager != NULL)
+    {
         (void)fileSystemManagerFlushForUnmount(fs_manager);
     }
 
-    if (temp_mt_entry->mt_fs_root != NULL) {
-        r2fsFreeNode(&temp_mt_entry->mt_fs_root->location);
+    if (temp_mt_entry->mt_fs_root != NULL)
+    {
+        rtfsFreeNode(&temp_mt_entry->mt_fs_root->location);
         temp_mt_entry->mt_fs_root->location.node_access = NULL;
         temp_mt_entry->mt_fs_root->location.node_access_2 = NULL;
         temp_mt_entry->mt_fs_root->location.handlers = NULL;
@@ -3249,24 +3410,24 @@ void r2fsUnmountMe(rtems_filesystem_mount_table_entry_t *temp_mt_entry)
     fileSystemManagerFini();
 }
 
-int r2fsUtimens(
+int rtfsUtimens(
     const rtems_filesystem_location_info_t *loc,
-    struct timespec times[2]
-)
+    struct timespec times[2])
 {
     RtfsRuntimeInodeView *view;
     file_system_manager *fs_manager;
     NodeBlockCacheEntryHandle inode_handle = {
         .cache = NULL,
-        .entry = NULL
-    };
+        .entry = NULL};
     struct RtfsNode *inode_node;
     int ret;
     uint64_t atime;
     uint64_t mtime;
 
-    if (r2fsValidateNodeLoc(loc, &view) != 0 || times == NULL) {
-        if (errno == 0) {
+    if (rtfsValidateNodeLoc(loc, &view) != 0 || times == NULL)
+    {
+        if (errno == 0)
+        {
             errno = EINVAL;
         }
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "utimens input invalid");
@@ -3278,18 +3439,17 @@ int r2fsUtimens(
         "utimens requested for ino=%llu, atime=%lld, mtime=%lld",
         (unsigned long long)view->ino,
         (long long)times[0].tv_sec,
-        (long long)times[1].tv_sec
-    );
+        (long long)times[1].tv_sec);
 
-    fs_manager = r2fsGetFsManagerFromLoc(loc);
-    ret = r2fsResolveTargetInodeHandle(
+    fs_manager = rtfsGetFsManagerFromLoc(loc);
+    ret = rtfsResolveTargetInodeHandle(
         loc,
         NULL,
         NULL,
         &inode_handle,
-        &inode_node
-    );
-    if (ret != 0) {
+        &inode_node);
+    if (ret != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "utimens failed to resolve target inode");
         return -1;
     }
@@ -3304,8 +3464,9 @@ int r2fsUtimens(
     nodeBlockCacheEntryHandleMarkDirty(&inode_handle);
     nodeBlockCacheEntryHandleDestroy(&inode_handle);
 
-    ret = r2fsCommitDirtyNodeOnly(fs_manager);
-    if (ret != 0) {
+    ret = rtfsCommitDirtyNodeOnly(fs_manager);
+    if (ret != 0)
+    {
         errno = ret;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "utimens failed to commit dirty inode");
         return -1;
@@ -3314,18 +3475,19 @@ int r2fsUtimens(
     return 0;
 }
 
-int r2fsSymlink(
+int rtfsSymlink(
     const rtems_filesystem_location_info_t *parentloc,
     const char *name,
     size_t namelen,
-    const char *target
-)
+    const char *target)
 {
     RtfsRuntimeInodeView *parent_view;
 
-    if (r2fsValidateParentDir(parentloc, name, namelen, &parent_view) != 0 ||
-        target == NULL || target[0] == '\0') {
-        if (errno == 0) {
+    if (rtfsValidateParentDir(parentloc, name, namelen, &parent_view) != 0 ||
+        target == NULL || target[0] == '\0')
+    {
+        if (errno == 0)
+        {
             errno = EINVAL;
         }
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "symlink input invalid");
@@ -3338,8 +3500,7 @@ int r2fsSymlink(
         (unsigned long long)parent_view->ino,
         (int)namelen,
         name,
-        target
-    );
+        target);
 
     // TODO: 接入 symlink inode/data 表达。
     // TODO: 接入目录项创建与符号链接内容持久化。
@@ -3348,16 +3509,17 @@ int r2fsSymlink(
     return -1;
 }
 
-ssize_t r2fsReadlink(
+ssize_t rtfsReadlink(
     const rtems_filesystem_location_info_t *loc,
     char *buf,
-    size_t bufsize
-)
+    size_t bufsize)
 {
     RtfsRuntimeInodeView *view;
 
-    if (r2fsValidateNodeLoc(loc, &view) != 0 || buf == NULL || bufsize == 0) {
-        if (errno == 0) {
+    if (rtfsValidateNodeLoc(loc, &view) != 0 || buf == NULL || bufsize == 0)
+    {
+        if (errno == 0)
+        {
             errno = EINVAL;
         }
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "readlink input invalid");
@@ -3368,8 +3530,7 @@ ssize_t r2fsReadlink(
         RTFS_LOG_INFO,
         "readlink requested for ino=%llu, bufsize=%zu",
         (unsigned long long)view->ino,
-        bufsize
-    );
+        bufsize);
 
     // TODO: 接入 symlink 数据读取路径。
     // TODO: 读取符号链接内容时记录必要访问日志。
@@ -3377,13 +3538,12 @@ ssize_t r2fsReadlink(
     return -1;
 }
 
-int r2fsRename(
+int rtfsRename(
     const rtems_filesystem_location_info_t *oldparentloc,
     const rtems_filesystem_location_info_t *oldloc,
     const rtems_filesystem_location_info_t *newparentloc,
     const char *name,
-    size_t namelen
-)
+    size_t namelen)
 {
     RtfsRuntimeInodeView *old_parent_view;
     RtfsRuntimeInodeView *new_parent_view;
@@ -3391,15 +3551,17 @@ int r2fsRename(
     const char *old_name;
     RtfsDirLookupResult existing_target = {0};
 
-    if (r2fsValidateNodeLoc(oldparentloc, &old_parent_view) != 0 ||
-        r2fsValidateNodeLoc(oldloc, &target_view) != 0 ||
-        r2fsValidateParentDir(newparentloc, name, namelen, &new_parent_view) != 0) {
+    if (rtfsValidateNodeLoc(oldparentloc, &old_parent_view) != 0 ||
+        rtfsValidateNodeLoc(oldloc, &target_view) != 0 ||
+        rtfsValidateParentDir(newparentloc, name, namelen, &new_parent_view) != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rename input invalid");
         return -1;
     }
 
-    old_name = r2fsGetNodeName(oldloc);
-    if (old_name == NULL || old_name[0] == '\0') {
+    old_name = rtfsGetNodeName(oldloc);
+    if (old_name == NULL || old_name[0] == '\0')
+    {
         errno = EINVAL;
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rename old name is unavailable");
         return -1;
@@ -3407,13 +3569,15 @@ int r2fsRename(
 
     if (old_parent_view->ino == new_parent_view->ino &&
         strlen(old_name) == namelen &&
-        memcmp(old_name, name, namelen) == 0) {
+        memcmp(old_name, name, namelen) == 0)
+    {
         return 0;
     }
 
     {
-        int lookup_ret = r2fsResolveNameInParent(newparentloc, name, namelen, &existing_target);
-        if (lookup_ret != 0 && errno != ENOENT) {
+        int lookup_ret = rtfsResolveNameInParent(newparentloc, name, namelen, &existing_target);
+        if (lookup_ret != 0 && errno != ENOENT)
+        {
             RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rename failed to probe target existence");
             return -1;
         }
@@ -3427,11 +3591,11 @@ int r2fsRename(
         old_name,
         (unsigned long long)new_parent_view->ino,
         (int)namelen,
-        name
-    );
+        name);
 
-    if (old_parent_view->ino != new_parent_view->ino) {
-        if (r2fsRenameAcrossParents(
+    if (old_parent_view->ino != new_parent_view->ino)
+    {
+        if (rtfsRenameAcrossParents(
                 oldparentloc,
                 oldloc,
                 newparentloc,
@@ -3439,13 +3603,14 @@ int r2fsRename(
                 name,
                 namelen,
                 target_view,
-                (existing_target.inode_view.ino == 0) ? NULL : &existing_target
-            ) != 0) {
+                (existing_target.inode_view.ino == 0) ? NULL : &existing_target) != 0)
+        {
             RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "cross-directory rename failed");
             return -1;
         }
 
-        if (r2fsReplaceLocationName((rtems_filesystem_location_info_t *)oldloc, name, namelen) != 0) {
+        if (rtfsReplaceLocationName((rtems_filesystem_location_info_t *)oldloc, name, namelen) != 0)
+        {
             RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "cross-directory rename succeeded but failed to update cached name");
             return -1;
         }
@@ -3453,20 +3618,21 @@ int r2fsRename(
         return 0;
     }
 
-    if (r2fsRenameWithinSameParent(
+    if (rtfsRenameWithinSameParent(
             oldparentloc,
             oldloc,
             old_name,
             name,
             namelen,
             target_view,
-            (existing_target.inode_view.ino == 0) ? NULL : &existing_target
-        ) != 0) {
+            (existing_target.inode_view.ino == 0) ? NULL : &existing_target) != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rename failed within parent directory");
         return -1;
     }
 
-    if (r2fsReplaceLocationName((rtems_filesystem_location_info_t *)oldloc, name, namelen) != 0) {
+    if (rtfsReplaceLocationName((rtems_filesystem_location_info_t *)oldloc, name, namelen) != 0)
+    {
         RTFS_ERRNO_LOG(RTFS_LOG_WARNING, errno, "rename succeeded but failed to update cached name");
         return -1;
     }
@@ -3474,14 +3640,15 @@ int r2fsRename(
     return 0;
 }
 
-int r2fsStatvfs(const rtems_filesystem_location_info_t *loc, struct statvfs *buf)
+int rtfsStatvfs(const rtems_filesystem_location_info_t *loc, struct statvfs *buf)
 {
     file_system_manager *fs_manager;
     RtfsSuperBlock *super_block;
     fsfilcnt_t total_files = 0;
     fsfilcnt_t free_files = 0;
 
-    if (loc == NULL || buf == NULL) {
+    if (loc == NULL || buf == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
@@ -3495,13 +3662,15 @@ int r2fsStatvfs(const rtems_filesystem_location_info_t *loc, struct statvfs *buf
     buf->f_namemax = RTFS_NAME_LEN;
     buf->f_fsid = (unsigned long)(uintptr_t)fs_manager;
 
-    if (super_block != NULL) {
+    if (super_block != NULL)
+    {
         buf->f_blocks = super_block->block_count;
         buf->f_bfree = (fsblkcnt_t)super_block->free_segment_count * BLOCK_PER_SEGMENT;
         buf->f_bavail = buf->f_bfree;
-        total_files = r2fsStatvfsGetTotalFileSlots(super_block);
-        free_files = r2fsStatvfsCountFreeNids(fs_manager, super_block);
-        if (free_files > total_files) {
+        total_files = rtfsStatvfsGetTotalFileSlots(super_block);
+        free_files = rtfsStatvfsCountFreeNids(fs_manager, super_block);
+        if (free_files > total_files)
+        {
             free_files = total_files;
         }
         buf->f_files = total_files;
@@ -3515,8 +3684,7 @@ int r2fsStatvfs(const rtems_filesystem_location_info_t *loc, struct statvfs *buf
         (unsigned long long)buf->f_blocks,
         (unsigned long long)buf->f_bfree,
         (unsigned long long)buf->f_files,
-        (unsigned long long)buf->f_ffree
-    );
+        (unsigned long long)buf->f_ffree);
 
     // TODO: 如果后续引入保留块策略，补充 f_bavail 与 f_bfree 的差异。
     return 0;
@@ -3524,24 +3692,23 @@ int r2fsStatvfs(const rtems_filesystem_location_info_t *loc, struct statvfs *buf
 
 // ****************************** Register API ******************************
 
-const rtems_filesystem_operations_table r2fsFsHandler = {
-    .lock_h = r2fsLock,
-    .unlock_h = r2fsUnlock,
-    .eval_path_h = r2fsEvalPath,
+const rtems_filesystem_operations_table rtfsFsHandler = {
+    .lock_h = rtfsLock,
+    .unlock_h = rtfsUnlock,
+    .eval_path_h = rtfsEvalPath,
     .link_h = rtems_filesystem_default_link,
-    .are_nodes_equal_h = r2fsAreNodesEqual,
-    .mknod_h = r2fsMknod,
-    .rmnod_h = r2fsRmnod,
-    .fchmod_h = r2fsFchmod,
-    .chown_h = r2fsChown,
-    .clonenod_h = r2fsCloneNode,
-    .freenod_h = r2fsFreeNode,
-    .mount_h = r2fsMount,
-    .unmount_h = r2fsUnmount,
-    .fsunmount_me_h = r2fsUnmountMe,
-    .utimens_h = r2fsUtimens,
-    .symlink_h = r2fsSymlink,
-    .readlink_h = r2fsReadlink,
-    .rename_h = r2fsRename,
-    .statvfs_h = r2fsStatvfs
-};
+    .are_nodes_equal_h = rtfsAreNodesEqual,
+    .mknod_h = rtfsMknod,
+    .rmnod_h = rtfsRmnod,
+    .fchmod_h = rtfsFchmod,
+    .chown_h = rtfsChown,
+    .clonenod_h = rtfsCloneNode,
+    .freenod_h = rtfsFreeNode,
+    .mount_h = rtfsMount,
+    .unmount_h = rtfsUnmount,
+    .fsunmount_me_h = rtfsUnmountMe,
+    .utimens_h = rtfsUtimens,
+    .symlink_h = rtfsSymlink,
+    .readlink_h = rtfsReadlink,
+    .rename_h = rtfsRename,
+    .statvfs_h = rtfsStatvfs};

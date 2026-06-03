@@ -1,6 +1,6 @@
 #include "rtfs_test.h"
-#include "integration/r2fs_integration_fixture.h"
-#include "integration/r2fs_rtems_mount_fixture.h"
+#include "integration/rtfs_integration_fixture.h"
+#include "integration/rtfs_rtems_mount_fixture.h"
 #include "rtfs_config.h"
 
 #include <errno.h>
@@ -21,8 +21,8 @@ void setUp(void) {}
 
 void tearDown(void)
 {
-    r2fsIntegrationFixtureCleanupActive();
-    r2fsRtemsMountFixtureCleanupActive();
+    rtfsIntegrationFixtureCleanupActive();
+    rtfsRtemsMountFixtureCleanupActive();
 }
 
 
@@ -49,7 +49,8 @@ static bool rtfsShouldRunTest(const struct RtfsTestEntry *entry);
 
 void rtfsRunAllTests(void)
 {
-    if (rtfsShouldListTests()) {
+    if (rtfsShouldListTests())
+    {
         rtfsListTests();
         return;
     }
@@ -65,15 +66,15 @@ void rtfsRunAllTests(void)
         const struct RtfsTestEntry *entry = &rtfsTestArray[i];
         const char *group = rtfsResolveTestGroup(entry);
 
-        if (!rtfsShouldRunTest(entry)) {
+        if (!rtfsShouldRunTest(entry))
+        {
             continue;
         }
 
         printf(
             RTFS_COLOR_GREEN "[ RUN      ] [%s] %s" RTFS_COLOR_RESET "\n",
             group,
-            entry->name
-        );
+            entry->name);
 
         failedCases = Unity.TestFailures;
 
@@ -142,12 +143,12 @@ static void rtfsCheckBaseFilesystemAfterTest(const char *test_name)
     struct stat st;
 
     errno = 0;
-    if (stat("/dev", &st) != 0) {
+    if (stat("/dev", &st) != 0)
+    {
         printf(
             RTFS_COLOR_RED "[ FS-CHECK FAIL ] after %s errno=%d" RTFS_COLOR_RESET "\n",
             test_name,
-            errno
-        );
+            errno);
         TEST_FAIL_MESSAGE("base filesystem check failed");
     }
 }
@@ -156,7 +157,8 @@ static bool rtfsShouldListTests(void)
 {
     const char *list_tests = getenv("RTFS_TEST_LIST");
 
-    if (list_tests != NULL) {
+    if (list_tests != NULL)
+    {
         return list_tests[0] != '\0' && strcmp(list_tests, "0") != 0;
     }
 
@@ -179,11 +181,13 @@ static void rtfsListTests(void)
 
 static const char *rtfsResolveTestGroup(const struct RtfsTestEntry *entry)
 {
-    if (entry == NULL) {
+    if (entry == NULL)
+    {
         return "unknown";
     }
 
-    if (entry->group != NULL && entry->group[0] != '\0') {
+    if (entry->group != NULL && entry->group[0] != '\0')
+    {
         return entry->group;
     }
 
@@ -200,23 +204,27 @@ static const char *rtfsInferGroupFromFile(const char *source_file)
     const char *match;
     size_t group_len;
 
-    if (source_file == NULL || source_file[0] == '\0') {
+    if (source_file == NULL || source_file[0] == '\0')
+    {
         return fallback_group;
     }
 
     match = strstr(source_file, test_prefix);
-    if (match == NULL) {
+    if (match == NULL)
+    {
         return fallback_group;
     }
 
     group_begin = match + (sizeof(test_prefix) - 1);
     group_end = strchr(group_begin, '/');
-    if (group_end == NULL || group_end == group_begin) {
+    if (group_end == NULL || group_end == group_begin)
+    {
         return fallback_group;
     }
 
     group_len = (size_t)(group_end - group_begin);
-    if (group_len >= sizeof(inferred_group)) {
+    if (group_len >= sizeof(inferred_group))
+    {
         group_len = sizeof(inferred_group) - 1;
     }
 
@@ -230,7 +238,8 @@ static const char *rtfsGetConfiguredGroupFilter(void)
 {
     const char *group_filter = getenv("RTFS_TEST_GROUP");
 
-    if (group_filter != NULL && group_filter[0] != '\0') {
+    if (group_filter != NULL && group_filter[0] != '\0')
+    {
         return group_filter;
     }
 
@@ -245,7 +254,8 @@ static const char *rtfsGetConfiguredNameFilter(void)
 {
     const char *name_filter = getenv("RTFS_TEST_FILTER");
 
-    if (name_filter != NULL && name_filter[0] != '\0') {
+    if (name_filter != NULL && name_filter[0] != '\0')
+    {
         return name_filter;
     }
 
@@ -261,11 +271,13 @@ static bool rtfsGroupMatches(const char *test_group, const char *group_filter)
     const char *token_begin;
     const char *token_end;
 
-    if (group_filter == NULL || group_filter[0] == '\0') {
+    if (group_filter == NULL || group_filter[0] == '\0')
+    {
         return true;
     }
 
-    if (test_group == NULL || test_group[0] == '\0') {
+    if (test_group == NULL || test_group[0] == '\0')
+    {
         return false;
     }
 
@@ -277,7 +289,8 @@ static bool rtfsGroupMatches(const char *test_group, const char *group_filter)
             ++token_begin;
         }
 
-        if (*token_begin == '\0') {
+        if (*token_begin == '\0')
+        {
             break;
         }
 
@@ -287,7 +300,8 @@ static bool rtfsGroupMatches(const char *test_group, const char *group_filter)
             ++token_end;
         }
 
-        if (rtfsFilterTokenEquals(token_begin, token_end, test_group)) {
+        if (rtfsFilterTokenEquals(token_begin, token_end, test_group))
+        {
             return true;
         }
 
@@ -299,11 +313,13 @@ static bool rtfsGroupMatches(const char *test_group, const char *group_filter)
 
 static bool rtfsNameMatches(const char *test_name, const char *name_filter)
 {
-    if (test_name == NULL) {
+    if (test_name == NULL)
+    {
         return false;
     }
 
-    if (name_filter == NULL || name_filter[0] == '\0') {
+    if (name_filter == NULL || name_filter[0] == '\0')
+    {
         return true;
     }
 
@@ -314,19 +330,23 @@ static bool rtfsFilterTokenEquals(const char *begin, const char *end, const char
 {
     size_t token_len;
 
-    if (begin == NULL || end == NULL || value == NULL) {
+    if (begin == NULL || end == NULL || value == NULL)
+    {
         return false;
     }
 
-    while (begin < end && (*begin == ' ' || *begin == '\t')) {
+    while (begin < end && (*begin == ' ' || *begin == '\t'))
+    {
         ++begin;
     }
-    while (end > begin && (end[-1] == ' ' || end[-1] == '\t')) {
+    while (end > begin && (end[-1] == ' ' || end[-1] == '\t'))
+    {
         --end;
     }
 
     token_len = (size_t)(end - begin);
-    if (token_len == 0) {
+    if (token_len == 0)
+    {
         return false;
     }
 
@@ -338,13 +358,13 @@ static bool rtfsShouldRunTest(const struct RtfsTestEntry *entry)
     const char *group_filter;
     const char *name_filter;
 
-    if (entry == NULL || entry->name == NULL) {
+    if (entry == NULL || entry->name == NULL)
+    {
         return false;
     }
 
     group_filter = rtfsGetConfiguredGroupFilter();
     name_filter = rtfsGetConfiguredNameFilter();
 
-    return rtfsGroupMatches(rtfsResolveTestGroup(entry), group_filter)
-        && rtfsNameMatches(entry->name, name_filter);
+    return rtfsGroupMatches(rtfsResolveTestGroup(entry), group_filter) && rtfsNameMatches(entry->name, name_filter);
 }

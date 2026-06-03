@@ -1,4 +1,4 @@
-#include "integration/r2fs_rtems_mount_fixture.h"
+#include "integration/rtfs_rtems_mount_fixture.h"
 #include "rtfs_test.h"
 
 #include <string.h>
@@ -6,10 +6,10 @@
 
 RTFS_TEST(IntegrationRtemsMount_FormatMountViaVfs_ShouldStatMountedRoot)
 {
-    R2fsRtemsMountFixture fixture = R2FS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
+    RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st;
     struct statvfs stvfs;
-    R2fsRtemsMountDirEntries dir_entries;
+    RtfsRtemsMountDirEntries dir_entries;
     bool saw_dot = false;
     bool saw_dotdot = false;
     size_t i;
@@ -23,22 +23,25 @@ RTFS_TEST(IntegrationRtemsMount_FormatMountViaVfs_ShouldStatMountedRoot)
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsRtemsMountFixtureFormatAndMount(&fixture, R2FS_RTEMS_ITEST_LPA_COUNT)
-    );
+        rtfsRtemsMountFixtureFormatAndMount(&fixture, RTFS_RTEMS_ITEST_LPA_COUNT));
 
-    TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureStatRoot(&st));
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureStatRoot(&st));
     TEST_ASSERT_TRUE(S_ISDIR(st.st_mode));
     TEST_ASSERT_GREATER_OR_EQUAL_INT(2, st.st_nlink);
 
-    TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureStatvfsRoot(&stvfs));
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureStatvfsRoot(&stvfs));
     TEST_ASSERT_EQUAL_UINT32(4096u, (uint32_t)stvfs.f_bsize);
     TEST_ASSERT_EQUAL_UINT32(RTFS_NAME_LEN, (uint32_t)stvfs.f_namemax);
 
-    TEST_ASSERT_EQUAL(0, r2fsRtemsMountFixtureReadDir("/", &dir_entries));
-    for (i = 0; i < dir_entries.count; ++i) {
-        if (strcmp(dir_entries.entries[i].d_name, ".") == 0) {
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureReadDir("/", &dir_entries));
+    for (i = 0; i < dir_entries.count; ++i)
+    {
+        if (strcmp(dir_entries.entries[i].d_name, ".") == 0)
+        {
             saw_dot = true;
-        } else if (strcmp(dir_entries.entries[i].d_name, "..") == 0) {
+        }
+        else if (strcmp(dir_entries.entries[i].d_name, "..") == 0)
+        {
             saw_dotdot = true;
         }
     }
@@ -47,5 +50,5 @@ RTFS_TEST(IntegrationRtemsMount_FormatMountViaVfs_ShouldStatMountedRoot)
     TEST_ASSERT_TRUE(saw_dotdot);
     TEST_ASSERT_GREATER_OR_EQUAL_size_t(2u, dir_entries.count);
 
-    r2fsRtemsMountFixtureDestroy(&fixture);
+    rtfsRtemsMountFixtureDestroy(&fixture);
 }

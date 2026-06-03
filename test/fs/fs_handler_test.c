@@ -109,12 +109,14 @@ static uint64_t fsHandlerGetLatestQueuedJournalTxId(void)
     JournalCommitNode *node;
 
     env = journalProcessEnvGetInstance();
-    if (env == NULL || env->commitQueueHead == NULL) {
+    if (env == NULL || env->commitQueueHead == NULL)
+    {
         return 0;
     }
 
     node = env->commitQueueHead;
-    while (node->next != NULL) {
+    while (node->next != NULL)
+    {
         node = node->next;
     }
 
@@ -126,21 +128,21 @@ static uint64_t fsHandlerGetLatestObservedTxId(void)
     uint64_t queued_tx_id = fsHandlerGetLatestQueuedJournalTxId();
 
     return g_fs_handler_committed_tx_id > queued_tx_id
-        ? g_fs_handler_committed_tx_id
-        : queued_tx_id;
+               ? g_fs_handler_committed_tx_id
+               : queued_tx_id;
 }
 
 static int fsHandlerInitReadSuperBlockHook(
     struct comm_dev *dev,
     uint32_t lpa,
-    void *buffer
-)
+    void *buffer)
 {
     FsHandlerInitFixture *fixture = g_fs_handler_init_fixture;
 
     (void)dev;
 
-    if (fixture == NULL || buffer == NULL) {
+    if (fixture == NULL || buffer == NULL)
+    {
         return EIO;
     }
 
@@ -166,8 +168,7 @@ static int fsHandlerInitRecoverHook(struct comm_dev *dev)
 static int fsHandlerInitDiskIoctl(
     rtems_disk_device *dd,
     uint32_t req,
-    void *argp
-)
+    void *argp)
 {
     FsHandlerInitFixture *fixture = g_fs_handler_init_fixture;
     rtems_blkdev_request *breq;
@@ -177,13 +178,15 @@ static int fsHandlerInitDiskIoctl(
     TEST_ASSERT_NOT_NULL(fixture);
     TEST_ASSERT_EQUAL_PTR(&fixture->disk, dd);
 
-    if (req != RTEMS_BLKIO_REQUEST || argp == NULL) {
+    if (req != RTEMS_BLKIO_REQUEST || argp == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
 
     breq = (rtems_blkdev_request *)argp;
-    for (i = 0; i < breq->bufnum; ++i) {
+    for (i = 0; i < breq->bufnum; ++i)
+    {
         rtems_blkdev_sg_buffer *sg = &breq->bufs[i];
         uint64_t byte_off = (uint64_t)sg->block * fixture->dev.blockSize;
 
@@ -191,11 +194,16 @@ static int fsHandlerInitDiskIoctl(
         TEST_ASSERT_NOT_NULL(fixture->block_store);
         TEST_ASSERT_TRUE(byte_off + sg->length <= fixture->block_store_size);
 
-        if (breq->req == RTEMS_BLKDEV_REQ_READ) {
+        if (breq->req == RTEMS_BLKDEV_REQ_READ)
+        {
             memcpy(sg->buffer, fixture->block_store + byte_off, sg->length);
-        } else if (breq->req == RTEMS_BLKDEV_REQ_WRITE) {
+        }
+        else if (breq->req == RTEMS_BLKDEV_REQ_WRITE)
+        {
             memcpy(fixture->block_store + byte_off, sg->buffer, sg->length);
-        } else if (breq->req != RTEMS_BLKDEV_REQ_SYNC) {
+        }
+        else if (breq->req != RTEMS_BLKDEV_REQ_SYNC)
+        {
             rtems_blkdev_request_done(breq, RTEMS_IO_ERROR);
             errno = EINVAL;
             return -1;
@@ -246,9 +254,7 @@ static void fsHandlerInitFixtureInit(FsHandlerInitFixture *fixture)
             512,
             8192,
             100,
-            116
-        )
-    );
+            116));
 
     fixture->mt_entry.mt_fs_root = &fixture->root_gloc;
     fixture->root_gloc.location.mt_entry = &fixture->mt_entry;
@@ -276,18 +282,19 @@ static void fsHandlerSetBitmapBit(uint8_t *bitmap, size_t bit_index)
 static void fsHandlerWriteRegularName(
     struct RtfsDentryBlock *dentry_block,
     size_t index,
-    const char *name
-)
+    const char *name)
 {
     size_t name_len = strlen(name);
     size_t slot_count = GET_DENTRY_SLOTS(name_len);
     size_t slot;
     size_t offset = 0;
 
-    for (slot = 0; slot < slot_count; ++slot) {
+    for (slot = 0; slot < slot_count; ++slot)
+    {
         size_t copy_len = RTFS_SLOT_LEN;
 
-        if (offset + copy_len > name_len) {
+        if (offset + copy_len > name_len)
+        {
             copy_len = name_len - offset;
         }
 
@@ -301,8 +308,7 @@ static void fsHandlerAddRegularDentry(
     size_t index,
     rtfs_ino ino,
     uint8_t file_type,
-    const char *name
-)
+    const char *name)
 {
     size_t slot_count = GET_DENTRY_SLOTS(strlen(name));
     size_t slot;
@@ -311,7 +317,8 @@ static void fsHandlerAddRegularDentry(
     dentry_block->dentry[index].name_len = strlen(name);
     dentry_block->dentry[index].file_type = file_type;
 
-    for (slot = 0; slot < slot_count; ++slot) {
+    for (slot = 0; slot < slot_count; ++slot)
+    {
         fsHandlerSetBitmapBit(dentry_block->dentry_bitmap, index + slot);
     }
 
@@ -322,8 +329,7 @@ static void fsHandlerFixtureSetNatEntry(
     FsHandlerFixture *fixture,
     uint32_t nid,
     uint32_t ino,
-    uint32_t block_addr
-)
+    uint32_t block_addr)
 {
     uint32_t nat_lpa = fixture->super_block.nat_blkaddr + (nid / NAT_ENTRY_PER_BLOCK);
     uint32_t nat_idx = nid % NAT_ENTRY_PER_BLOCK;
@@ -333,9 +339,9 @@ static void fsHandlerFixtureSetNatEntry(
     entry = (SitNatCacheEntry *)genericCacheManagerGet(
         &fixture->nat_cache.cacheManager,
         nat_lpa,
-        false
-    );
-    if (entry == NULL) {
+        false);
+    if (entry == NULL)
+    {
         entry = (SitNatCacheEntry *)malloc(sizeof(*entry));
         TEST_ASSERT_NOT_NULL(entry);
         sitNatCacheEntryInit(entry, nat_lpa);
@@ -353,8 +359,7 @@ static void fsHandlerFixtureSetNatEntry(
 
 static void fsHandlerFixtureMarkSitValid(
     FsHandlerFixture *fixture,
-    uint32_t lpa
-)
+    uint32_t lpa)
 {
     uint32_t seg_id = lpa / BLOCK_PER_SEGMENT;
     uint32_t seg_off = lpa % BLOCK_PER_SEGMENT;
@@ -370,9 +375,9 @@ static void fsHandlerFixtureMarkSitValid(
     entry = (SitNatCacheEntry *)genericCacheManagerGet(
         &fixture->sit_cache.cacheManager,
         sit_lpa,
-        false
-    );
-    if (entry == NULL) {
+        false);
+    if (entry == NULL)
+    {
         entry = (SitNatCacheEntry *)malloc(sizeof(*entry));
         TEST_ASSERT_NOT_NULL(entry);
         sitNatCacheEntryInit(entry, sit_lpa);
@@ -386,9 +391,11 @@ static void fsHandlerFixtureMarkSitValid(
     sit_block = sitNatCacheEntryHandleGetSitBlockPtr(&handle);
     sit_entry = &sit_block->entries[sit_idx];
 
-    if ((sit_entry->valid_map[bitmap_idx] & (1u << bitmap_off)) == 0) {
+    if ((sit_entry->valid_map[bitmap_idx] & (1u << bitmap_off)) == 0)
+    {
         sit_entry->valid_map[bitmap_idx] |= (uint8_t)(1u << bitmap_off);
-        if (GET_SIT_VBLOCKS(sit_entry) < 511u) {
+        if (GET_SIT_VBLOCKS(sit_entry) < 511u)
+        {
             sit_entry->vblocks += 1u;
         }
     }
@@ -399,13 +406,14 @@ static void fsHandlerFixtureMarkSitValid(
 static void fsHandlerFixtureStoreWrittenBlock(
     FsHandlerFixture *fixture,
     uint32_t lpa,
-    const void *buffer
-)
+    const void *buffer)
 {
     size_t i;
 
-    for (i = 0; i < fixture->written_block_count; ++i) {
-        if (fixture->written_blocks[i].lpa == lpa) {
+    for (i = 0; i < fixture->written_block_count; ++i)
+    {
+        if (fixture->written_blocks[i].lpa == lpa)
+        {
             memcpy(fixture->written_blocks[i].data, buffer, BLOCK_BUFFER_SIZE);
             return;
         }
@@ -413,22 +421,19 @@ static void fsHandlerFixtureStoreWrittenBlock(
 
     TEST_ASSERT_LESS_OR_EQUAL_size_t(
         sizeof(fixture->written_blocks) / sizeof(fixture->written_blocks[0]),
-        fixture->written_block_count + 1
-    );
+        fixture->written_block_count + 1);
     fixture->written_blocks[fixture->written_block_count].lpa = lpa;
     memcpy(
         fixture->written_blocks[fixture->written_block_count].data,
         buffer,
-        BLOCK_BUFFER_SIZE
-    );
+        BLOCK_BUFFER_SIZE);
     fixture->written_block_count++;
 }
 
 static void fsHandlerFixtureSyncCachedNode(
     FsHandlerFixture *fixture,
     uint32_t nid,
-    const struct RtfsNode *node
-)
+    const struct RtfsNode *node)
 {
     NodeBlockCacheEntryHandle handle;
 
@@ -440,8 +445,7 @@ static void fsHandlerFixtureSyncCachedNode(
 
 static bool fsHandlerFixtureIsSitBitValid(
     const FsHandlerFixture *fixture,
-    uint32_t lpa
-)
+    uint32_t lpa)
 {
     uint32_t seg_id = lpa / BLOCK_PER_SEGMENT;
     uint32_t seg_off = lpa % BLOCK_PER_SEGMENT;
@@ -465,50 +469,58 @@ static bool fsHandlerFixtureIsSitBitValid(
 static int fsHandlerTestReadBlockHook(
     struct comm_dev *dev,
     uint32_t lpa,
-    void *buffer
-)
+    void *buffer)
 {
     size_t i;
 
     (void)dev;
 
-    if (g_fs_handler_fixture == NULL) {
+    if (g_fs_handler_fixture == NULL)
+    {
         return EIO;
     }
 
     if (g_fs_handler_fixture->fail_read_lpa != INVALID_LPA &&
-        lpa == g_fs_handler_fixture->fail_read_lpa) {
+        lpa == g_fs_handler_fixture->fail_read_lpa)
+    {
         return EIO;
     }
 
-    for (i = 0; i < g_fs_handler_fixture->written_block_count; ++i) {
-        if (g_fs_handler_fixture->written_blocks[i].lpa == lpa) {
+    for (i = 0; i < g_fs_handler_fixture->written_block_count; ++i)
+    {
+        if (g_fs_handler_fixture->written_blocks[i].lpa == lpa)
+        {
             memcpy(buffer, g_fs_handler_fixture->written_blocks[i].data, BLOCK_BUFFER_SIZE);
             return 0;
         }
     }
 
-    if (lpa == 10) {
+    if (lpa == 10)
+    {
         memcpy(buffer, &g_fs_handler_fixture->parent_inode, sizeof(g_fs_handler_fixture->parent_inode));
         return 0;
     }
 
-    if (lpa == 11) {
+    if (lpa == 11)
+    {
         memcpy(buffer, &g_fs_handler_fixture->other_parent_inode, sizeof(g_fs_handler_fixture->other_parent_inode));
         return 0;
     }
 
-    if (lpa == 20) {
+    if (lpa == 20)
+    {
         memcpy(buffer, &g_fs_handler_fixture->parent_block, sizeof(g_fs_handler_fixture->parent_block));
         return 0;
     }
 
-    if (lpa == 21) {
+    if (lpa == 21)
+    {
         memcpy(buffer, &g_fs_handler_fixture->other_parent_block, sizeof(g_fs_handler_fixture->other_parent_block));
         return 0;
     }
 
-    if (lpa == 30) {
+    if (lpa == 30)
+    {
         memcpy(buffer, &g_fs_handler_fixture->target_inode, sizeof(g_fs_handler_fixture->target_inode));
         return 0;
     }
@@ -519,17 +531,18 @@ static int fsHandlerTestReadBlockHook(
 static int fsHandlerTestDirWriteBlockHook(
     struct comm_dev *dev,
     uint32_t lpa,
-    const void *buffer
-)
+    const void *buffer)
 {
     (void)dev;
 
-    if (g_fs_handler_fixture == NULL) {
+    if (g_fs_handler_fixture == NULL)
+    {
         return EIO;
     }
 
     if (g_fs_handler_fixture->fail_dir_write_lpa != INVALID_LPA &&
-        lpa == g_fs_handler_fixture->fail_dir_write_lpa) {
+        lpa == g_fs_handler_fixture->fail_dir_write_lpa)
+    {
         return EIO;
     }
 
@@ -540,18 +553,19 @@ static int fsHandlerTestDirWriteBlockHook(
 static int fsHandlerTestNodeWriteBlockHook(
     struct comm_dev *dev,
     uint32_t lpa,
-    const void *buffer
-)
+    const void *buffer)
 {
     (void)dev;
     (void)buffer;
 
-    if (g_fs_handler_fixture == NULL) {
+    if (g_fs_handler_fixture == NULL)
+    {
         return EIO;
     }
 
     if (g_fs_handler_fixture->fail_node_write_lpa != INVALID_LPA &&
-        lpa == g_fs_handler_fixture->fail_node_write_lpa) {
+        lpa == g_fs_handler_fixture->fail_node_write_lpa)
+    {
         return EIO;
     }
 
@@ -569,7 +583,8 @@ static void fsHandlerTestInitJournalEnvStub(void)
 {
     JournalProcessEnv *env;
 
-    if (g_fs_handler_journal_env_stub_inited) {
+    if (g_fs_handler_journal_env_stub_inited)
+    {
         return;
     }
 
@@ -589,12 +604,14 @@ static void fsHandlerTestFiniJournalEnvStub(void)
     JournalCommitNode *node;
     JournalCommitNode *tmp;
 
-    if (!g_fs_handler_journal_env_stub_inited) {
+    if (!g_fs_handler_journal_env_stub_inited)
+    {
         return;
     }
 
     env = journalProcessEnvGetInstance();
-    DL_FOREACH_SAFE(env->commitQueueHead, node, tmp) {
+    DL_FOREACH_SAFE(env->commitQueueHead, node, tmp)
+    {
         DL_DELETE(env->commitQueueHead, node);
         free(node);
     }
@@ -697,8 +714,7 @@ static void fsHandlerFixtureInit(FsHandlerFixture *fixture)
         0,
         3001,
         RTFS_FT_REG_FILE,
-        "alpha"
-    );
+        "alpha");
 
     blockBufferInit(&buffer);
     blockBufferCopyContentFromBuf(&buffer, (const char *)&fixture->parent_inode);
@@ -738,7 +754,8 @@ static void fsHandlerFixtureFini(FsHandlerFixture *fixture)
     free(fixture->oldloc.node_access_2);
     fixture->oldloc.node_access_2 = NULL;
 
-    if (fixture->hook_enabled) {
+    if (fixture->hook_enabled)
+    {
         rtfsDirResolverSetReadBlockHook(NULL);
         rtfsDirInodeSetWriteBlockHook(NULL);
         rtfsDirInodeSetJournalCommitHook(NULL);
@@ -761,27 +778,28 @@ static void fsHandlerFixtureFini(FsHandlerFixture *fixture)
 static int fsHandlerLookupInParent(
     FsHandlerFixture *fixture,
     const char *name,
-    RtfsDirLookupResult *result
-)
+    RtfsDirLookupResult *result)
 {
     RtfsDirInodeBuildRequest request = {
         .ino = fixture->parent_view.ino,
-        .mode = RTFS_DIR_BUILD_ON_DEMAND
-    };
+        .mode = RTFS_DIR_BUILD_ON_DEMAND};
     RtfsDirInode *dir_inode = NULL;
     int ret;
 
     ret = rtfsDirInodeResolve(&fixture->fs_manager, NULL, &request, &dir_inode);
     TEST_ASSERT_EQUAL(0, ret);
 
-    do {
+    do
+    {
         ret = rtfsDirInodeLookup(dir_inode, name, strlen(name), result);
-        if (ret != ENOENT || rtfsDirInodeIsFullyLoaded(dir_inode)) {
+        if (ret != ENOENT || rtfsDirInodeIsFullyLoaded(dir_inode))
+        {
             break;
         }
 
         ret = rtfsDirInodeResolveNext(&fixture->fs_manager, fixture->parent_view.ino, dir_inode);
-        if (ret != 0) {
+        if (ret != 0)
+        {
             rtfsDirInodePut(dir_inode);
             return ret;
         }
@@ -806,7 +824,7 @@ RTFS_TEST(FsHandlerCloneNode_WhenNodeAndNameExist_ShouldDuplicateContext)
     loc.node_access = original_view;
     loc.node_access_2 = original_name;
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.clonenod_h(&loc));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.clonenod_h(&loc));
     TEST_ASSERT_NOT_NULL(loc.node_access);
     TEST_ASSERT_NOT_EQUAL(original_view, loc.node_access);
     TEST_ASSERT_NOT_NULL(loc.node_access_2);
@@ -816,7 +834,7 @@ RTFS_TEST(FsHandlerCloneNode_WhenNodeAndNameExist_ShouldDuplicateContext)
 
     free(original_view);
     free(original_name);
-    r2fsFsHandler.freenod_h(&loc);
+    rtfsFsHandler.freenod_h(&loc);
 }
 
 RTFS_TEST(FsHandlerInitialize_WhenRecoverSucceeds_ShouldRecoverBeforeSetupAndCreateRoot)
@@ -826,14 +844,14 @@ RTFS_TEST(FsHandlerInitialize_WhenRecoverSucceeds_ShouldRecoverBeforeSetupAndCre
     fsHandlerInitFixtureReset();
     fsHandlerInitFixtureInit(&fixture);
 
-    TEST_ASSERT_EQUAL(0, r2fsInitialize(&fixture.mt_entry, &fixture.dev));
+    TEST_ASSERT_EQUAL(0, rtfsInitialize(&fixture.mt_entry, &fixture.dev));
     TEST_ASSERT_EQUAL_UINT32(1u, g_fs_handler_init_recover_call_count);
     TEST_ASSERT_EQUAL_UINT32(1u, g_fs_handler_init_super_read_count);
     TEST_ASSERT_NOT_NULL(fixture.mt_entry.fs_info);
     TEST_ASSERT_NOT_NULL(fixture.mt_entry.mt_fs_root->location.node_access);
     TEST_ASSERT_EQUAL_PTR(&rtfsDirhandlers, fixture.mt_entry.mt_fs_root->location.handlers);
 
-    r2fsFsHandler.fsunmount_me_h(&fixture.mt_entry);
+    rtfsFsHandler.fsunmount_me_h(&fixture.mt_entry);
     fixture.mt_entry.mt_fs_root->location.node_access = NULL;
     fixture.mt_entry.mt_fs_root->location.node_access_2 = NULL;
     fixture.mt_entry.mt_fs_root->location.handlers = NULL;
@@ -848,7 +866,7 @@ RTFS_TEST(FsHandlerInitialize_WhenRecoverFails_ShouldAbortBeforeSetup)
     fsHandlerInitFixtureInit(&fixture);
     g_fs_handler_init_recover_result = EIO;
 
-    TEST_ASSERT_EQUAL(-1, r2fsInitialize(&fixture.mt_entry, &fixture.dev));
+    TEST_ASSERT_EQUAL(-1, rtfsInitialize(&fixture.mt_entry, &fixture.dev));
     TEST_ASSERT_EQUAL(EBUSY, errno);
     TEST_ASSERT_EQUAL_UINT32(1u, g_fs_handler_init_recover_call_count);
     TEST_ASSERT_EQUAL_UINT32(0u, g_fs_handler_init_super_read_count);
@@ -864,7 +882,7 @@ RTFS_TEST(FsHandlerCloneNode_WhenNodeViewIsMissing_ShouldReturnEINVAL)
 
     memset(&loc, 0, sizeof(loc));
 
-    TEST_ASSERT_EQUAL(-1, r2fsFsHandler.clonenod_h(&loc));
+    TEST_ASSERT_EQUAL(-1, rtfsFsHandler.clonenod_h(&loc));
     TEST_ASSERT_EQUAL(EINVAL, errno);
 }
 
@@ -876,7 +894,7 @@ RTFS_TEST(FsHandlerFchmod_WhenTargetInodeExists_ShouldUpdateModeAndCommit)
 
     fsHandlerFixtureInit(&fixture);
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.fchmod_h(&fixture.oldloc, 0600));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.fchmod_h(&fixture.oldloc, 0600));
 
     handle = nodeBlockCacheGet(&fixture.node_cache, 3001);
     TEST_ASSERT_NOT_NULL(handle.entry);
@@ -890,7 +908,7 @@ RTFS_TEST(FsHandlerFchmod_WhenTargetInodeExists_ShouldUpdateModeAndCommit)
 
 RTFS_TEST(FsHandlerFchmod_WhenLocationIsInvalid_ShouldReturnEINVAL)
 {
-    TEST_ASSERT_EQUAL(-1, r2fsFsHandler.fchmod_h(NULL, 0600));
+    TEST_ASSERT_EQUAL(-1, rtfsFsHandler.fchmod_h(NULL, 0600));
     TEST_ASSERT_EQUAL(EINVAL, errno);
 }
 
@@ -907,7 +925,7 @@ RTFS_TEST(FsHandlerUtimens_WhenTargetInodeExists_ShouldUpdateTimesAndCommit)
     times[1].tv_sec = 3333;
     times[1].tv_nsec = 444;
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.utimens_h(&fixture.oldloc, times));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.utimens_h(&fixture.oldloc, times));
 
     handle = nodeBlockCacheGet(&fixture.node_cache, 3001);
     TEST_ASSERT_NOT_NULL(handle.entry);
@@ -927,7 +945,7 @@ RTFS_TEST(FsHandlerUtimens_WhenTimesAreNull_ShouldReturnEINVAL)
     FsHandlerFixture fixture;
 
     fsHandlerFixtureInit(&fixture);
-    TEST_ASSERT_EQUAL(-1, r2fsFsHandler.utimens_h(&fixture.oldloc, NULL));
+    TEST_ASSERT_EQUAL(-1, rtfsFsHandler.utimens_h(&fixture.oldloc, NULL));
     TEST_ASSERT_EQUAL(EINVAL, errno);
     fsHandlerFixtureFini(&fixture);
 }
@@ -942,19 +960,19 @@ RTFS_TEST(FsHandlerStatvfs_WhenSuperBlockExists_ShouldReportCapacity)
     fsHandlerFixtureInit(&fixture);
     expected_total_files =
         (fsfilcnt_t)fixture.super_block.segment_count_nat *
-        (fsfilcnt_t)BLOCK_PER_SEGMENT *
-        (fsfilcnt_t)NAT_ENTRY_PER_BLOCK - 1u;
+            (fsfilcnt_t)BLOCK_PER_SEGMENT *
+            (fsfilcnt_t)NAT_ENTRY_PER_BLOCK -
+        1u;
     expected_free_files = 2u;
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.statvfs_h(&fixture.parentloc, &stat));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.statvfs_h(&fixture.parentloc, &stat));
     TEST_ASSERT_EQUAL_UINT32(4096u, (uint32_t)stat.f_bsize);
     TEST_ASSERT_EQUAL_UINT32(4096u, (uint32_t)stat.f_frsize);
     TEST_ASSERT_EQUAL_UINT32(RTFS_NAME_LEN, (uint32_t)stat.f_namemax);
     TEST_ASSERT_EQUAL_UINT32(fixture.super_block.block_count, (uint32_t)stat.f_blocks);
     TEST_ASSERT_EQUAL_UINT32(
         fixture.super_block.free_segment_count * BLOCK_PER_SEGMENT,
-        (uint32_t)stat.f_bfree
-    );
+        (uint32_t)stat.f_bfree);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)stat.f_bfree, (uint32_t)stat.f_bavail);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)expected_total_files, (uint32_t)stat.f_files);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)expected_free_files, (uint32_t)stat.f_ffree);
@@ -966,9 +984,9 @@ RTFS_TEST(FsHandlerStatvfs_WhenArgumentsAreNull_ShouldReturnEINVAL)
 {
     struct statvfs stat;
 
-    TEST_ASSERT_EQUAL(-1, r2fsFsHandler.statvfs_h(NULL, &stat));
+    TEST_ASSERT_EQUAL(-1, rtfsFsHandler.statvfs_h(NULL, &stat));
     TEST_ASSERT_EQUAL(EINVAL, errno);
-    TEST_ASSERT_EQUAL(-1, r2fsFsHandler.statvfs_h((const rtems_filesystem_location_info_t *)&stat, NULL));
+    TEST_ASSERT_EQUAL(-1, rtfsFsHandler.statvfs_h((const rtems_filesystem_location_info_t *)&stat, NULL));
     TEST_ASSERT_EQUAL(EINVAL, errno);
 }
 
@@ -980,18 +998,16 @@ RTFS_TEST(FsHandlerStatvfs_WhenMknodConsumesNid_ShouldReduceFreeFileSlots)
 
     fsHandlerFixtureInit(&fixture);
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.statvfs_h(&fixture.parentloc, &before_stat));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.statvfs_h(&fixture.parentloc, &before_stat));
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "omega",
             strlen("omega"),
             S_IFREG | 0644,
-            0
-        )
-    );
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.statvfs_h(&fixture.parentloc, &after_stat));
+            0));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.statvfs_h(&fixture.parentloc, &after_stat));
 
     TEST_ASSERT_EQUAL_UINT32((uint32_t)before_stat.f_files, (uint32_t)after_stat.f_files);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)(before_stat.f_ffree - 1u), (uint32_t)after_stat.f_ffree);
@@ -1011,9 +1027,9 @@ RTFS_TEST(FsHandlerStatvfs_WhenRmnodReclaimsNidAfterTxComplete_ShouldRestoreFree
     fixture.oldloc.node_access_2 = strdup("alpha");
     TEST_ASSERT_NOT_NULL(fixture.oldloc.node_access_2);
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.statvfs_h(&fixture.parentloc, &before_stat));
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.statvfs_h(&fixture.parentloc, &after_unlink_stat));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.statvfs_h(&fixture.parentloc, &before_stat));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.statvfs_h(&fixture.parentloc, &after_unlink_stat));
     TEST_ASSERT_EQUAL_UINT32((uint32_t)before_stat.f_ffree, (uint32_t)after_unlink_stat.f_ffree);
 
     {
@@ -1022,7 +1038,7 @@ RTFS_TEST(FsHandlerStatvfs_WhenRmnodReclaimsNidAfterTxComplete_ShouldRestoreFree
         cowReclaimRegistryOnTxComplete(tx_id);
     }
     TEST_ASSERT_EQUAL(0, cowReclaimRegistryDrainCompleted());
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.statvfs_h(&fixture.parentloc, &after_reclaim_stat));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.statvfs_h(&fixture.parentloc, &after_reclaim_stat));
 
     TEST_ASSERT_EQUAL_UINT32((uint32_t)before_stat.f_files, (uint32_t)after_reclaim_stat.f_files);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)(before_stat.f_ffree + 1u), (uint32_t)after_reclaim_stat.f_ffree);
@@ -1042,14 +1058,12 @@ RTFS_TEST(FsHandlerMknod_WhenTargetDoesNotExist_ShouldCreateEntryAndInode)
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "omega",
             strlen("omega"),
             S_IFREG | 0644,
-            0
-        )
-    );
+            0));
 
     TEST_ASSERT_EQUAL(0, fsHandlerLookupInParent(&fixture, "omega", &result));
     TEST_ASSERT_EQUAL_UINT32(6000u, (uint32_t)result.inode_view.ino);
@@ -1085,14 +1099,12 @@ RTFS_TEST(FsHandlerMknod_WhenCreatingDirectory_ShouldInitializeDirectoryNlinks)
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "omega",
             strlen("omega"),
             S_IFDIR | 0755,
-            0
-        )
-    );
+            0));
 
     handle = nodeBlockCacheGet(&fixture.node_cache, 6000);
     TEST_ASSERT_NOT_NULL(handle.entry);
@@ -1118,14 +1130,12 @@ RTFS_TEST(FsHandlerMknod_WhenTargetAlreadyExists_ShouldReturnEEXIST)
 
     TEST_ASSERT_EQUAL(
         -1,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "alpha",
             strlen("alpha"),
             S_IFREG | 0644,
-            0
-        )
-    );
+            0));
     TEST_ASSERT_EQUAL(EEXIST, errno);
 
     fsHandlerFixtureFini(&fixture);
@@ -1142,14 +1152,12 @@ RTFS_TEST(FsHandlerRename_WhenTargetDoesNotExist_ShouldMoveEntryAndUpdateCachedN
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
 
     TEST_ASSERT_EQUAL_STRING("omega", (const char *)fixture.oldloc.node_access_2);
     TEST_ASSERT_EQUAL(ENOENT, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1171,25 +1179,21 @@ RTFS_TEST(FsHandlerRename_WhenRegularTargetExists_ShouldNotReturnEexistAndShould
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "omega",
             strlen("omega"),
             S_IFREG | 0600,
-            0
-        )
-    );
+            0));
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
 
     TEST_ASSERT_EQUAL_STRING("omega", (const char *)fixture.oldloc.node_access_2);
     TEST_ASSERT_EQUAL(ENOENT, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1211,25 +1215,21 @@ RTFS_TEST(FsHandlerRename_WhenRegularTargetExists_ShouldReplaceIt)
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "omega",
             strlen("omega"),
             S_IFREG | 0600,
-            0
-        )
-    );
+            0));
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
 
     TEST_ASSERT_EQUAL_STRING("omega", (const char *)fixture.oldloc.node_access_2);
     TEST_ASSERT_EQUAL(ENOENT, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1266,14 +1266,12 @@ RTFS_TEST(FsHandlerRename_WhenOldAndNewNamesMatch_ShouldReturnSuccessWithoutMuta
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.parentloc,
             "alpha",
-            strlen("alpha")
-        )
-    );
+            strlen("alpha")));
 
     TEST_ASSERT_EQUAL_STRING("alpha", (const char *)fixture.oldloc.node_access_2);
     TEST_ASSERT_EQUAL(0, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1303,14 +1301,12 @@ RTFS_TEST(FsHandlerRename_WhenDirectoryTargetExistsButIsNotEmpty_ShouldReturnEno
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "omega",
             strlen("omega"),
             S_IFDIR | 0755,
-            0
-        )
-    );
+            0));
 
     handle = nodeBlockCacheGet(&fixture.node_cache, 6000);
     TEST_ASSERT_NOT_NULL(handle.entry);
@@ -1335,14 +1331,12 @@ RTFS_TEST(FsHandlerRename_WhenDirectoryTargetExistsButIsNotEmpty_ShouldReturnEno
 
     TEST_ASSERT_EQUAL(
         -1,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
     TEST_ASSERT_EQUAL(ENOTEMPTY, errno);
 
     fsHandlerFixtureFini(&fixture);
@@ -1358,25 +1352,21 @@ RTFS_TEST(FsHandlerRename_WhenTargetTypeConflicts_ShouldReturnTypeError)
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "omega",
             strlen("omega"),
             S_IFDIR | 0755,
-            0
-        )
-    );
+            0));
 
     TEST_ASSERT_EQUAL(
         -1,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
     TEST_ASSERT_EQUAL(EISDIR, errno);
 
     fsHandlerFixtureFini(&fixture);
@@ -1397,25 +1387,21 @@ RTFS_TEST(FsHandlerRename_WhenDirectoryReplacesRegularTarget_ShouldReturnEnotdir
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "omega",
             strlen("omega"),
             S_IFREG | 0600,
-            0
-        )
-    );
+            0));
 
     TEST_ASSERT_EQUAL(
         -1,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
     TEST_ASSERT_EQUAL(ENOTDIR, errno);
 
     fsHandlerFixtureFini(&fixture);
@@ -1440,25 +1426,21 @@ RTFS_TEST(FsHandlerRename_WhenEmptyDirectoryTargetExists_ShouldReplaceItAndDecre
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.parentloc,
             "omega",
             strlen("omega"),
             S_IFDIR | 0755,
-            0
-        )
-    );
+            0));
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
 
     TEST_ASSERT_EQUAL_STRING("omega", (const char *)fixture.oldloc.node_access_2);
     TEST_ASSERT_EQUAL(ENOENT, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1504,14 +1486,12 @@ RTFS_TEST(FsHandlerRename_WhenRegularTargetMovesAcrossParentsWithoutReplacement_
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.other_parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
 
     TEST_ASSERT_EQUAL_STRING("omega", (const char *)fixture.oldloc.node_access_2);
     TEST_ASSERT_EQUAL(ENOENT, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1519,15 +1499,13 @@ RTFS_TEST(FsHandlerRename_WhenRegularTargetMovesAcrossParentsWithoutReplacement_
     {
         RtfsDirInodeBuildRequest request = {
             .ino = fixture.other_parent_view.ino,
-            .mode = RTFS_DIR_BUILD_ON_DEMAND
-        };
+            .mode = RTFS_DIR_BUILD_ON_DEMAND};
         RtfsDirInode *dir_inode = NULL;
 
         TEST_ASSERT_EQUAL(0, rtfsDirInodeResolve(&fixture.fs_manager, NULL, &request, &dir_inode));
         TEST_ASSERT_EQUAL(
             0,
-            rtfsDirInodeLookup(dir_inode, "omega", strlen("omega"), &result)
-        );
+            rtfsDirInodeLookup(dir_inode, "omega", strlen("omega"), &result));
         rtfsDirInodePut(dir_inode);
     }
     TEST_ASSERT_EQUAL_UINT32(3001u, (uint32_t)result.inode_view.ino);
@@ -1565,14 +1543,12 @@ RTFS_TEST(FsHandlerRename_WhenDirectoryMovesAcrossParentsWithoutReplacement_Shou
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.other_parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
 
     TEST_ASSERT_EQUAL_STRING("omega", (const char *)fixture.oldloc.node_access_2);
     TEST_ASSERT_EQUAL(ENOENT, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1580,15 +1556,13 @@ RTFS_TEST(FsHandlerRename_WhenDirectoryMovesAcrossParentsWithoutReplacement_Shou
     {
         RtfsDirInodeBuildRequest request = {
             .ino = fixture.other_parent_view.ino,
-            .mode = RTFS_DIR_BUILD_ON_DEMAND
-        };
+            .mode = RTFS_DIR_BUILD_ON_DEMAND};
         RtfsDirInode *dir_inode = NULL;
 
         TEST_ASSERT_EQUAL(0, rtfsDirInodeResolve(&fixture.fs_manager, NULL, &request, &dir_inode));
         TEST_ASSERT_EQUAL(
             0,
-            rtfsDirInodeLookup(dir_inode, "omega", strlen("omega"), &result)
-        );
+            rtfsDirInodeLookup(dir_inode, "omega", strlen("omega"), &result));
         rtfsDirInodePut(dir_inode);
     }
     TEST_ASSERT_EQUAL_UINT32(3001u, (uint32_t)result.inode_view.ino);
@@ -1631,25 +1605,21 @@ RTFS_TEST(FsHandlerRename_WhenRegularTargetMovesAcrossParentsWithReplacement_Sho
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.other_parentloc,
             "omega",
             strlen("omega"),
             S_IFREG | 0600,
-            0
-        )
-    );
+            0));
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.other_parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
 
     TEST_ASSERT_EQUAL_STRING("omega", (const char *)fixture.oldloc.node_access_2);
     TEST_ASSERT_EQUAL(ENOENT, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1657,15 +1627,13 @@ RTFS_TEST(FsHandlerRename_WhenRegularTargetMovesAcrossParentsWithReplacement_Sho
     {
         RtfsDirInodeBuildRequest request = {
             .ino = fixture.other_parent_view.ino,
-            .mode = RTFS_DIR_BUILD_ON_DEMAND
-        };
+            .mode = RTFS_DIR_BUILD_ON_DEMAND};
         RtfsDirInode *dir_inode = NULL;
 
         TEST_ASSERT_EQUAL(0, rtfsDirInodeResolve(&fixture.fs_manager, NULL, &request, &dir_inode));
         TEST_ASSERT_EQUAL(
             0,
-            rtfsDirInodeLookup(dir_inode, "omega", strlen("omega"), &result)
-        );
+            rtfsDirInodeLookup(dir_inode, "omega", strlen("omega"), &result));
         rtfsDirInodePut(dir_inode);
     }
     TEST_ASSERT_EQUAL_UINT32(3001u, (uint32_t)result.inode_view.ino);
@@ -1723,14 +1691,12 @@ RTFS_TEST(FsHandlerRename_WhenDirectoryMovesAcrossParentsWithReplacement_ShouldR
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.mknod_h(
+        rtfsFsHandler.mknod_h(
             &fixture.other_parentloc,
             "omega",
             strlen("omega"),
             S_IFDIR | 0755,
-            0
-        )
-    );
+            0));
 
     handle = nodeBlockCacheGet(&fixture.node_cache, 6000);
     TEST_ASSERT_NOT_NULL(handle.entry);
@@ -1750,14 +1716,12 @@ RTFS_TEST(FsHandlerRename_WhenDirectoryMovesAcrossParentsWithReplacement_ShouldR
 
     TEST_ASSERT_EQUAL(
         0,
-        r2fsFsHandler.rename_h(
+        rtfsFsHandler.rename_h(
             &fixture.parentloc,
             &fixture.oldloc,
             &fixture.other_parentloc,
             "omega",
-            strlen("omega")
-        )
-    );
+            strlen("omega")));
 
     TEST_ASSERT_EQUAL_STRING("omega", (const char *)fixture.oldloc.node_access_2);
     TEST_ASSERT_EQUAL(ENOENT, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1765,15 +1729,13 @@ RTFS_TEST(FsHandlerRename_WhenDirectoryMovesAcrossParentsWithReplacement_ShouldR
     {
         RtfsDirInodeBuildRequest request = {
             .ino = fixture.other_parent_view.ino,
-            .mode = RTFS_DIR_BUILD_ON_DEMAND
-        };
+            .mode = RTFS_DIR_BUILD_ON_DEMAND};
         RtfsDirInode *dir_inode = NULL;
 
         TEST_ASSERT_EQUAL(0, rtfsDirInodeResolve(&fixture.fs_manager, NULL, &request, &dir_inode));
         TEST_ASSERT_EQUAL(
             0,
-            rtfsDirInodeLookup(dir_inode, "omega", strlen("omega"), &result)
-        );
+            rtfsDirInodeLookup(dir_inode, "omega", strlen("omega"), &result));
         rtfsDirInodePut(dir_inode);
     }
     TEST_ASSERT_EQUAL_UINT32(3001u, (uint32_t)result.inode_view.ino);
@@ -1824,7 +1786,7 @@ RTFS_TEST(FsHandlerRmnod_WhenTargetNameIsUnavailable_ShouldReturnEINVAL)
 
     fsHandlerFixtureInit(&fixture);
 
-    TEST_ASSERT_EQUAL(-1, r2fsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
+    TEST_ASSERT_EQUAL(-1, rtfsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
     TEST_ASSERT_EQUAL(EINVAL, errno);
 
     fsHandlerFixtureFini(&fixture);
@@ -1840,7 +1802,7 @@ RTFS_TEST(FsHandlerRmnod_WhenTargetIsEmptyAndRemovable_ShouldUnlinkThenReclaimAf
     fixture.oldloc.node_access_2 = strdup("alpha");
     TEST_ASSERT_NOT_NULL(fixture.oldloc.node_access_2);
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
     {
         RtfsDirLookupResult result;
         TEST_ASSERT_EQUAL(ENOENT, fsHandlerLookupInParent(&fixture, "alpha", &result));
@@ -1878,7 +1840,7 @@ RTFS_TEST(FsHandlerRmnod_WhenTargetIsEmptyDirectory_ShouldDecrementParentNlinkIn
     fixture.parent_block.dentry[0].file_type = RTFS_FT_DIR;
     fsHandlerFixtureSyncCachedNode(&fixture, 3001, &fixture.target_inode);
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
 
     parent_handle = nodeBlockCacheGet(&fixture.node_cache, 2000);
     TEST_ASSERT_NOT_NULL(parent_handle.entry);
@@ -1925,7 +1887,7 @@ RTFS_TEST(FsHandlerRmnod_WhenRegularFileUsesDirectAndDirectNodeMappings_ShouldDe
         blockBufferDestroy(&node_buffer);
     }
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
     TEST_ASSERT_TRUE(fsHandlerFixtureIsSitBitValid(&fixture, 31));
     TEST_ASSERT_TRUE(fsHandlerFixtureIsSitBitValid(&fixture, 32));
     TEST_ASSERT_TRUE(fsHandlerFixtureIsSitBitValid(&fixture, 40));
@@ -1999,7 +1961,7 @@ RTFS_TEST(FsHandlerRmnod_WhenRegularFileUsesSingleIndirectMappings_ShouldDeferAl
         blockBufferDestroy(&node_buffer);
     }
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
     TEST_ASSERT_TRUE(fsHandlerFixtureIsSitBitValid(&fixture, 31));
     TEST_ASSERT_TRUE(fsHandlerFixtureIsSitBitValid(&fixture, 32));
     TEST_ASSERT_TRUE(fsHandlerFixtureIsSitBitValid(&fixture, 41));
@@ -2051,12 +2013,11 @@ RTFS_TEST(FsHandlerRmnod_DoubleIndirect_ShouldDeferReclaimUntilTxComplete)
     TEST_ASSERT_NOT_NULL(direct_node);
 
     fixture->target_inode.i.i_size =
-        (uint64_t)(
-            DEF_ADDRS_PER_INODE +
-            2U * DEF_ADDRS_PER_BLOCK +
-            2U * NIDS_PER_BLOCK * DEF_ADDRS_PER_BLOCK +
-            1u
-        ) * BLOCK_BUFFER_SIZE;
+        (uint64_t)(DEF_ADDRS_PER_INODE +
+                   2U * DEF_ADDRS_PER_BLOCK +
+                   2U * NIDS_PER_BLOCK * DEF_ADDRS_PER_BLOCK +
+                   1u) *
+        BLOCK_BUFFER_SIZE;
     fixture->target_inode.i.i_addr[0] = 31;
     fixture->target_inode.i.i_nid[4] = 3005;
     fixture->target_inode.i.i_nlink = 1;
@@ -2109,7 +2070,7 @@ RTFS_TEST(FsHandlerRmnod_DoubleIndirect_ShouldDeferReclaimUntilTxComplete)
         blockBufferDestroy(&node_buffer);
     }
 
-    TEST_ASSERT_EQUAL(0, r2fsFsHandler.rmnod_h(&fixture->parentloc, &fixture->oldloc));
+    TEST_ASSERT_EQUAL(0, rtfsFsHandler.rmnod_h(&fixture->parentloc, &fixture->oldloc));
     TEST_ASSERT_TRUE(fsHandlerFixtureIsSitBitValid(fixture, 31));
     TEST_ASSERT_TRUE(fsHandlerFixtureIsSitBitValid(fixture, 32));
     TEST_ASSERT_TRUE(fsHandlerFixtureIsSitBitValid(fixture, 43));
@@ -2159,7 +2120,7 @@ RTFS_TEST(FsHandlerRmnod_WhenTargetDirectoryIsNotEmpty_ShouldReturnEnotempty)
     fixture.parent_block.dentry[0].file_type = RTFS_FT_DIR;
     fsHandlerFixtureSyncCachedNode(&fixture, 3001, &fixture.target_inode);
 
-    TEST_ASSERT_EQUAL(-1, r2fsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
+    TEST_ASSERT_EQUAL(-1, rtfsFsHandler.rmnod_h(&fixture.parentloc, &fixture.oldloc));
     TEST_ASSERT_EQUAL(ENOTEMPTY, errno);
 
     fsHandlerFixtureFini(&fixture);

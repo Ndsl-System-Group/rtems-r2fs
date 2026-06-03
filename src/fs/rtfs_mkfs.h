@@ -7,20 +7,19 @@
 
 struct comm_dev;
 
-typedef int (*R2fsMkfsWriteBlock)(
+typedef int (*RtfsMkfsWriteBlock)(
     void *ctx,
     uint32_t lpa,
-    const void *block
-);
+    const void *block);
 
-typedef struct R2fsMkfsOptions
+typedef struct RtfsMkfsOptions
 {
     uint64_t lpa_count;
     uint32_t root_ino;
     uint32_t meta_journal_segment_count;
-} R2fsMkfsOptions;
+} RtfsMkfsOptions;
 
-typedef struct R2fsMkfsLayout
+typedef struct RtfsMkfsLayout
 {
     uint64_t block_count;
     uint32_t segment_count;
@@ -35,23 +34,20 @@ typedef struct R2fsMkfsLayout
     uint32_t main_start_lpa;
     uint32_t main_start_segment;
     uint32_t main_segment_count;
-} R2fsMkfsLayout;
+} RtfsMkfsLayout;
 
-int r2fsMkfsCalculateLayout(
+int rtfsMkfsCalculateLayout(
     uint64_t lpa_count,
     uint32_t meta_journal_segment_count,
-    R2fsMkfsLayout *out_layout
-);
+    RtfsMkfsLayout *out_layout);
 
-int r2fsMkfsFormat(
-    const R2fsMkfsOptions *options,
-    R2fsMkfsWriteBlock write_block,
+int rtfsMkfsFormat(
+    const RtfsMkfsOptions *options,
+    RtfsMkfsWriteBlock write_block,
     void *write_ctx,
-    R2fsMkfsLayout *out_layout
-);
+    RtfsMkfsLayout *out_layout);
 
-int r2fsMkfsFormatCommDev(
-    const R2fsMkfsOptions *options,
+int rtfsMkfsFormatCommDev(
+    const RtfsMkfsOptions *options,
     struct comm_dev *dev,
-    R2fsMkfsLayout *out_layout
-);
+    RtfsMkfsLayout *out_layout);

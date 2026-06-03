@@ -1,4 +1,4 @@
-#include "fs/r2fs_mkfs.h"
+#include "fs/rtfs_mkfs.h"
 
 #include "communication/comm_api.h"
 #include "communication/dev.h"
@@ -9,21 +9,20 @@
 #include <string.h>
 #include <sys/stat.h>
 
-static uint64_t r2fsMkfsDivRoundUp(uint64_t value, uint64_t divisor)
+static uint64_t rtfsMkfsDivRoundUp(uint64_t value, uint64_t divisor)
 {
     return (value + divisor - 1U) / divisor;
 }
 
-static uint32_t r2fsMkfsSegToLpa(uint32_t seg_id)
+static uint32_t rtfsMkfsSegToLpa(uint32_t seg_id)
 {
     return seg_id * BLOCK_PER_SEGMENT;
 }
 
-static int r2fsMkfsWriteZeroBlock(
-    R2fsMkfsWriteBlock write_block,
+static int rtfsMkfsWriteZeroBlock(
+    RtfsMkfsWriteBlock write_block,
     void *write_ctx,
-    uint32_t lpa
-)
+    uint32_t lpa)
 {
     unsigned char block[4096];
 
@@ -31,15 +30,15 @@ static int r2fsMkfsWriteZeroBlock(
     return write_block(write_ctx, lpa, block);
 }
 
-static int r2fsMkfsCommDevWriteBlock(
+static int rtfsMkfsCommDevWriteBlock(
     void *ctx,
     uint32_t lpa,
-    const void *block
-)
+    const void *block)
 {
     comm_dev *dev = (comm_dev *)ctx;
 
-    if (dev == NULL || block == NULL) {
+    if (dev == NULL || block == NULL)
+    {
         return EINVAL;
     }
 
@@ -48,15 +47,13 @@ static int r2fsMkfsCommDevWriteBlock(
         (void *)block,
         LPA_TO_LBA(lpa),
         LBA_PER_LPA,
-        COMM_IO_WRITE
-    );
+        COMM_IO_WRITE);
 }
 
-static void r2fsMkfsSitSetValid(
+static void rtfsMkfsSitSetValid(
     struct RtfsSitBlock *sit_block,
     uint32_t seg_id,
-    uint32_t seg_off
-)
+    uint32_t seg_off)
 {
     struct RtfsSitEntry *entry;
     uint32_t idx;
@@ -68,19 +65,20 @@ static void r2fsMkfsSitSetValid(
     byte_idx = seg_off / 8U;
     bit_idx = seg_off % 8U;
 
-    if ((entry->valid_map[byte_idx] & (uint8_t)(1U << bit_idx)) == 0) {
+    if ((entry->valid_map[byte_idx] & (uint8_t)(1U << bit_idx)) == 0)
+    {
         entry->valid_map[byte_idx] |= (uint8_t)(1U << bit_idx);
-        if (GET_SIT_VBLOCKS(entry) < 511U) {
+        if (GET_SIT_VBLOCKS(entry) < 511U)
+        {
             entry->vblocks += 1U;
         }
     }
 }
 
-static void r2fsMkfsSitSetNextSegment(
+static void rtfsMkfsSitSetNextSegment(
     struct RtfsSitBlock *sit_block,
     uint32_t seg_id,
-    uint32_t next_seg_id
-)
+    uint32_t next_seg_id)
 {
     struct RtfsSitEntry *entry;
 
@@ -89,12 +87,11 @@ static void r2fsMkfsSitSetNextSegment(
     SET_NEXT_SEG(entry, next_seg_id);
 }
 
-static int r2fsMkfsWriteInitialSuper(
-    const R2fsMkfsOptions *options,
-    const R2fsMkfsLayout *layout,
-    R2fsMkfsWriteBlock write_block,
-    void *write_ctx
-)
+static int rtfsMkfsWriteInitialSuper(
+    const RtfsMkfsOptions *options,
+    const RtfsMkfsLayout *layout,
+    RtfsMkfsWriteBlock write_block,
+    void *write_ctx)
 {
     struct RtfsSuperBlock super_block;
 
@@ -132,10 +129,13 @@ static int r2fsMkfsWriteInitialSuper(
     super_block.meta_journal_end_blkoff = 0;
     super_block.next_free_nid = options->root_ino + 1U;
 
-    if (layout->main_segment_count > 2U) {
+    if (layout->main_segment_count > 2U)
+    {
         super_block.first_free_segment_id = layout->main_start_segment + 2U;
         super_block.free_segment_count = layout->main_segment_count - 2U;
-    } else {
+    }
+    else
+    {
         super_block.first_free_segment_id = INVALID_SEGID;
         super_block.free_segment_count = 0;
     }
@@ -143,12 +143,11 @@ static int r2fsMkfsWriteInitialSuper(
     return write_block(write_ctx, 0, &super_block);
 }
 
-static int r2fsMkfsWriteInitialNat(
-    const R2fsMkfsOptions *options,
-    const R2fsMkfsLayout *layout,
-    R2fsMkfsWriteBlock write_block,
-    void *write_ctx
-)
+static int rtfsMkfsWriteInitialNat(
+    const RtfsMkfsOptions *options,
+    const RtfsMkfsLayout *layout,
+    RtfsMkfsWriteBlock write_block,
+    void *write_ctx)
 {
     struct RtfsNatBlock nat_block;
     uint64_t nat_block_count;
@@ -162,11 +161,13 @@ static int r2fsMkfsWriteInitialNat(
     root_nat_idx = options->root_ino % NAT_ENTRY_PER_BLOCK;
     next_free_nid = options->root_ino + 1U;
 
-    for (block_idx = 0; block_idx < nat_block_count; ++block_idx) {
+    for (block_idx = 0; block_idx < nat_block_count; ++block_idx)
+    {
         uint32_t i;
 
         memset(&nat_block, 0, sizeof(nat_block));
-        for (i = 0; i < NAT_ENTRY_PER_BLOCK; ++i) {
+        for (i = 0; i < NAT_ENTRY_PER_BLOCK; ++i)
+        {
             uint64_t nid = block_idx * NAT_ENTRY_PER_BLOCK + i;
 
             nat_block.entries[i].ino = INVALID_NID;
@@ -174,21 +175,22 @@ static int r2fsMkfsWriteInitialNat(
                 (nid + 1U < layout->block_count) ? (uint32_t)(nid + 1U) : INVALID_NID;
         }
 
-        if (block_idx == root_nat_block) {
+        if (block_idx == root_nat_block)
+        {
             nat_block.entries[root_nat_idx].ino = options->root_ino;
             nat_block.entries[root_nat_idx].block_addr = layout->main_start_lpa;
         }
 
-        if (next_free_nid / NAT_ENTRY_PER_BLOCK == block_idx) {
+        if (next_free_nid / NAT_ENTRY_PER_BLOCK == block_idx)
+        {
             uint32_t next_idx = next_free_nid % NAT_ENTRY_PER_BLOCK;
             nat_block.entries[next_idx].ino = INVALID_NID;
             nat_block.entries[next_idx].block_addr =
-                (next_free_nid + 1U < layout->block_count) ?
-                next_free_nid + 1U :
-                INVALID_NID;
+                (next_free_nid + 1U < layout->block_count) ? next_free_nid + 1U : INVALID_NID;
         }
 
-        if (write_block(write_ctx, layout->nat_start_lpa + (uint32_t)block_idx, &nat_block) != 0) {
+        if (write_block(write_ctx, layout->nat_start_lpa + (uint32_t)block_idx, &nat_block) != 0)
+        {
             return EIO;
         }
     }
@@ -196,11 +198,10 @@ static int r2fsMkfsWriteInitialNat(
     return 0;
 }
 
-static int r2fsMkfsWriteInitialSit(
-    const R2fsMkfsLayout *layout,
-    R2fsMkfsWriteBlock write_block,
-    void *write_ctx
-)
+static int rtfsMkfsWriteInitialSit(
+    const RtfsMkfsLayout *layout,
+    RtfsMkfsWriteBlock write_block,
+    void *write_ctx)
 {
     struct RtfsSitBlock sit_block;
     uint64_t sit_block_count;
@@ -211,37 +212,46 @@ static int r2fsMkfsWriteInitialSit(
     sit_block_count = (uint64_t)layout->sit_segment_count * BLOCK_PER_SEGMENT;
     metadata_end_segment = layout->main_start_segment;
 
-    for (block_idx = 0; block_idx < sit_block_count; ++block_idx) {
+    for (block_idx = 0; block_idx < sit_block_count; ++block_idx)
+    {
         memset(&sit_block, 0, sizeof(sit_block));
 
         for (seg_id = (uint32_t)block_idx * SIT_ENTRY_PER_BLOCK;
              seg_id < (uint32_t)(block_idx + 1U) * SIT_ENTRY_PER_BLOCK &&
              seg_id < layout->segment_count;
-             ++seg_id) {
-            if (seg_id + 1U < layout->segment_count) {
-                r2fsMkfsSitSetNextSegment(&sit_block, seg_id, seg_id + 1U);
+             ++seg_id)
+        {
+            if (seg_id + 1U < layout->segment_count)
+            {
+                rtfsMkfsSitSetNextSegment(&sit_block, seg_id, seg_id + 1U);
             }
         }
 
-        if (block_idx == 0) {
-            r2fsMkfsSitSetValid(&sit_block, 0, 0);
+        if (block_idx == 0)
+        {
+            rtfsMkfsSitSetValid(&sit_block, 0, 0);
         }
 
-        for (seg_id = 1; seg_id < metadata_end_segment; ++seg_id) {
-            if (seg_id / SIT_ENTRY_PER_BLOCK == block_idx) {
+        for (seg_id = 1; seg_id < metadata_end_segment; ++seg_id)
+        {
+            if (seg_id / SIT_ENTRY_PER_BLOCK == block_idx)
+            {
                 uint32_t off;
 
-                for (off = 0; off < BLOCK_PER_SEGMENT; ++off) {
-                    r2fsMkfsSitSetValid(&sit_block, seg_id, off);
+                for (off = 0; off < BLOCK_PER_SEGMENT; ++off)
+                {
+                    rtfsMkfsSitSetValid(&sit_block, seg_id, off);
                 }
             }
         }
 
-        if (layout->main_start_segment / SIT_ENTRY_PER_BLOCK == block_idx) {
-            r2fsMkfsSitSetValid(&sit_block, layout->main_start_segment, 0);
+        if (layout->main_start_segment / SIT_ENTRY_PER_BLOCK == block_idx)
+        {
+            rtfsMkfsSitSetValid(&sit_block, layout->main_start_segment, 0);
         }
 
-        if (write_block(write_ctx, layout->sit_start_lpa + (uint32_t)block_idx, &sit_block) != 0) {
+        if (write_block(write_ctx, layout->sit_start_lpa + (uint32_t)block_idx, &sit_block) != 0)
+        {
             return EIO;
         }
     }
@@ -249,12 +259,11 @@ static int r2fsMkfsWriteInitialSit(
     return 0;
 }
 
-static int r2fsMkfsWriteInitialSrmap(
-    const R2fsMkfsOptions *options,
-    const R2fsMkfsLayout *layout,
-    R2fsMkfsWriteBlock write_block,
-    void *write_ctx
-)
+static int rtfsMkfsWriteInitialSrmap(
+    const RtfsMkfsOptions *options,
+    const RtfsMkfsLayout *layout,
+    RtfsMkfsWriteBlock write_block,
+    void *write_ctx)
 {
     struct RtfsSummaryBlock summary_block;
     uint64_t srmap_block_count;
@@ -268,14 +277,17 @@ static int r2fsMkfsWriteInitialSrmap(
     root_srmap_block = root_node_lpa / ENTRIES_IN_SUM;
     root_srmap_idx = root_node_lpa % ENTRIES_IN_SUM;
 
-    for (block_idx = 0; block_idx < srmap_block_count; ++block_idx) {
+    for (block_idx = 0; block_idx < srmap_block_count; ++block_idx)
+    {
         memset(&summary_block, 0, sizeof(summary_block));
-        if (block_idx == root_srmap_block) {
+        if (block_idx == root_srmap_block)
+        {
             summary_block.entries[root_srmap_idx].nid = options->root_ino;
             summary_block.entries[root_srmap_idx].ofs_in_node = 0;
         }
 
-        if (write_block(write_ctx, layout->srmap_start_lpa + (uint32_t)block_idx, &summary_block) != 0) {
+        if (write_block(write_ctx, layout->srmap_start_lpa + (uint32_t)block_idx, &summary_block) != 0)
+        {
             return EIO;
         }
     }
@@ -283,12 +295,11 @@ static int r2fsMkfsWriteInitialSrmap(
     return 0;
 }
 
-static int r2fsMkfsWriteRootInode(
-    const R2fsMkfsOptions *options,
-    const R2fsMkfsLayout *layout,
-    R2fsMkfsWriteBlock write_block,
-    void *write_ctx
-)
+static int rtfsMkfsWriteRootInode(
+    const RtfsMkfsOptions *options,
+    const RtfsMkfsLayout *layout,
+    RtfsMkfsWriteBlock write_block,
+    void *write_ctx)
 {
     struct RtfsNode root_node;
 
@@ -310,11 +321,10 @@ static int r2fsMkfsWriteRootInode(
     return write_block(write_ctx, layout->main_start_lpa, &root_node);
 }
 
-int r2fsMkfsCalculateLayout(
+int rtfsMkfsCalculateLayout(
     uint64_t lpa_count,
     uint32_t meta_journal_segment_count,
-    R2fsMkfsLayout *out_layout
-)
+    RtfsMkfsLayout *out_layout)
 {
     uint64_t segment_count;
     uint64_t block_count;
@@ -326,22 +336,24 @@ int r2fsMkfsCalculateLayout(
     uint64_t srmap_segment_count;
     uint64_t main_start_segment;
 
-    if (out_layout == NULL || meta_journal_segment_count == 0) {
+    if (out_layout == NULL || meta_journal_segment_count == 0)
+    {
         return EINVAL;
     }
 
     segment_count = lpa_count / BLOCK_PER_SEGMENT;
     block_count = segment_count * BLOCK_PER_SEGMENT;
-    if (segment_count > UINT32_MAX || block_count == 0) {
+    if (segment_count > UINT32_MAX || block_count == 0)
+    {
         return EINVAL;
     }
 
-    sit_block_count = r2fsMkfsDivRoundUp(segment_count, SIT_ENTRY_PER_BLOCK);
-    sit_segment_count = r2fsMkfsDivRoundUp(sit_block_count, BLOCK_PER_SEGMENT);
-    nat_block_count = r2fsMkfsDivRoundUp(block_count, NAT_ENTRY_PER_BLOCK);
-    nat_segment_count = r2fsMkfsDivRoundUp(nat_block_count, BLOCK_PER_SEGMENT);
-    srmap_block_count = r2fsMkfsDivRoundUp(block_count, ENTRIES_IN_SUM);
-    srmap_segment_count = r2fsMkfsDivRoundUp(srmap_block_count, BLOCK_PER_SEGMENT);
+    sit_block_count = rtfsMkfsDivRoundUp(segment_count, SIT_ENTRY_PER_BLOCK);
+    sit_segment_count = rtfsMkfsDivRoundUp(sit_block_count, BLOCK_PER_SEGMENT);
+    nat_block_count = rtfsMkfsDivRoundUp(block_count, NAT_ENTRY_PER_BLOCK);
+    nat_segment_count = rtfsMkfsDivRoundUp(nat_block_count, BLOCK_PER_SEGMENT);
+    srmap_block_count = rtfsMkfsDivRoundUp(block_count, ENTRIES_IN_SUM);
+    srmap_segment_count = rtfsMkfsDivRoundUp(srmap_block_count, BLOCK_PER_SEGMENT);
 
     main_start_segment =
         1U +
@@ -353,7 +365,8 @@ int r2fsMkfsCalculateLayout(
     if (main_start_segment + 2U > segment_count ||
         sit_segment_count > UINT32_MAX ||
         nat_segment_count > UINT32_MAX ||
-        srmap_segment_count > UINT32_MAX) {
+        srmap_segment_count > UINT32_MAX)
+    {
         return ENOSPC;
     }
 
@@ -365,116 +378,123 @@ int r2fsMkfsCalculateLayout(
     out_layout->sit_segment_count = (uint32_t)sit_segment_count;
     out_layout->nat_segment_count = (uint32_t)nat_segment_count;
     out_layout->srmap_segment_count = (uint32_t)srmap_segment_count;
-    out_layout->sit_start_lpa = r2fsMkfsSegToLpa(1U + meta_journal_segment_count);
-    out_layout->nat_start_lpa = r2fsMkfsSegToLpa(
-        1U + meta_journal_segment_count + out_layout->sit_segment_count
-    );
-    out_layout->srmap_start_lpa = r2fsMkfsSegToLpa(
+    out_layout->sit_start_lpa = rtfsMkfsSegToLpa(1U + meta_journal_segment_count);
+    out_layout->nat_start_lpa = rtfsMkfsSegToLpa(
+        1U + meta_journal_segment_count + out_layout->sit_segment_count);
+    out_layout->srmap_start_lpa = rtfsMkfsSegToLpa(
         1U +
         meta_journal_segment_count +
         out_layout->sit_segment_count +
-        out_layout->nat_segment_count
-    );
+        out_layout->nat_segment_count);
     out_layout->main_start_segment = (uint32_t)main_start_segment;
-    out_layout->main_start_lpa = r2fsMkfsSegToLpa(out_layout->main_start_segment);
+    out_layout->main_start_lpa = rtfsMkfsSegToLpa(out_layout->main_start_segment);
     out_layout->main_segment_count =
         out_layout->segment_count - out_layout->main_start_segment;
 
     return 0;
 }
 
-int r2fsMkfsFormat(
-    const R2fsMkfsOptions *options,
-    R2fsMkfsWriteBlock write_block,
+int rtfsMkfsFormat(
+    const RtfsMkfsOptions *options,
+    RtfsMkfsWriteBlock write_block,
     void *write_ctx,
-    R2fsMkfsLayout *out_layout
-)
+    RtfsMkfsLayout *out_layout)
 {
-    R2fsMkfsOptions effective_options;
-    R2fsMkfsLayout layout;
+    RtfsMkfsOptions effective_options;
+    RtfsMkfsLayout layout;
     uint32_t seg_id;
     int ret;
 
-    if (options == NULL || write_block == NULL) {
+    if (options == NULL || write_block == NULL)
+    {
         return EINVAL;
     }
 
     effective_options = *options;
-    if (effective_options.root_ino == INVALID_NID) {
+    if (effective_options.root_ino == INVALID_NID)
+    {
         effective_options.root_ino = 1;
     }
-    if (effective_options.meta_journal_segment_count == 0) {
+    if (effective_options.meta_journal_segment_count == 0)
+    {
         effective_options.meta_journal_segment_count = 1;
     }
 
-    ret = r2fsMkfsCalculateLayout(
+    ret = rtfsMkfsCalculateLayout(
         effective_options.lpa_count,
         effective_options.meta_journal_segment_count,
-        &layout
-    );
-    if (ret != 0) {
+        &layout);
+    if (ret != 0)
+    {
         return ret;
     }
 
-    if (r2fsMkfsWriteInitialSuper(&effective_options, &layout, write_block, write_ctx) != 0) {
+    if (rtfsMkfsWriteInitialSuper(&effective_options, &layout, write_block, write_ctx) != 0)
+    {
         return EIO;
     }
 
-    for (seg_id = 1; seg_id < layout.main_start_segment; ++seg_id) {
+    for (seg_id = 1; seg_id < layout.main_start_segment; ++seg_id)
+    {
         uint32_t off;
 
-        for (off = 0; off < BLOCK_PER_SEGMENT; ++off) {
-            ret = r2fsMkfsWriteZeroBlock(
+        for (off = 0; off < BLOCK_PER_SEGMENT; ++off)
+        {
+            ret = rtfsMkfsWriteZeroBlock(
                 write_block,
                 write_ctx,
-                r2fsMkfsSegToLpa(seg_id) + off
-            );
-            if (ret != 0) {
+                rtfsMkfsSegToLpa(seg_id) + off);
+            if (ret != 0)
+            {
                 return EIO;
             }
         }
     }
 
-    ret = r2fsMkfsWriteInitialNat(&effective_options, &layout, write_block, write_ctx);
-    if (ret != 0) {
+    ret = rtfsMkfsWriteInitialNat(&effective_options, &layout, write_block, write_ctx);
+    if (ret != 0)
+    {
         return ret;
     }
 
-    ret = r2fsMkfsWriteInitialSit(&layout, write_block, write_ctx);
-    if (ret != 0) {
+    ret = rtfsMkfsWriteInitialSit(&layout, write_block, write_ctx);
+    if (ret != 0)
+    {
         return ret;
     }
 
-    ret = r2fsMkfsWriteInitialSrmap(&effective_options, &layout, write_block, write_ctx);
-    if (ret != 0) {
+    ret = rtfsMkfsWriteInitialSrmap(&effective_options, &layout, write_block, write_ctx);
+    if (ret != 0)
+    {
         return ret;
     }
 
-    if (r2fsMkfsWriteRootInode(&effective_options, &layout, write_block, write_ctx) != 0) {
+    if (rtfsMkfsWriteRootInode(&effective_options, &layout, write_block, write_ctx) != 0)
+    {
         return EIO;
     }
 
-    if (out_layout != NULL) {
+    if (out_layout != NULL)
+    {
         *out_layout = layout;
     }
 
     return 0;
 }
 
-int r2fsMkfsFormatCommDev(
-    const R2fsMkfsOptions *options,
+int rtfsMkfsFormatCommDev(
+    const RtfsMkfsOptions *options,
     comm_dev *dev,
-    R2fsMkfsLayout *out_layout
-)
+    RtfsMkfsLayout *out_layout)
 {
-    if (dev == NULL) {
+    if (dev == NULL)
+    {
         return EINVAL;
     }
 
-    return r2fsMkfsFormat(
+    return rtfsMkfsFormat(
         options,
-        r2fsMkfsCommDevWriteBlock,
+        rtfsMkfsCommDevWriteBlock,
         dev,
-        out_layout
-    );
+        out_layout);
 }

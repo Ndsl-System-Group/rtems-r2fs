@@ -2,9 +2,8 @@
 
 #include <rtems/libio.h>
 
-int r2fsInitialize(
+int rtfsInitialize(
     rtems_filesystem_mount_table_entry_t *mt_entry,
-    const void *data
-);
+    const void *data);
 
-extern const rtems_filesystem_operations_table r2fsFsHandler;
+extern const rtems_filesystem_operations_table rtfsFsHandler;
