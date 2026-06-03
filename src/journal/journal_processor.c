@@ -132,7 +132,8 @@ void journalProcessorInit(JournalProcessor *this, struct comm_dev *dev, uint64_t
 
 void journalProcessorDestroy(JournalProcessor *this)
 {
-    if (this == NULL) {
+    if (this == NULL)
+    {
         return;
     }
 
@@ -390,7 +391,7 @@ void journalProcessorProcessTxRecord(JournalProcessor *this)
         TxRecordNode *txRc = this->txRecordHead;
         if (transactionJournalRecordIsApplied(&txRc->record, this->headLpa, this->tailLpa))
         {
-            RTFS_LOG(RTFS_LOG_DEBUG, "transaction %lu completed, which applied journal area: start lpa = %lu, end lpa = %lu\n", transactionJournalRecordGetTxId(&txRc->record), transactionJournalRecordGetStartLpa(&txRc->record), transactionJournalRecordGetEndLpa(&txRc->record));
+            RTFS_LOG(RTFS_LOG_DEBUG, "transaction %lu completed, which applied journal area: start lpa = %lu, end lpa = %lu", transactionJournalRecordGetTxId(&txRc->record), transactionJournalRecordGetStartLpa(&txRc->record), transactionJournalRecordGetEndLpa(&txRc->record));
 
             if (this->txCompleteHook != NULL)
             {
