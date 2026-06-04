@@ -135,4 +135,9 @@ int rtfsFileInodeCommitCowWriteback(
     RtfsFileInode *file_inode
 );
 
+int rtfsFileInodeFdatasync(
+    file_system_manager *fs_manager,
+    RtfsFileInode *file_inode
+);
+
 #endif

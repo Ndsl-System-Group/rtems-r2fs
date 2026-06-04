@@ -20,6 +20,8 @@ int rtfsFileFtruncate(rtems_libio_t *iop, off_t length);
 
 int rtfsFileFdatasync(rtems_libio_t *iop);
 
+int rtfsFileFsync(rtems_libio_t *iop);
+
 int rtfsFileFstat(const rtems_filesystem_location_info_t *pathloc, struct stat *buf);
 
 extern const rtems_filesystem_file_handlers_r rtfsFilehandlers;

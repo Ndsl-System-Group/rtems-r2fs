@@ -519,6 +519,31 @@ int rtfsFileFdatasync(rtems_libio_t *iop)
         return -1;
     }
 
+    ret = rtfsFileInodeFdatasync(
+        handle->fs_manager,
+        handle->file_inode
+    );
+    if (ret != 0) {
+        handle->sync_failed = true;
+        errno = ret;
+        return -1;
+    }
+
+    handle->sync_failed = false;
+    return 0;
+}
+
+int rtfsFileFsync(rtems_libio_t *iop)
+{
+    RtfsFileHandle *handle;
+    int ret;
+
+    ret = rtfsFileGetHandle(iop, &handle);
+    if (ret != 0) {
+        errno = ret;
+        return -1;
+    }
+
     ret = rtfsFileInodeCommitCowWriteback(
         handle->fs_manager,
         handle->file_inode
@@ -591,7 +616,7 @@ const rtems_filesystem_file_handlers_r rtfsFilehandlers = {
     .lseek_h = rtfsFileLseek,
     .fstat_h = rtfsFileFstat,
     .ftruncate_h = rtfsFileFtruncate,
-    .fsync_h = rtfsFileFdatasync,
+    .fsync_h = rtfsFileFsync,
     .fdatasync_h = rtfsFileFdatasync,
     .fcntl_h = rtems_filesystem_default_fcntl,
     .poll_h = rtems_filesystem_default_poll,

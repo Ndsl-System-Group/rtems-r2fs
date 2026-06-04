@@ -49,6 +49,12 @@ typedef struct RtfsFileDirtyPageWriteOp
     uint32_t new_lpa;
 } RtfsFileDirtyPageWriteOp;
 
+typedef enum RtfsFileCommitMode
+{
+    RTFS_FILE_COMMIT_MODE_FULL = 0,
+    RTFS_FILE_COMMIT_MODE_FDATASYNC
+} RtfsFileCommitMode;
+
 struct RtfsFileInode
 {
     /* 普通文件的最小身份信息。 */
@@ -232,14 +238,22 @@ static void rtfsFileInodeInvalidateCachedPagesFrom(
 
 /* ===== 对外 API ===== */
 
-static JournalContainer *rtfsFileInodeCloneJournalContainer(
-    const JournalContainer *src
+static void rtfsFileInodeMoveJournalContainer(
+    JournalContainer *dst,
+    JournalContainer *src
 );
 
 static int rtfsFileInodeSubmitJournal(
     file_system_manager *fs_manager,
     JournalContainer *journal,
     uint64_t *out_tx_id
+);
+
+static int rtfsFileInodeCommitCowWritebackInternal(
+    file_system_manager *fs_manager,
+    RtfsFileInode *file_inode,
+    uint64_t *out_tx_id,
+    RtfsFileCommitMode mode
 );
 
 RtfsFileInodeCache *rtfsFileInodeCacheCreate(NodeBlockCache *node_cache)
@@ -698,10 +712,11 @@ void rtfsFileInodeSetJournalCommitHook(
     g_rtfs_file_inode_journal_commit_hook = hook;
 }
 
-int rtfsFileInodeCommitCowWritebackWithTxId(
+static int rtfsFileInodeCommitCowWritebackInternal(
     file_system_manager *fs_manager,
     RtfsFileInode *file_inode,
-    uint64_t *out_tx_id
+    uint64_t *out_tx_id,
+    RtfsFileCommitMode mode
 )
 {
     NodeBlockCache *node_cache;
@@ -731,10 +746,12 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
         return EINVAL;
     }
 
-    ret = cowReclaimRegistryDrainCompleted();
-    if (ret != 0) {
-        rtfsMutexUnlock(&file_inode->op_lock);
-        return ret;
+    if (mode == RTFS_FILE_COMMIT_MODE_FULL) {
+        ret = cowReclaimRegistryDrainCompleted();
+        if (ret != 0) {
+            rtfsMutexUnlock(&file_inode->op_lock);
+            return ret;
+        }
     }
 
     ret = rtfsFileInodeWritebackContentCow(fs_manager, file_inode);
@@ -856,7 +873,7 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
     );
 
     if (!journalContainerIsEmpty(cur_journal)) {
-        to_commit = rtfsFileInodeCloneJournalContainer(cur_journal);
+        to_commit = (JournalContainer *)malloc(sizeof(*to_commit));
         if (to_commit == NULL) {
             free(old_node_lpas);
             free(node_relocations);
@@ -865,9 +882,10 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
             return ENOMEM;
         }
 
+        rtfsFileInodeMoveJournalContainer(to_commit, cur_journal);
         ret = rtfsFileInodeSubmitJournal(fs_manager, to_commit, &tx_id);
         if (ret != 0) {
-            journalContainerDestroy(to_commit);
+            rtfsFileInodeMoveJournalContainer(cur_journal, to_commit);
             free(to_commit);
             free(old_node_lpas);
             free(node_relocations);
@@ -876,9 +894,6 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
             return ret;
         }
         journal_submitted = true;
-
-        journalContainerDestroy(cur_journal);
-        journalContainerInit(cur_journal);
     } else {
         RTFS_LOG(
             RTFS_LOG_INFO,
@@ -923,15 +938,43 @@ int rtfsFileInodeCommitCowWritebackWithTxId(
     return 0;
 }
 
+int rtfsFileInodeCommitCowWritebackWithTxId(
+    file_system_manager *fs_manager,
+    RtfsFileInode *file_inode,
+    uint64_t *out_tx_id
+)
+{
+    return rtfsFileInodeCommitCowWritebackInternal(
+        fs_manager,
+        file_inode,
+        out_tx_id,
+        RTFS_FILE_COMMIT_MODE_FULL
+    );
+}
+
 int rtfsFileInodeCommitCowWriteback(
     file_system_manager *fs_manager,
     RtfsFileInode *file_inode
 )
 {
-    return rtfsFileInodeCommitCowWritebackWithTxId(
+    return rtfsFileInodeCommitCowWritebackInternal(
         fs_manager,
         file_inode,
-        NULL
+        NULL,
+        RTFS_FILE_COMMIT_MODE_FULL
+    );
+}
+
+int rtfsFileInodeFdatasync(
+    file_system_manager *fs_manager,
+    RtfsFileInode *file_inode
+)
+{
+    return rtfsFileInodeCommitCowWritebackInternal(
+        fs_manager,
+        file_inode,
+        NULL,
+        RTFS_FILE_COMMIT_MODE_FDATASYNC
     );
 }
 
@@ -2427,38 +2470,17 @@ static void rtfsFileInodeInvalidateCachedPagesFrom(
     rtfsMutexUnlock(&file_inode->page_cache.cacheLock);
 }
 
-static JournalContainer *rtfsFileInodeCloneJournalContainer(
-    const JournalContainer *src
+static void rtfsFileInodeMoveJournalContainer(
+    JournalContainer *dst,
+    JournalContainer *src
 )
 {
-    JournalContainer *dst;
-    size_t i;
-
-    if (src == NULL) {
-        return NULL;
+    if (dst == NULL || src == NULL) {
+        return;
     }
 
-    dst = (JournalContainer *)malloc(sizeof(*dst));
-    if (dst == NULL) {
-        return NULL;
-    }
-
-    journalContainerInit(dst);
-    for (i = 0; i < kv_size(src->superBlockJournal); ++i) {
-        SuperBlockJournalEntry entry =
-            kv_A(src->superBlockJournal, i);
-        journalContainerAppendSuperBlockJournalEntry(dst, &entry);
-    }
-    for (i = 0; i < kv_size(src->natJournal); ++i) {
-        NatJournalEntry entry = kv_A(src->natJournal, i);
-        journalContainerAppendNatJournalEntry(dst, &entry);
-    }
-    for (i = 0; i < kv_size(src->sitJournal); ++i) {
-        SitJournalEntry entry = kv_A(src->sitJournal, i);
-        journalContainerAppendSitJournalEntry(dst, &entry);
-    }
-
-    return dst;
+    *dst = *src;
+    journalContainerInit(src);
 }
 
 static int rtfsFileInodeSubmitJournal(

@@ -142,6 +142,33 @@ static void fileHandlerMarkSitValid(FileHandlerFixture *fixture, uint32_t lpa)
     sitNatCacheEntryHandleDestroy(&handle);
 }
 
+static bool fileHandlerIsSitValid(
+    FileHandlerFixture *fixture,
+    uint32_t lpa
+)
+{
+    uint32_t seg_id = lpa / BLOCK_PER_SEGMENT;
+    uint32_t seg_off = lpa % BLOCK_PER_SEGMENT;
+    uint32_t sit_lpa = fixture->super_block.sit_blkaddr +
+        (seg_id / SIT_ENTRY_PER_BLOCK);
+    uint32_t sit_idx = seg_id % SIT_ENTRY_PER_BLOCK;
+    uint32_t bitmap_idx = seg_off / 8;
+    uint32_t bitmap_off = seg_off % 8;
+    SitNatCacheEntryHandle handle;
+    struct RtfsSitBlock *sit_block;
+    struct RtfsSitEntry *entry;
+    bool valid;
+
+    handle = sitNatCacheGet(&fixture->sit_cache, sit_lpa);
+    TEST_ASSERT_NOT_NULL(handle.entry);
+    sit_block = sitNatCacheEntryHandleGetSitBlockPtr(&handle);
+    entry = &sit_block->entries[sit_idx];
+    valid = (entry->valid_map[bitmap_idx] & (1u << bitmap_off)) != 0;
+    sitNatCacheEntryHandleDestroy(&handle);
+
+    return valid;
+}
+
 static void fileHandlerAddCachedInode(FileHandlerFixture *fixture)
 {
     BlockBuffer buffer;
@@ -673,6 +700,54 @@ RTFS_TEST(FileHandlerFdatasync_WhenJournalSubmitFails_ShouldReturnError)
     TEST_ASSERT_NULL(g_file_handler_committed_journal);
 
     g_file_handler_journal_commit_rc = 0;
+    fileHandlerFixtureFini(&fixture);
+}
+
+RTFS_TEST(FileHandlerFdatasync_WhenCompletedTxExists_ShouldNotDrainReclaimRegistry)
+{
+    FileHandlerFixture fixture;
+    const char *text = "sync";
+    uint64_t tx_id;
+
+    fileHandlerFixturePrepareRegularFile(&fixture, 5603, 5602);
+    TEST_ASSERT_EQUAL(0, rtfsFilehandlers.open_h(&fixture.iop, "/file", O_RDWR, 0));
+    TEST_ASSERT_EQUAL(4, rtfsFilehandlers.write_h(&fixture.iop, text, strlen(text)));
+
+    TEST_ASSERT_EQUAL(0, rtfsFilehandlers.fdatasync_h(&fixture.iop));
+    TEST_ASSERT_NOT_NULL(g_file_handler_committed_journal);
+    tx_id = journalContainerGetTxId(g_file_handler_committed_journal);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0u, tx_id);
+    TEST_ASSERT_TRUE(fileHandlerIsSitValid(&fixture, 20));
+
+    cowReclaimRegistryOnTxComplete(tx_id);
+
+    TEST_ASSERT_EQUAL(0, rtfsFilehandlers.fdatasync_h(&fixture.iop));
+    TEST_ASSERT_TRUE(fileHandlerIsSitValid(&fixture, 20));
+
+    fileHandlerFixtureFini(&fixture);
+}
+
+RTFS_TEST(FileHandlerFsync_WhenCompletedTxExists_ShouldDrainReclaimRegistry)
+{
+    FileHandlerFixture fixture;
+    const char *text = "sync";
+    uint64_t tx_id;
+
+    fileHandlerFixturePrepareRegularFile(&fixture, 5604, 5603);
+    TEST_ASSERT_EQUAL(0, rtfsFilehandlers.open_h(&fixture.iop, "/file", O_RDWR, 0));
+    TEST_ASSERT_EQUAL(4, rtfsFilehandlers.write_h(&fixture.iop, text, strlen(text)));
+
+    TEST_ASSERT_EQUAL(0, rtfsFilehandlers.fdatasync_h(&fixture.iop));
+    TEST_ASSERT_NOT_NULL(g_file_handler_committed_journal);
+    tx_id = journalContainerGetTxId(g_file_handler_committed_journal);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0u, tx_id);
+    TEST_ASSERT_TRUE(fileHandlerIsSitValid(&fixture, 20));
+
+    cowReclaimRegistryOnTxComplete(tx_id);
+
+    TEST_ASSERT_EQUAL(0, rtfsFilehandlers.fsync_h(&fixture.iop));
+    TEST_ASSERT_FALSE(fileHandlerIsSitValid(&fixture, 20));
+
     fileHandlerFixtureFini(&fixture);
 }
 
