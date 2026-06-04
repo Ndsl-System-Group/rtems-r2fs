@@ -268,13 +268,26 @@ uint32_t superManagerAllocSegment(super_manager *this)
     return seg_id;
 }
 
-uint32_t superManagerAllocLpaInner(super_manager *this, LpaAllocContext *ctx)
+static uint32_t superManagerAllocLpaRangeInner(
+    super_manager *this,
+    LpaAllocContext *ctx,
+    uint32_t requested_count,
+    uint32_t *allocated_count
+)
 {
     uint32_t cur_seg_off;
     uint32_t old_seg_id;
     uint32_t new_seg_id;
+    uint32_t alloc_count;
 
-    // TODO：开启日志容器
+    if (allocated_count != NULL) {
+        *allocated_count = 0;
+    }
+
+    if (this == NULL || ctx == NULL || requested_count == 0) {
+        return INVALID_LPA;
+    }
+
     if (*ctx->cur_seg_off_ >= BLOCK_PER_SEGMENT)
     {
         old_seg_id = *ctx->cur_seg_id_;
@@ -298,35 +311,47 @@ uint32_t superManagerAllocLpaInner(super_manager *this, LpaAllocContext *ctx)
     SitOperator sit_operator;
     sitOperatorInit(&sit_operator, this->fs_manager_);
     cur_seg_off = *ctx->cur_seg_off_;
-    uint32_t lpa = sitGetFirstLpaOfSegId(&sit_operator, *ctx->cur_seg_id_) + cur_seg_off;
-    *ctx->cur_seg_off_ = cur_seg_off + 1;
+    alloc_count = BLOCK_PER_SEGMENT - cur_seg_off;
+    if (alloc_count > requested_count) {
+        alloc_count = requested_count;
+    }
+
+    uint32_t lpa =
+        sitGetFirstLpaOfSegId(&sit_operator, *ctx->cur_seg_id_) + cur_seg_off;
+    *ctx->cur_seg_off_ = cur_seg_off + alloc_count;
 
     superManagerAppendSuperBlockJournalEntryForField(this, ctx->cur_seg_off_);
 
-    sitValidateLpa(&sit_operator, lpa); // ! sit_operator 不是栈对象吗？
+    sitValidateLpaRange(&sit_operator, lpa, alloc_count);
+    if (allocated_count != NULL) {
+        *allocated_count = alloc_count;
+    }
     return lpa;
 }
 
 uint32_t superManagerAllocNodeLpa(super_manager *this)
 {
-    LpaAllocContext ctx;
-    lpaAllocContextInit(
-        &ctx,
-        &this->super_block_->current_node_segment_id,
-        &this->super_block_->current_node_segment_blkoff,
-        this->uncommit_node_segs
-    );
-    return superManagerAllocLpaInner(this, &ctx);
+    LpaAllocContext ctx = superManagerGetLpaCtx(this, true);
+    return superManagerAllocLpaRangeInner(this, &ctx, 1, NULL);
 }
 
 uint32_t superManagerAllocDataLpa(super_manager *this)
 {
-    LpaAllocContext ctx;
-    lpaAllocContextInit(
+    LpaAllocContext ctx = superManagerGetLpaCtx(this, false);
+    return superManagerAllocLpaRangeInner(this, &ctx, 1, NULL);
+}
+
+uint32_t superManagerAllocDataLpaRange(
+    super_manager *this,
+    uint32_t requested_count,
+    uint32_t *allocated_count
+)
+{
+    LpaAllocContext ctx = superManagerGetLpaCtx(this, false);
+    return superManagerAllocLpaRangeInner(
+        this,
         &ctx,
-        &this->super_block_->current_data_segment_id,
-        &this->super_block_->current_data_segment_blkoff,
-        this->uncommit_data_segs
+        requested_count,
+        allocated_count
     );
-    return superManagerAllocLpaInner(this, &ctx);
 }

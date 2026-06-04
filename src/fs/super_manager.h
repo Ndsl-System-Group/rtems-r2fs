@@ -14,3 +14,8 @@ void superManagerFreeNid(super_manager *this, uint32_t nid);
 
 uint32_t superManagerAllocNodeLpa(super_manager *this);
 uint32_t superManagerAllocDataLpa(super_manager *this);
+uint32_t superManagerAllocDataLpaRange(
+    super_manager *this,
+    uint32_t requested_count,
+    uint32_t *allocated_count
+);

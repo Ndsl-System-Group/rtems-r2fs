@@ -54,6 +54,15 @@ void sitInvalidateLpa(SitOperator *this, uint32_t lpa);
 void sitValidateLpa(SitOperator *this, uint32_t lpa);
 
 /**
+ * @brief 将一段连续 LPA 设置为有效。
+ */
+void sitValidateLpaRange(
+    SitOperator *this,
+    uint32_t start_lpa,
+    uint32_t count
+);
+
+/**
  * @brief 获取 LPA 对应的 segment 位置。
  */
 SegPos sitGetSegPosOfLpa(SitOperator *this, uint32_t lpa);

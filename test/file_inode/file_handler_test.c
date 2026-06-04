@@ -169,6 +169,28 @@ static bool fileHandlerIsSitValid(
     return valid;
 }
 
+static uint32_t fileHandlerCountSuperJournalEntriesByOff(
+    JournalContainer *journal,
+    uint32_t off
+)
+{
+    uint32_t count = 0;
+    size_t i;
+
+    if (journal == NULL) {
+        return 0;
+    }
+
+    for (i = 0; i < kv_size(journal->superBlockJournal); ++i) {
+        if (kv_a(SuperBlockJournalEntry, journal->superBlockJournal, i).Off ==
+            off) {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
 static void fileHandlerAddCachedInode(FileHandlerFixture *fixture)
 {
     BlockBuffer buffer;
@@ -723,6 +745,35 @@ RTFS_TEST(FileHandlerFdatasync_WhenCompletedTxExists_ShouldNotDrainReclaimRegist
 
     TEST_ASSERT_EQUAL(0, rtfsFilehandlers.fdatasync_h(&fixture.iop));
     TEST_ASSERT_TRUE(fileHandlerIsSitValid(&fixture, 20));
+
+    fileHandlerFixtureFini(&fixture);
+}
+
+RTFS_TEST(FileHandlerFdatasync_WhenSequentialDirtyPagesExist_ShouldJournalDataCursorOncePerRun)
+{
+    FileHandlerFixture fixture;
+    char data[2 * BLOCK_BUFFER_SIZE];
+
+    fileHandlerFixturePrepareRegularFile(&fixture, 5605, 5604);
+    fileHandlerFillBlock(data, 'Q');
+    TEST_ASSERT_EQUAL(0, rtfsFilehandlers.open_h(&fixture.iop, "/file", O_RDWR, 0));
+    TEST_ASSERT_EQUAL(
+        (ssize_t)sizeof(data),
+        rtfsFilehandlers.write_h(&fixture.iop, data, sizeof(data))
+    );
+
+    TEST_ASSERT_EQUAL(0, rtfsFilehandlers.fdatasync_h(&fixture.iop));
+    TEST_ASSERT_NOT_NULL(g_file_handler_committed_journal);
+    TEST_ASSERT_EQUAL_UINT32(
+        1u,
+        fileHandlerCountSuperJournalEntriesByOff(
+            g_file_handler_committed_journal,
+            (uint32_t)offsetof(
+                struct RtfsSuperBlock,
+                current_data_segment_blkoff
+            )
+        )
+    );
 
     fileHandlerFixtureFini(&fixture);
 }

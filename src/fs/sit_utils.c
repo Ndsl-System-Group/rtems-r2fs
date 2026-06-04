@@ -16,6 +16,12 @@
  * @brief 修改 LPA 状态。
  */
 static void sitChangeLpaState(SitOperator *this, uint32_t lpa, int valid);
+static void sitChangeLpaStateRange(
+    SitOperator *this,
+    uint32_t start_lpa,
+    uint32_t count,
+    int valid
+);
 
 
 void sitOperatorInit(SitOperator *this, struct file_system_manager *fsManager)
@@ -33,12 +39,17 @@ void sitOperatorInit(SitOperator *this, struct file_system_manager *fsManager)
 
 void sitInvalidateLpa(SitOperator *this, uint32_t lpa)
 {
-    sitChangeLpaState(this, lpa, false);
+    sitChangeLpaStateRange(this, lpa, 1, false);
 }
 
 void sitValidateLpa(SitOperator *this, uint32_t lpa)
 {
-    sitChangeLpaState(this, lpa, true);
+    sitChangeLpaStateRange(this, lpa, 1, true);
+}
+
+void sitValidateLpaRange(SitOperator *this, uint32_t start_lpa, uint32_t count)
+{
+    sitChangeLpaStateRange(this, start_lpa, count, true);
 }
 
 SegPos sitGetSegPosOfLpa(SitOperator *this, uint32_t lpa)
@@ -73,50 +84,85 @@ uint32_t sitGetFirstLpaOfSegId(SitOperator *this, uint32_t segId)
 
 void sitChangeLpaState(SitOperator *this, uint32_t lpa, int valid)
 {
-    if (INVALID_LPA == lpa) return;
+    sitChangeLpaStateRange(this, lpa, 1, valid);
+}
 
-    // 计算 LPA 的 segment ID 和 segment 内偏移。
-    uint32_t lpaSeg0Off = lpa - this->seg0StartLpa;
-    uint32_t segId = lpaSeg0Off / BLOCK_PER_SEGMENT;
-    uint32_t segoff = lpaSeg0Off % BLOCK_PER_SEGMENT;
-    uint32_t sitLpa = this->sitStartLpa + segId / SIT_ENTRY_PER_BLOCK; // SIT block LPA。
+static void sitChangeLpaStateRange(
+    SitOperator *this,
+    uint32_t start_lpa,
+    uint32_t count,
+    int valid
+)
+{
+    uint32_t cur_lpa = start_lpa;
 
-    RTFS_LOG(RTFS_LOG_INFO, "lpa [%u]: segId = %u, segoff = %u, SIT lpa = %u", lpa, segId, segoff, sitLpa);
-
-    // 计算 segid 在 Sit Block 内对应的 entry。
-    SitNatCache *sitCache = fileSystemManagerGetSitCache(this->fsManager);
-    SitNatCacheEntryHandle sitBlockHandle = sitNatCacheGet(sitCache, sitLpa);
-    struct RtfsSitBlock *sitBlock = sitNatCacheEntryHandleGetSitBlockPtr(&sitBlockHandle);
-    struct RtfsSitEntry *sitEntry = &sitBlock->entries[segId % SIT_ENTRY_PER_BLOCK];
-
-    // 修改对应 sit entry。
-    uint32_t bitmapIdx = segoff / 8;
-    uint32_t bitmapOff = segoff % 8;
-
-    if (valid)
-    {
-        assert(!(sitEntry->valid_map[bitmapIdx] & (1U << bitmapOff)));
-        sitEntry->valid_map[bitmapIdx] |= (1U << bitmapOff);
-
-        // 有效块计数字段最多只能是 511（9 位），但实际可能有 512。因此不记录从 511 -> 512 的增加。
-        if (GET_SIT_VBLOCKS(sitEntry) < 511) ++sitEntry->vblocks;
-
-        RTFS_LOG(RTFS_LOG_INFO, "validate lpa [%u] in SIT.", lpa);
-    }
-    else
-    {
-        assert(sitEntry->valid_map[bitmapIdx] & (1U << bitmapOff));
-        sitEntry->valid_map[bitmapIdx] &= ~(1U << bitmapOff);
-
-        if (GET_SIT_VBLOCKS(sitEntry) > 0) --sitEntry->vblocks;
-
-        RTFS_LOG(RTFS_LOG_INFO, "invalidate lpa [%u] in SIT.", lpa);
+    if (INVALID_LPA == start_lpa || count == 0) {
+        return;
     }
 
-    // 写下 SIT 日志条目，增加 sit 缓存块主机侧版本。
-    JournalContainer *curJournal = fileSystemManagerGetCurJournal(this->fsManager);
-    SitJournalEntry journalEntry = {.segID = segId, .newValue = *sitEntry};
-    journalContainerAppendSitJournalEntry(curJournal, &journalEntry);
-    sitNatCacheEntryHandleAddHostVersion(&sitBlockHandle);
-    sitNatCacheEntryHandleDestroy(&sitBlockHandle);
+    while (count > 0) {
+        uint32_t lpa_seg0_off = cur_lpa - this->seg0StartLpa;
+        uint32_t seg_id = lpa_seg0_off / BLOCK_PER_SEGMENT;
+        uint32_t seg_off = lpa_seg0_off % BLOCK_PER_SEGMENT;
+        uint32_t sit_lpa = this->sitStartLpa + seg_id / SIT_ENTRY_PER_BLOCK;
+        uint32_t seg_count = BLOCK_PER_SEGMENT - seg_off;
+        SitNatCache *sit_cache;
+        SitNatCacheEntryHandle sit_block_handle;
+        struct RtfsSitBlock *sit_block;
+        struct RtfsSitEntry *sit_entry;
+        JournalContainer *cur_journal;
+        SitJournalEntry journal_entry;
+        uint32_t i;
+
+        if (seg_count > count) {
+            seg_count = count;
+        }
+
+        RTFS_LOG(
+            RTFS_LOG_INFO,
+            "lpa [%u-%u]: segId = %u, segoff = %u, SIT lpa = %u",
+            cur_lpa,
+            cur_lpa + seg_count - 1,
+            seg_id,
+            seg_off,
+            sit_lpa
+        );
+
+        sit_cache = fileSystemManagerGetSitCache(this->fsManager);
+        sit_block_handle = sitNatCacheGet(sit_cache, sit_lpa);
+        sit_block = sitNatCacheEntryHandleGetSitBlockPtr(&sit_block_handle);
+        sit_entry = &sit_block->entries[seg_id % SIT_ENTRY_PER_BLOCK];
+
+        for (i = 0; i < seg_count; ++i) {
+            uint32_t bitmap_idx = (seg_off + i) / 8;
+            uint32_t bitmap_off = (seg_off + i) % 8;
+
+            if (valid) {
+                assert(!(sit_entry->valid_map[bitmap_idx] & (1U << bitmap_off)));
+                sit_entry->valid_map[bitmap_idx] |= (uint8_t)(1U << bitmap_off);
+
+                if (GET_SIT_VBLOCKS(sit_entry) < 511) {
+                    ++sit_entry->vblocks;
+                }
+            } else {
+                assert(sit_entry->valid_map[bitmap_idx] & (1U << bitmap_off));
+                sit_entry->valid_map[bitmap_idx] &=
+                    (uint8_t)~(1U << bitmap_off);
+
+                if (GET_SIT_VBLOCKS(sit_entry) > 0) {
+                    --sit_entry->vblocks;
+                }
+            }
+        }
+
+        cur_journal = fileSystemManagerGetCurJournal(this->fsManager);
+        journal_entry.segID = seg_id;
+        journal_entry.newValue = *sit_entry;
+        journalContainerAppendSitJournalEntry(cur_journal, &journal_entry);
+        sitNatCacheEntryHandleAddHostVersion(&sit_block_handle);
+        sitNatCacheEntryHandleDestroy(&sit_block_handle);
+
+        cur_lpa += seg_count;
+        count -= seg_count;
+    }
 }

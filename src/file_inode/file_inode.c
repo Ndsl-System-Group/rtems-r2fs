@@ -2219,12 +2219,7 @@ static int rtfsFileInodeWriteDirtyPagesCow(
         ops[op_count].page_entry = page_entry;
         ops[op_count].block_index = dirty_node->blkoff;
         ops[op_count].old_lpa = pageEntryGetLpa(page_entry);
-        ops[op_count].new_lpa = superManagerAllocDataLpa(sp_manager);
-        if (ops[op_count].new_lpa == INVALID_LPA) {
-            rtfsMutexUnlock(pageEntryGetLock(page_entry));
-            ret = ENOSPC;
-            break;
-        }
+        ops[op_count].new_lpa = INVALID_LPA;
         ++op_count;
         rtfsMutexUnlock(pageEntryGetLock(page_entry));
     }
@@ -2232,6 +2227,43 @@ static int rtfsFileInodeWriteDirtyPagesCow(
 
     if (ret != 0) {
         goto cleanup;
+    }
+
+    for (i = 0; i < op_count;) {
+        size_t run_end = i + 1;
+        size_t assign_index = i;
+        uint32_t remaining_pages;
+
+        while (run_end < op_count &&
+               ops[run_end].block_index == ops[run_end - 1].block_index + 1) {
+            ++run_end;
+        }
+
+        remaining_pages = (uint32_t)(run_end - i);
+
+        while (remaining_pages > 0) {
+            uint32_t allocated_pages = 0;
+            uint32_t first_lpa = superManagerAllocDataLpaRange(
+                sp_manager,
+                remaining_pages,
+                &allocated_pages
+            );
+            uint32_t j;
+
+            if (first_lpa == INVALID_LPA || allocated_pages == 0) {
+                ret = ENOSPC;
+                goto cleanup;
+            }
+
+            for (j = 0; j < allocated_pages; ++j) {
+                ops[assign_index + j].new_lpa = first_lpa + j;
+            }
+
+            assign_index += allocated_pages;
+            remaining_pages -= allocated_pages;
+        }
+
+        i = run_end;
     }
 
     if (g_rtfs_file_inode_write_block_hook != NULL) {

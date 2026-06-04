@@ -17,6 +17,11 @@
 
 
 void superManagerInit(super_manager *this, file_system_manager *fs_manager);
+uint32_t superManagerAllocDataLpaRange(
+    super_manager *this,
+    uint32_t requested_count,
+    uint32_t *allocated_count
+);
 
 
 struct file_system_manager
@@ -489,6 +494,67 @@ RTFS_TEST(SuperManagerAllocDataLpa_WhenCurrentSegmentHasSpace_ShouldAdvanceDataC
     TEST_ASSERT_EQUAL_UINT32(1u, (uint32_t)kv_size(fixture.journal.superBlockJournal));
     TEST_ASSERT_EQUAL_UINT32(
         blkoff + 1u,
+        superManagerFixtureFindSuperJournalByOff(
+            &fixture,
+            (uint32_t)offsetof(struct RtfsSuperBlock, current_data_segment_blkoff)
+        )->newVal
+    );
+
+    utarray_free(manager.uncommit_node_segs);
+    utarray_free(manager.uncommit_data_segs);
+    superManagerFixtureFini(&fixture);
+}
+
+RTFS_TEST(SuperManagerAllocDataLpaRange_WhenRangeFitsCurrentSegment_ShouldAdvanceOnceAndAppendOneSitJournal)
+{
+    SuperManagerFixture fixture;
+    struct super_manager manager;
+    struct RtfsSitBlock *sit_block;
+    uint32_t first_lpa;
+    uint32_t allocated_count = 0;
+    uint32_t segid = 1;
+    uint32_t blkoff = 7;
+    uint32_t i;
+
+    superManagerFixtureInit(&fixture);
+    memset(&manager, 0, sizeof(manager));
+    fixture.super_block.current_data_segment_id = segid;
+    fixture.super_block.current_data_segment_blkoff = blkoff;
+
+    sit_block = superManagerFixtureAddSitBlock(
+        &fixture,
+        fixture.super_block.sit_blkaddr
+    );
+    SET_NEXT_SEG(&sit_block->entries[segid], 10);
+
+    superManagerInit(&manager, &fixture.fs_manager);
+
+    first_lpa = superManagerAllocDataLpaRange(&manager, 4, &allocated_count);
+
+    TEST_ASSERT_EQUAL_UINT32(
+        1000u + segid * BLOCK_PER_SEGMENT + blkoff,
+        first_lpa
+    );
+    TEST_ASSERT_EQUAL_UINT32(4u, allocated_count);
+    TEST_ASSERT_EQUAL_UINT32(segid, fixture.super_block.current_data_segment_id);
+    TEST_ASSERT_EQUAL_UINT32(blkoff + 4u, fixture.super_block.current_data_segment_blkoff);
+    TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)utarray_len(manager.uncommit_data_segs));
+    for (i = 0; i < 4u; ++i) {
+        uint32_t cur_off = blkoff + i;
+        TEST_ASSERT_TRUE(
+            (sit_block->entries[segid].valid_map[cur_off / 8u] &
+             (1u << (cur_off % 8u))) != 0
+        );
+    }
+    TEST_ASSERT_EQUAL_UINT32(4u, (uint32_t)GET_SIT_VBLOCKS(&sit_block->entries[segid]));
+    TEST_ASSERT_EQUAL_UINT32(1u, (uint32_t)kv_size(fixture.journal.sitJournal));
+    TEST_ASSERT_EQUAL_UINT32(
+        segid,
+        kv_a(SitJournalEntry, fixture.journal.sitJournal, 0).segID
+    );
+    TEST_ASSERT_EQUAL_UINT32(1u, (uint32_t)kv_size(fixture.journal.superBlockJournal));
+    TEST_ASSERT_EQUAL_UINT32(
+        blkoff + 4u,
         superManagerFixtureFindSuperJournalByOff(
             &fixture,
             (uint32_t)offsetof(struct RtfsSuperBlock, current_data_segment_blkoff)
