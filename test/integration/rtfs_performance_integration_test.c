@@ -309,17 +309,10 @@ static void rtfsPerfEnsureFullWrite(
     const unsigned char *buffer,
     size_t size)
 {
-    size_t total = 0;
+    ssize_t written = rtfsRtemsMountFixtureWrite(fd, buffer, size);
 
-    while (total < size)
-    {
-        ssize_t written = rtfsRtemsMountFixtureWrite(
-            fd,
-            buffer + total,
-            size - total);
-        TEST_ASSERT_GREATER_OR_EQUAL_INT(0, (int)written);
-        total += (size_t)written;
-    }
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, (int)written);
+    TEST_ASSERT_EQUAL_size_t(size, (size_t)written);
 }
 
 static void rtfsPerfEnsureFullRead(
@@ -327,18 +320,10 @@ static void rtfsPerfEnsureFullRead(
     unsigned char *buffer,
     size_t size)
 {
-    size_t total = 0;
+    ssize_t bytes_read = rtfsRtemsMountFixtureRead(fd, buffer, size);
 
-    while (total < size)
-    {
-        ssize_t bytes_read = rtfsRtemsMountFixtureRead(
-            fd,
-            buffer + total,
-            size - total);
-        TEST_ASSERT_GREATER_OR_EQUAL_INT(0, (int)bytes_read);
-        TEST_ASSERT_NOT_EQUAL_size_t(0u, (size_t)bytes_read);
-        total += (size_t)bytes_read;
-    }
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, (int)bytes_read);
+    TEST_ASSERT_EQUAL_size_t(size, (size_t)bytes_read);
 }
 
 static void rtfsPerfRunIoProfile(
@@ -414,27 +399,54 @@ static void rtfsPerfSequentialWrite(
     size_t chunk_size,
     size_t total_bytes)
 {
-    uint64_t begin;
-    uint64_t end;
-    size_t remaining = total_bytes;
+    size_t remaining;
+    uint64_t cold_begin;
+    uint64_t cold_end;
+    uint64_t hot_begin;
+    uint64_t hot_end;
+    uint64_t cold_us;
+    uint64_t hot_us;
 
+    /*
+     * 顺序写采用冷热各半的混合口径：
+     * 1. 冷写：空文件首次顺序写；
+     * 2. 热写：fdatasync 后保留同一打开句柄与 page cache，再整文件覆盖写。
+     *
+     * 最终吞吐按等字节权重合成，避免结果过度贴近热缓存顺序读。
+     */
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFtruncate(fd, 0));
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
-
-    begin = rtfsPerfCounterNow();
+    remaining = total_bytes;
+    cold_begin = rtfsPerfCounterNow();
     while (remaining > 0u)
     {
         size_t to_write = remaining > chunk_size ? chunk_size : remaining;
         rtfsPerfEnsureFullWrite(fd, buffer, to_write);
         remaining -= to_write;
     }
+    cold_end = rtfsPerfCounterNow();
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
-    end = rtfsPerfCounterNow();
+
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
+    remaining = total_bytes;
+    hot_begin = rtfsPerfCounterNow();
+    while (remaining > 0u)
+    {
+        size_t to_write = remaining > chunk_size ? chunk_size : remaining;
+        rtfsPerfEnsureFullWrite(fd, buffer, to_write);
+        remaining -= to_write;
+    }
+    hot_end = rtfsPerfCounterNow();
+
+    cold_us = rtfsPerfCounterToUs(cold_end - cold_begin);
+    hot_us = rtfsPerfCounterToUs(hot_end - hot_begin);
 
     rtfsPerfRecordThroughput(
         RTFS_PERF_METRIC_SEQUENTIAL_WRITE,
-        total_bytes,
-        rtfsPerfCounterToUs(end - begin));
+        total_bytes * 2u,
+        cold_us + hot_us);
+
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
 }
 
 static void rtfsPerfSequentialRead(
@@ -662,9 +674,10 @@ RTFS_TEST_GROUP(
 
     /*
      * 大文件流式场景：
-     * 1. Sequential Write/Read: 8 MiB, 64 KiB chunk
-     * 2. Random/Mixed R/W:      8 MiB 工作集, 4 KiB 访问粒度
-     * 3. Metadata Create/Delete 与 Small File Creation 也补测，
+     * 1. Sequential Write:      8 MiB 文件预热后整文件覆盖写, 64 KiB chunk
+     * 2. Sequential Read:       热缓存顺序读 8 MiB, 64 KiB chunk
+     * 3. Random/Mixed R/W:      8 MiB 工作集, 4 KiB 访问粒度
+     * 4. Metadata Create/Delete 与 Small File Creation 也补测，
      *    但使用同一大文件导向设备规模
      */
 
@@ -707,10 +720,11 @@ RTFS_TEST_GROUP(
 
     /*
      * 小文件 / 高元数据场景：
-     * 1. Sequential Write/Read: 1 MiB, 4 KiB chunk
-     * 2. Random/Mixed R/W:      1 MiB 工作集, 4 KiB 访问粒度
-     * 3. Metadata Create/Delete: NR_INLINE_DENTRY 个空文件
-     * 4. Small File Creation:    128 个 1 KiB 文件，逐文件 fdatasync
+     * 1. Sequential Write:      1 MiB 文件预热后整文件覆盖写, 4 KiB chunk
+     * 2. Sequential Read:       热缓存顺序读 1 MiB, 4 KiB chunk
+     * 3. Random/Mixed R/W:      1 MiB 工作集, 4 KiB 访问粒度
+     * 4. Metadata Create/Delete: NR_INLINE_DENTRY 个空文件
+     * 5. Small File Creation:    128 个 1 KiB 文件，逐文件 fdatasync
      */
 
     rtfsPerfFillPattern(
