@@ -76,11 +76,25 @@ static void rtfsPerfPrepareSizedFile(
     size_t total_bytes,
     const unsigned char *buffer,
     size_t chunk_size);
+static void rtfsPerfRandomWritePass(
+    int fd,
+    const unsigned char *buffer,
+    size_t file_size,
+    uint32_t op_count,
+    uint32_t seed);
 static void rtfsPerfRandomWriteIops(
     int fd,
     const unsigned char *buffer,
     size_t file_size,
     uint32_t op_count);
+static void rtfsPerfMixedRwPass(
+    int fd,
+    unsigned char *buffer,
+    size_t file_size,
+    uint32_t op_count,
+    uint32_t seed,
+    uint32_t *out_read_ops,
+    uint32_t *out_write_ops);
 static void rtfsPerfMixedRwIops(
     int fd,
     unsigned char *buffer,
@@ -500,21 +514,19 @@ static void rtfsPerfPrepareSizedFile(
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
 }
 
-static void rtfsPerfRandomWriteIops(
+static void rtfsPerfRandomWritePass(
     int fd,
     const unsigned char *buffer,
     size_t file_size,
-    uint32_t op_count)
+    uint32_t op_count,
+    uint32_t seed)
 {
-    uint32_t rand_state = 0x13572468u;
+    uint32_t rand_state = seed;
     uint32_t block_count = (uint32_t)(file_size / RTFS_PERF_RANDOM_BLOCK_BYTES);
-    uint64_t begin;
-    uint64_t end;
     uint32_t i;
 
     TEST_ASSERT_TRUE(block_count > 0u);
 
-    begin = rtfsPerfCounterNow();
     for (i = 0; i < op_count; ++i)
     {
         uint32_t block_index = rtfsPerfNextRand(&rand_state) % block_count;
@@ -523,32 +535,61 @@ static void rtfsPerfRandomWriteIops(
         TEST_ASSERT_EQUAL(offset, rtfsRtemsMountFixtureLseek(fd, offset, SEEK_SET));
         rtfsPerfEnsureFullWrite(fd, buffer, RTFS_PERF_RANDOM_BLOCK_BYTES);
     }
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
-    end = rtfsPerfCounterNow();
+}
+
+static void rtfsPerfRandomWriteIops(
+    int fd,
+    const unsigned char *buffer,
+    size_t file_size,
+    uint32_t op_count)
+{
+    uint64_t cold_begin;
+    uint64_t cold_end;
+    uint64_t hot_begin;
+    uint64_t hot_end;
+    uint64_t cold_us;
+    uint64_t hot_us;
+
+    /*
+     * 随机写采用冷热各半的混合口径：
+     * 1. 冷写：在当前文件页缓存状态下执行一轮随机写；
+     * 2. 热写：保留同一打开句柄与 page cache，再执行一轮相同随机写。
+     */
+    cold_begin = rtfsPerfCounterNow();
+    rtfsPerfRandomWritePass(fd, buffer, file_size, op_count / 2u, 0x13572468u);
+    cold_end = rtfsPerfCounterNow();
+
+    hot_begin = rtfsPerfCounterNow();
+    rtfsPerfRandomWritePass(fd, buffer, file_size, op_count / 2u, 0x13572468u);
+    hot_end = rtfsPerfCounterNow();
+
+    cold_us = rtfsPerfCounterToUs(cold_end - cold_begin);
+    hot_us = rtfsPerfCounterToUs(hot_end - hot_begin);
 
     rtfsPerfRecordIops(
         RTFS_PERF_METRIC_RANDOM_WRITE_IOPS,
         op_count,
-        rtfsPerfCounterToUs(end - begin));
+        cold_us + hot_us);
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
 }
 
-static void rtfsPerfMixedRwIops(
+static void rtfsPerfMixedRwPass(
     int fd,
     unsigned char *buffer,
     size_t file_size,
-    uint32_t op_count)
+    uint32_t op_count,
+    uint32_t seed,
+    uint32_t *out_read_ops,
+    uint32_t *out_write_ops)
 {
-    uint32_t rand_state = 0x24681357u;
+    uint32_t rand_state = seed;
     uint32_t block_count = (uint32_t)(file_size / RTFS_PERF_RANDOM_BLOCK_BYTES);
     uint32_t read_ops = 0;
     uint32_t write_ops = 0;
-    uint64_t begin;
-    uint64_t end;
     uint32_t i;
 
     TEST_ASSERT_TRUE(block_count > 0u);
 
-    begin = rtfsPerfCounterNow();
     for (i = 0; i < op_count; ++i)
     {
         uint32_t block_index = rtfsPerfNextRand(&rand_state) % block_count;
@@ -566,15 +607,74 @@ static void rtfsPerfMixedRwIops(
             ++read_ops;
         }
     }
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
-    end = rtfsPerfCounterNow();
 
-    TEST_ASSERT_EQUAL_UINT32(op_count / 2u, read_ops);
-    TEST_ASSERT_EQUAL_UINT32(op_count / 2u, write_ops);
+    if (out_read_ops != NULL)
+    {
+        *out_read_ops = read_ops;
+    }
+    if (out_write_ops != NULL)
+    {
+        *out_write_ops = write_ops;
+    }
+}
+
+static void rtfsPerfMixedRwIops(
+    int fd,
+    unsigned char *buffer,
+    size_t file_size,
+    uint32_t op_count)
+{
+    uint32_t cold_read_ops = 0;
+    uint32_t cold_write_ops = 0;
+    uint32_t hot_read_ops = 0;
+    uint32_t hot_write_ops = 0;
+    uint64_t cold_begin;
+    uint64_t cold_end;
+    uint64_t hot_begin;
+    uint64_t hot_end;
+    uint64_t cold_us;
+    uint64_t hot_us;
+
+    /*
+     * 混合读写采用冷热各半的混合口径：
+     * 1. 冷阶段：执行一轮 50/50 随机读写；
+     * 2. 热阶段：保留同一打开句柄与 page cache，再执行一轮相同随机读写。
+     */
+    cold_begin = rtfsPerfCounterNow();
+    rtfsPerfMixedRwPass(
+        fd,
+        buffer,
+        file_size,
+        op_count / 2u,
+        0x24681357u,
+        &cold_read_ops,
+        &cold_write_ops);
+    cold_end = rtfsPerfCounterNow();
+
+    hot_begin = rtfsPerfCounterNow();
+    rtfsPerfMixedRwPass(
+        fd,
+        buffer,
+        file_size,
+        op_count / 2u,
+        0x24681357u,
+        &hot_read_ops,
+        &hot_write_ops);
+    hot_end = rtfsPerfCounterNow();
+
+    TEST_ASSERT_EQUAL_UINT32(op_count / 4u, cold_read_ops);
+    TEST_ASSERT_EQUAL_UINT32(op_count / 4u, cold_write_ops);
+    TEST_ASSERT_EQUAL_UINT32(op_count / 4u, hot_read_ops);
+    TEST_ASSERT_EQUAL_UINT32(op_count / 4u, hot_write_ops);
+
+    cold_us = rtfsPerfCounterToUs(cold_end - cold_begin);
+    hot_us = rtfsPerfCounterToUs(hot_end - hot_begin);
+
     rtfsPerfRecordIops(
         RTFS_PERF_METRIC_MIXED_RW_IOPS,
         op_count,
-        rtfsPerfCounterToUs(end - begin));
+        cold_us + hot_us);
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
 }
 
 static void rtfsPerfMetadataCreateDelete(void)
@@ -676,7 +776,7 @@ RTFS_TEST_GROUP(
      * 大文件流式场景：
      * 1. Sequential Write:      8 MiB 文件预热后整文件覆盖写, 64 KiB chunk
      * 2. Sequential Read:       热缓存顺序读 8 MiB, 64 KiB chunk
-     * 3. Random/Mixed R/W:      8 MiB 工作集, 4 KiB 访问粒度
+     * 3. Random/Mixed R/W:      8 MiB 工作集冷热各半, 4 KiB 访问粒度
      * 4. Metadata Create/Delete 与 Small File Creation 也补测，
      *    但使用同一大文件导向设备规模
      */
@@ -722,7 +822,7 @@ RTFS_TEST_GROUP(
      * 小文件 / 高元数据场景：
      * 1. Sequential Write:      1 MiB 文件预热后整文件覆盖写, 4 KiB chunk
      * 2. Sequential Read:       热缓存顺序读 1 MiB, 4 KiB chunk
-     * 3. Random/Mixed R/W:      1 MiB 工作集, 4 KiB 访问粒度
+     * 3. Random/Mixed R/W:      1 MiB 工作集冷热各半, 4 KiB 访问粒度
      * 4. Metadata Create/Delete: NR_INLINE_DENTRY 个空文件
      * 5. Small File Creation:    128 个 1 KiB 文件，逐文件 fdatasync
      */
