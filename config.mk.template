@@ -35,9 +35,23 @@ QEMU_KERNEL ?= ./build/aarch64-rtems6-xilinx_zynqmp_lp64_qemu/$(TARGET)
 TEST_GROUP ?=
 TEST_FILTER ?=
 LIST_TESTS ?=
+ENABLE_COVERAGE ?= 0
+COVERAGE_SOURCE ?= src/main.c
+COVERAGE_SOURCE_PREFIXES ?= src
+COVERAGE_LOG ?= build/qemu-coverage.log
+COVERAGE_OUTPUT_DIR ?= build/coverage
+
+RTEMS_ARCH ?= $(firstword $(subst /, ,$(BSP)))
+RTEMS_TOOL_PREFIX ?= $(RTEMS_ARCH)-rtems6
+GCOV ?= $(RTEMS_ROOT)/bin/$(RTEMS_TOOL_PREFIX)-gcov
+GCOV_TOOL ?= $(RTEMS_ROOT)/bin/$(RTEMS_TOOL_PREFIX)-gcov-tool
 
 WAF_CONFIG_ARGS = --rtems=$(RTEMS_ROOT) --rtems-bsp=$(BSP)
 WAF_UNIT_TEST_ARGS = --enable-unit-test
+
+ifeq ($(strip $(ENABLE_COVERAGE)),1)
+WAF_UNIT_TEST_ARGS += --enable-coverage
+endif
 
 ifneq ($(strip $(TEST_GROUP)),)
 WAF_UNIT_TEST_ARGS += --test-group=$(TEST_GROUP)

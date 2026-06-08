@@ -11,6 +11,7 @@ from pathlib import Path
 
 GCOV_BEGIN = "*** BEGIN OF GCOV INFO BASE64 ***"
 GCOV_END = "*** END OF GCOV INFO BASE64 ***"
+INDEX_FILENAME = "coverage_summary_index.json"
 
 
 def extract_base64_stream(qemu_output: str) -> str:
@@ -58,7 +59,11 @@ def parse_json_coverage(json_gz: Path):
     with gzip.open(json_gz, "rt", encoding="utf-8") as fp:
         payload = json.load(fp)
 
-    file_entry = payload["files"][0]
+    files = payload.get("files", [])
+    if not files:
+        raise RuntimeError(f"gcov json report did not contain file entries: {json_gz}")
+
+    file_entry = files[0]
     lines = file_entry["lines"]
     functions = file_entry.get("functions", [])
 
@@ -126,6 +131,122 @@ def summary_filename_for_source(source_relative: Path) -> str:
     return f"{stem}__coverage_summary.json"
 
 
+def normalize_prefixes(prefixes):
+    normalized = []
+    for prefix in prefixes:
+        for token in prefix.split(","):
+            item = token.strip().strip("/")
+            if item:
+                normalized.append(item)
+    return normalized
+
+
+def extract_source_relative_from_gcno(gcno_path: Path, repo_root: Path, prefixes):
+    gcno_str = gcno_path.as_posix()
+    suffix = ".1.gcno"
+
+    for prefix in prefixes:
+        marker = f"/{prefix}/"
+        index = gcno_str.find(marker)
+        if index < 0:
+            continue
+
+        source_relative = Path(gcno_str[index + 1: -len(suffix)])
+        if (repo_root / source_relative).exists():
+            return source_relative
+
+    return None
+
+
+def discover_sources(build_dir: Path, repo_root: Path, prefixes):
+    sources = []
+
+    for gcno_path in sorted(build_dir.rglob("*.gcno")):
+        source_relative = extract_source_relative_from_gcno(gcno_path, repo_root, prefixes)
+        if source_relative is None:
+            continue
+        sources.append(source_relative)
+
+    if not sources:
+        joined = ", ".join(prefixes)
+        raise RuntimeError(f"no gcno files matched source prefixes: {joined}")
+
+    return sources
+
+
+def prepare_gcov_data(qemu_output_path: Path, build_dir: Path, output_dir: Path, gcov_tool: str):
+    clean_gcda(build_dir)
+
+    qemu_output = qemu_output_path.read_text(encoding="utf-8", errors="replace")
+    b64_stream = extract_base64_stream(qemu_output)
+    binary_stream = base64.b64decode(b64_stream)
+
+    stream_path = output_dir / "gcov-stream.bin"
+    stream_path.write_bytes(binary_stream)
+
+    run_command([gcov_tool, "merge-stream", str(stream_path)], cwd=build_dir)
+
+
+def generate_report_for_source(repo_root: Path, build_dir: Path, output_dir: Path, source_relative: Path, gcov: str):
+    source = (repo_root / source_relative).resolve()
+    if not source.exists():
+        raise RuntimeError(f"source file does not exist: {source}")
+
+    gcno_path = find_gcno_for_source(build_dir, source_relative)
+    source_object_dir = gcno_path.parent
+    generated = source_object_dir / (gcno_path.stem + ".gcov.json.gz")
+    if generated.exists():
+        generated.unlink()
+
+    gcov_result = run_command(
+        [gcov, "-j", "-b", gcno_path.name],
+        cwd=source_object_dir
+    )
+
+    if not generated.exists():
+        raise RuntimeError(f"expected gcov json report was not generated: {generated}")
+
+    summary = parse_json_coverage(generated)
+    summary.update(parse_gcov_stdout(gcov_result.stdout.decode("utf-8", errors="replace")))
+    summary["gcno"] = str(gcno_path)
+    summary["source"] = source_relative.as_posix()
+
+    summary_path = output_dir / summary_filename_for_source(source_relative)
+    summary_path.write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8"
+    )
+
+    return summary
+
+
+def build_index(summaries, prefixes):
+    total_executable_lines = sum(item["executable_lines"] for item in summaries)
+    total_covered_lines = sum(item["covered_lines"] for item in summaries)
+    total_branches = sum(item.get("total_branches", 0) for item in summaries)
+    total_taken_branches = sum(item.get("taken_branches", 0) for item in summaries)
+
+    return {
+        "source_prefixes": prefixes,
+        "files": len(summaries),
+        "executable_lines": total_executable_lines,
+        "covered_lines": total_covered_lines,
+        "line_coverage": (total_covered_lines / total_executable_lines * 100.0) if total_executable_lines else 100.0,
+        "total_branches": total_branches,
+        "taken_branches": total_taken_branches,
+        "branch_taken_coverage": (total_taken_branches / total_branches * 100.0) if total_branches else 100.0,
+        "reports": [summary_filename_for_source(Path(item["source"])) for item in summaries],
+    }
+
+
+def build_skipped_entry(source_relative: Path, reason: str):
+    return {
+        "source": source_relative.as_posix(),
+        "status": "skipped",
+        "reason": reason,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Extract module gcov coverage from QEMU output.")
     parser.add_argument("--qemu-output", required=True, help="Path to captured QEMU stdout/stderr log.")
@@ -150,56 +271,66 @@ def main():
         default="build/coverage",
         help="Directory for intermediate artifacts and reports."
     )
+    parser.add_argument(
+        "--all-sources",
+        action="store_true",
+        help="Generate reports for all source files matched by --source-prefixes."
+    )
+    parser.add_argument(
+        "--source-prefixes",
+        default="src",
+        help="Comma-separated repo-relative path prefixes for --all-sources discovery."
+    )
     args = parser.parse_args()
 
     repo_root = Path.cwd()
     build_dir = (repo_root / args.build_dir).resolve()
-    source = (repo_root / args.source).resolve()
-    source_relative = source.relative_to(repo_root)
     output_dir = (repo_root / args.output_dir).resolve()
 
     if not build_dir.exists():
         raise RuntimeError(f"build directory does not exist: {build_dir}")
-    if not source.exists():
-        raise RuntimeError(f"source file does not exist: {source}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    clean_gcda(build_dir)
+    qemu_output_path = (repo_root / args.qemu_output).resolve()
+    if not qemu_output_path.exists():
+        raise RuntimeError(f"qemu output log does not exist: {qemu_output_path}")
 
-    qemu_output = Path(args.qemu_output).read_text(encoding="utf-8", errors="replace")
-    b64_stream = extract_base64_stream(qemu_output)
-    binary_stream = base64.b64decode(b64_stream)
+    prepare_gcov_data(qemu_output_path, build_dir, output_dir, args.gcov_tool)
 
-    stream_path = output_dir / "gcov-stream.bin"
-    stream_path.write_bytes(binary_stream)
+    if args.all_sources:
+        prefixes = normalize_prefixes([args.source_prefixes])
+        source_relatives = discover_sources(build_dir, repo_root, prefixes)
+    else:
+        source = (repo_root / args.source).resolve()
+        if not source.exists():
+            raise RuntimeError(f"source file does not exist: {source}")
+        source_relatives = [source.relative_to(repo_root)]
+        prefixes = []
 
-    run_command([args.gcov_tool, "merge-stream", str(stream_path)], cwd=build_dir)
+    summaries = []
+    skipped = []
 
-    gcno_path = find_gcno_for_source(build_dir, source_relative)
-    source_object_dir = gcno_path.parent
-    generated = source_object_dir / (gcno_path.stem + ".gcov.json.gz")
-    if generated.exists():
-        generated.unlink()
+    for source_relative in source_relatives:
+        try:
+            summaries.append(
+                generate_report_for_source(repo_root, build_dir, output_dir, source_relative, args.gcov)
+            )
+        except Exception as exc:
+            if not args.all_sources:
+                raise
+            skipped.append(build_skipped_entry(source_relative, str(exc)))
 
-    gcov_result = run_command(
-        [args.gcov, "-j", "-b", gcno_path.name],
-        cwd=source_object_dir
-    )
-
-    if not generated.exists():
-        raise RuntimeError(f"expected gcov json report was not generated: {generated}")
-
-    summary = parse_json_coverage(generated)
-    summary.update(parse_gcov_stdout(gcov_result.stdout.decode("utf-8", errors="replace")))
-    summary["gcno"] = str(gcno_path)
-
-    summary_path = output_dir / summary_filename_for_source(source_relative)
-    summary_path.write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8"
-    )
-
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    if args.all_sources:
+        index = build_index(summaries, prefixes)
+        index["skipped"] = skipped
+        index_path = output_dir / INDEX_FILENAME
+        index_path.write_text(
+            json.dumps(index, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8"
+        )
+        print(json.dumps(index, indent=2, ensure_ascii=False))
+    else:
+        print(json.dumps(summaries[0], indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
