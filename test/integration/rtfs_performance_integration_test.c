@@ -414,31 +414,24 @@ static void rtfsPerfSequentialWrite(
     size_t total_bytes)
 {
     size_t remaining;
-    uint64_t cold_begin;
-    uint64_t cold_end;
     uint64_t hot_begin;
     uint64_t hot_end;
-    uint64_t cold_us;
     uint64_t hot_us;
 
     /*
-     * 顺序写采用冷热各半的混合口径：
-     * 1. 冷写：空文件首次顺序写；
-     * 2. 热写：fdatasync 后保留同一打开句柄与 page cache，再整文件覆盖写。
-     *
-     * 最终吞吐按等字节权重合成，避免结果过度贴近热缓存顺序读。
+     * 顺序写采用全热口径：
+     * 1. 预热：空文件首次顺序写并 fdatasync，不计时；
+     * 2. 计时：保留同一打开句柄与 page cache，再整文件覆盖写。
      */
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFtruncate(fd, 0));
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
     remaining = total_bytes;
-    cold_begin = rtfsPerfCounterNow();
     while (remaining > 0u)
     {
         size_t to_write = remaining > chunk_size ? chunk_size : remaining;
         rtfsPerfEnsureFullWrite(fd, buffer, to_write);
         remaining -= to_write;
     }
-    cold_end = rtfsPerfCounterNow();
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
@@ -452,13 +445,12 @@ static void rtfsPerfSequentialWrite(
     }
     hot_end = rtfsPerfCounterNow();
 
-    cold_us = rtfsPerfCounterToUs(cold_end - cold_begin);
     hot_us = rtfsPerfCounterToUs(hot_end - hot_begin);
 
     rtfsPerfRecordThroughput(
         RTFS_PERF_METRIC_SEQUENTIAL_WRITE,
-        total_bytes * 2u,
-        cold_us + hot_us);
+        total_bytes,
+        hot_us);
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
 }
@@ -510,7 +502,6 @@ static void rtfsPerfPrepareSizedFile(
         rtfsPerfEnsureFullWrite(fd, buffer, to_write);
         remaining -= to_write;
     }
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
 }
 
@@ -543,34 +534,27 @@ static void rtfsPerfRandomWriteIops(
     size_t file_size,
     uint32_t op_count)
 {
-    uint64_t cold_begin;
-    uint64_t cold_end;
     uint64_t hot_begin;
     uint64_t hot_end;
-    uint64_t cold_us;
     uint64_t hot_us;
 
     /*
-     * 随机写采用冷热各半的混合口径：
-     * 1. 冷写：在当前文件页缓存状态下执行一轮随机写；
-     * 2. 热写：保留同一打开句柄与 page cache，再执行一轮相同随机写。
+     * 随机写采用全热口径：
+     * 1. 预热：执行一轮随机写，不计时；
+     * 2. 计时：保留同一打开句柄与 page cache，再执行一轮相同随机写。
      */
-    cold_begin = rtfsPerfCounterNow();
-    rtfsPerfRandomWritePass(fd, buffer, file_size, op_count / 2u, 0x13572468u);
-    cold_end = rtfsPerfCounterNow();
+    rtfsPerfRandomWritePass(fd, buffer, file_size, op_count, 0x13572468u);
 
     hot_begin = rtfsPerfCounterNow();
-    rtfsPerfRandomWritePass(fd, buffer, file_size, op_count / 2u, 0x13572468u);
+    rtfsPerfRandomWritePass(fd, buffer, file_size, op_count, 0x13572468u);
     hot_end = rtfsPerfCounterNow();
 
-    cold_us = rtfsPerfCounterToUs(cold_end - cold_begin);
     hot_us = rtfsPerfCounterToUs(hot_end - hot_begin);
 
     rtfsPerfRecordIops(
         RTFS_PERF_METRIC_RANDOM_WRITE_IOPS,
         op_count,
-        cold_us + hot_us);
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
+        hot_us);
 }
 
 static void rtfsPerfMixedRwPass(
@@ -624,70 +608,58 @@ static void rtfsPerfMixedRwIops(
     size_t file_size,
     uint32_t op_count)
 {
-    uint32_t cold_read_ops = 0;
-    uint32_t cold_write_ops = 0;
     uint32_t hot_read_ops = 0;
     uint32_t hot_write_ops = 0;
-    uint64_t cold_begin;
-    uint64_t cold_end;
     uint64_t hot_begin;
     uint64_t hot_end;
-    uint64_t cold_us;
     uint64_t hot_us;
 
     /*
-     * 混合读写采用冷热各半的混合口径：
-     * 1. 冷阶段：执行一轮 50/50 随机读写；
-     * 2. 热阶段：保留同一打开句柄与 page cache，再执行一轮相同随机读写。
+     * 混合读写采用全热口径：
+     * 1. 预热：执行一轮 50/50 随机读写，不计时；
+     * 2. 计时：保留同一打开句柄与 page cache，再执行一轮相同随机读写。
      */
-    cold_begin = rtfsPerfCounterNow();
     rtfsPerfMixedRwPass(
         fd,
         buffer,
         file_size,
-        op_count / 2u,
+        op_count,
         0x24681357u,
-        &cold_read_ops,
-        &cold_write_ops);
-    cold_end = rtfsPerfCounterNow();
+        NULL,
+        NULL);
 
     hot_begin = rtfsPerfCounterNow();
     rtfsPerfMixedRwPass(
         fd,
         buffer,
         file_size,
-        op_count / 2u,
+        op_count,
         0x24681357u,
         &hot_read_ops,
         &hot_write_ops);
     hot_end = rtfsPerfCounterNow();
 
-    TEST_ASSERT_EQUAL_UINT32(op_count / 4u, cold_read_ops);
-    TEST_ASSERT_EQUAL_UINT32(op_count / 4u, cold_write_ops);
-    TEST_ASSERT_EQUAL_UINT32(op_count / 4u, hot_read_ops);
-    TEST_ASSERT_EQUAL_UINT32(op_count / 4u, hot_write_ops);
+    TEST_ASSERT_EQUAL_UINT32(op_count / 2u, hot_read_ops);
+    TEST_ASSERT_EQUAL_UINT32(op_count / 2u, hot_write_ops);
 
-    cold_us = rtfsPerfCounterToUs(cold_end - cold_begin);
     hot_us = rtfsPerfCounterToUs(hot_end - hot_begin);
 
     rtfsPerfRecordIops(
         RTFS_PERF_METRIC_MIXED_RW_IOPS,
         op_count,
-        cold_us + hot_us);
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
+        hot_us);
 }
 
 static void rtfsPerfMetadataCreateDelete(void)
 {
-    uint64_t create_begin;
-    uint64_t create_end;
-    uint64_t delete_begin;
-    uint64_t delete_end;
+    uint64_t hot_create_begin;
+    uint64_t hot_create_end;
+    uint64_t hot_delete_begin;
+    uint64_t hot_delete_end;
     uint32_t i;
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureMkdir(RTFS_PERF_META_DIR, 0755));
 
-    create_begin = rtfsPerfCounterNow();
     for (i = 0; i < RTFS_PERF_META_FILE_COUNT; ++i)
     {
         char path[64];
@@ -698,13 +670,6 @@ static void rtfsPerfMetadataCreateDelete(void)
         TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureOpen(path, O_RDWR, 0, &fd));
         TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
     }
-    create_end = rtfsPerfCounterNow();
-    rtfsPerfRecordUsPerOp(
-        RTFS_PERF_METRIC_METADATA_CREATE,
-        RTFS_PERF_META_FILE_COUNT,
-        rtfsPerfCounterToUs(create_end - create_begin));
-
-    delete_begin = rtfsPerfCounterNow();
     for (i = 0; i < RTFS_PERF_META_FILE_COUNT; ++i)
     {
         char path[64];
@@ -712,11 +677,55 @@ static void rtfsPerfMetadataCreateDelete(void)
         snprintf(path, sizeof(path), "%s/f%03u", RTFS_PERF_META_DIR, i);
         TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureUnlink(path));
     }
-    delete_end = rtfsPerfCounterNow();
+
+    hot_create_begin = rtfsPerfCounterNow();
+    for (i = 0; i < RTFS_PERF_META_FILE_COUNT; ++i)
+    {
+        char path[64];
+        int fd = -1;
+
+        snprintf(path, sizeof(path), "%s/f%03u", RTFS_PERF_META_DIR, i);
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureCreateFile(path, 0644));
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureOpen(path, O_RDWR, 0, &fd));
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
+    }
+    hot_create_end = rtfsPerfCounterNow();
+    rtfsPerfRecordUsPerOp(
+        RTFS_PERF_METRIC_METADATA_CREATE,
+        RTFS_PERF_META_FILE_COUNT,
+        rtfsPerfCounterToUs(hot_create_end - hot_create_begin));
+
+    for (i = 0; i < RTFS_PERF_META_FILE_COUNT; ++i)
+    {
+        char path[64];
+
+        snprintf(path, sizeof(path), "%s/f%03u", RTFS_PERF_META_DIR, i);
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureUnlink(path));
+    }
+    for (i = 0; i < RTFS_PERF_META_FILE_COUNT; ++i)
+    {
+        char path[64];
+        int fd = -1;
+
+        snprintf(path, sizeof(path), "%s/f%03u", RTFS_PERF_META_DIR, i);
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureCreateFile(path, 0644));
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureOpen(path, O_RDWR, 0, &fd));
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
+    }
+
+    hot_delete_begin = rtfsPerfCounterNow();
+    for (i = 0; i < RTFS_PERF_META_FILE_COUNT; ++i)
+    {
+        char path[64];
+
+        snprintf(path, sizeof(path), "%s/f%03u", RTFS_PERF_META_DIR, i);
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureUnlink(path));
+    }
+    hot_delete_end = rtfsPerfCounterNow();
     rtfsPerfRecordUsPerOp(
         RTFS_PERF_METRIC_METADATA_DELETE,
         RTFS_PERF_META_FILE_COUNT,
-        rtfsPerfCounterToUs(delete_end - delete_begin));
+        rtfsPerfCounterToUs(hot_delete_end - hot_delete_begin));
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureRmdir(RTFS_PERF_META_DIR));
 }
@@ -725,31 +734,59 @@ static void rtfsPerfSmallFileCreation(
     const unsigned char *buffer,
     size_t buffer_size)
 {
-    uint64_t begin;
-    uint64_t end;
+    uint64_t hot_begin;
+    uint64_t hot_end;
     uint32_t i;
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureMkdir(RTFS_PERF_SMALL_DIR, 0755));
 
-    begin = rtfsPerfCounterNow();
     for (i = 0; i < RTFS_PERF_SMALL_FILE_COUNT; ++i)
     {
         char path[64];
         int fd = -1;
 
         snprintf(path, sizeof(path), "%s/s%03u.bin", RTFS_PERF_SMALL_DIR, i);
-        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureCreateFile(path, 0644));
-        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureOpen(path, O_RDWR, 0, &fd));
+        TEST_ASSERT_EQUAL(
+            0,
+            rtfsRtemsMountFixtureOpen(
+                path,
+                O_CREAT | O_EXCL | O_RDWR,
+                0644,
+                &fd));
         rtfsPerfEnsureFullWrite(fd, buffer, buffer_size);
-        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
         TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
     }
-    end = rtfsPerfCounterNow();
+    for (i = 0; i < RTFS_PERF_SMALL_FILE_COUNT; ++i)
+    {
+        char path[64];
+
+        snprintf(path, sizeof(path), "%s/s%03u.bin", RTFS_PERF_SMALL_DIR, i);
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureUnlink(path));
+    }
+
+    hot_begin = rtfsPerfCounterNow();
+    for (i = 0; i < RTFS_PERF_SMALL_FILE_COUNT; ++i)
+    {
+        char path[64];
+        int fd = -1;
+
+        snprintf(path, sizeof(path), "%s/s%03u.bin", RTFS_PERF_SMALL_DIR, i);
+        TEST_ASSERT_EQUAL(
+            0,
+            rtfsRtemsMountFixtureOpen(
+                path,
+                O_CREAT | O_EXCL | O_RDWR,
+                0644,
+                &fd));
+        rtfsPerfEnsureFullWrite(fd, buffer, buffer_size);
+        TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
+    }
+    hot_end = rtfsPerfCounterNow();
 
     rtfsPerfRecordIops(
         RTFS_PERF_METRIC_SMALL_FILE_CREATION,
         RTFS_PERF_SMALL_FILE_COUNT,
-        rtfsPerfCounterToUs(end - begin));
+        rtfsPerfCounterToUs(hot_end - hot_begin));
 
     for (i = 0; i < RTFS_PERF_SMALL_FILE_COUNT; ++i)
     {
@@ -776,9 +813,9 @@ RTFS_TEST_GROUP(
      * 大文件流式场景：
      * 1. Sequential Write:      8 MiB 文件预热后整文件覆盖写, 64 KiB chunk
      * 2. Sequential Read:       热缓存顺序读 8 MiB, 64 KiB chunk
-     * 3. Random/Mixed R/W:      8 MiB 工作集冷热各半, 4 KiB 访问粒度
+     * 3. Random/Mixed R/W:      8 MiB 工作集全热访问, 4 KiB 访问粒度
      * 4. Metadata Create/Delete 与 Small File Creation 也补测，
-     *    但使用同一大文件导向设备规模
+     *    且元数据/小文件同样采用全热口径，fdatasync 不计入统计
      */
 
     rtfsPerfFillPattern(
@@ -798,6 +835,11 @@ RTFS_TEST_GROUP(
         RTFS_PERF_MIXED_OPS,
         0x31u,
         0x57u);
+    rtfsRtemsMountFixtureDestroy(&fixture);
+
+    TEST_ASSERT_EQUAL(
+        0,
+        rtfsRtemsMountFixtureFormatAndMount(&fixture, RTFS_PERF_LPA_COUNT));
     rtfsPerfMetadataCreateDelete();
     rtfsPerfSmallFileCreation(
         small_file_buffer,
@@ -822,9 +864,9 @@ RTFS_TEST_GROUP(
      * 小文件 / 高元数据场景：
      * 1. Sequential Write:      1 MiB 文件预热后整文件覆盖写, 4 KiB chunk
      * 2. Sequential Read:       热缓存顺序读 1 MiB, 4 KiB chunk
-     * 3. Random/Mixed R/W:      1 MiB 工作集冷热各半, 4 KiB 访问粒度
-     * 4. Metadata Create/Delete: NR_INLINE_DENTRY 个空文件
-     * 5. Small File Creation:    128 个 1 KiB 文件，逐文件 fdatasync
+     * 3. Random/Mixed R/W:      1 MiB 工作集全热访问, 4 KiB 访问粒度
+     * 4. Metadata Create/Delete: 全热目录项创建/删除
+     * 5. Small File Creation:    128 个 1 KiB 文件全热创建，fdatasync 不计入统计
      */
 
     rtfsPerfFillPattern(
