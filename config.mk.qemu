@@ -1,0 +1,75 @@
+# =========================
+# RTFS Config
+# =========================
+
+# 默认配置。
+RTEMS_ROOT ?= $(HOME)/phytium-rtems-sdk/toolchain/aarch64-6
+BSP ?= aarch64/xilinx_zynqmp_lp64_qemu
+
+# 项目配置。
+PROJECT_NAME = main
+TARGET = $(PROJECT_NAME).exe
+BUILD_DIR_NAME ?= $(RTEMS_TOOL_PREFIX)-$(notdir $(BSP))
+ELF_PATH ?= ./build/$(BUILD_DIR_NAME)/$(TARGET)
+
+# Phytium D2000 镜像配置。
+TEST_IMAGES_DIR ?= ./build/phytium_d2000_test_images
+IMAGE_BASENAME ?= main_phytium_d2000_test_unit
+OUT_EXE ?= $(TEST_IMAGES_DIR)/$(IMAGE_BASENAME).exe
+OUT_BIN ?= $(TEST_IMAGES_DIR)/$(IMAGE_BASENAME).bin
+
+# QEMU 配置。
+QEMU ?= qemu-system-aarch64
+
+QEMU_MACHINE ?= xlnx-zcu102
+QEMU_CPU ?= cortex-a53
+QEMU_MEM ?= 1G
+QEMU_SMP ?= 4
+
+QEMU_BASE_OPTS ?= -nographic -no-reboot
+QEMU_EXTRA_OPTS ?=
+
+QEMU_OPTS = \
+	-M $(QEMU_MACHINE) \
+	-cpu $(QEMU_CPU) \
+	-m $(QEMU_MEM) \
+	-smp $(QEMU_SMP) \
+	$(QEMU_BASE_OPTS) \
+	$(QEMU_EXTRA_OPTS)
+
+QEMU_KERNEL ?= ./build/aarch64-rtems6-xilinx_zynqmp_lp64_qemu/$(TARGET)
+
+
+TEST_GROUP ?=
+TEST_FILTER ?=
+LIST_TESTS ?=
+ENABLE_COVERAGE ?= 0
+COVERAGE_SOURCE ?= src/main.c
+COVERAGE_SOURCE_PREFIXES ?= src
+COVERAGE_LOG ?= build/qemu-coverage.log
+COVERAGE_OUTPUT_DIR ?= build/coverage
+
+RTEMS_ARCH ?= $(firstword $(subst /, ,$(BSP)))
+RTEMS_TOOL_PREFIX ?= $(RTEMS_ARCH)-rtems6
+OBJCOPY ?= $(RTEMS_ROOT)/bin/$(RTEMS_TOOL_PREFIX)-objcopy
+GCOV ?= $(RTEMS_ROOT)/bin/$(RTEMS_TOOL_PREFIX)-gcov
+GCOV_TOOL ?= $(RTEMS_ROOT)/bin/$(RTEMS_TOOL_PREFIX)-gcov-tool
+
+WAF_CONFIG_ARGS = --rtems=$(RTEMS_ROOT) --rtems-tools=$(RTEMS_ROOT) --rtems-bsp=$(BSP)
+WAF_UNIT_TEST_ARGS = --enable-unit-test
+
+ifeq ($(strip $(ENABLE_COVERAGE)),1)
+WAF_UNIT_TEST_ARGS += --enable-coverage
+endif
+
+ifneq ($(strip $(TEST_GROUP)),)
+WAF_UNIT_TEST_ARGS += --test-group=$(TEST_GROUP)
+endif
+
+ifneq ($(strip $(TEST_FILTER)),)
+WAF_UNIT_TEST_ARGS += --test-filter=$(TEST_FILTER)
+endif
+
+ifeq ($(strip $(LIST_TESTS)),1)
+WAF_UNIT_TEST_ARGS += --list-tests
+endif

@@ -17,6 +17,8 @@
 #   make coverage COVERAGE_SOURCE=...          - 配置、运行并生成指定源文件覆盖率报告
 #   make coverage-all                          - 配置、运行并生成指定前缀下的全部覆盖率报告
 #   make build                                 - 构建项目
+#   make build-unit-test                       - 配置并构建 unit test 版本
+#   make build-d2000-unit-image                - 构建 unit test 版本并生成 D2000 exe/bin
 #   make run                                   - 运行项目
 #   make clean                                 - 清理构建文件
 
@@ -130,6 +132,29 @@ build:
 	@echo "Building RTFS FileSystem..."
 	./waf
 
+build-unit-test:
+	@$(MAKE) configure-with-unit-test
+	@$(MAKE) build
+
+package-d2000-unit-image:
+	@echo "Packaging RTFS D2000 unit-test image..."
+	@if [ ! -f "$(ELF_PATH)" ]; then \
+		echo "ELF not found: $(ELF_PATH)"; \
+		echo "Run: make build-unit-test"; \
+		exit 1; \
+	fi
+	@mkdir -p "$(TEST_IMAGES_DIR)"
+	@cp -f "$(ELF_PATH)" "$(OUT_EXE)"
+	@"$(OBJCOPY)" -O binary "$(ELF_PATH)" "$(OUT_BIN)"
+	@chmod +x "$(OUT_EXE)" "$(OUT_BIN)"
+	@echo "Generated:"
+	@echo "  $(OUT_EXE)"
+	@echo "  $(OUT_BIN)"
+
+build-d2000-unit-image:
+	@$(MAKE) build-unit-test
+	@$(MAKE) package-d2000-unit-image
+
 # 运行项目
 run: build
 	@echo "Running RTFS FileSystem..."
@@ -142,4 +167,4 @@ clean:
 	./waf clean
 	rm -rf build/
 
-.PHONY: all configure configure-with-unit-test configure-with-unit-test-coverage test test-group test-filter test-list coverage-run coverage-report coverage-report-all coverage coverage-all perf-test perf-streaming perf-metadata build run clean
+.PHONY: all configure configure-with-unit-test configure-with-unit-test-coverage test test-group test-filter test-list coverage-run coverage-report coverage-report-all coverage coverage-all perf-test perf-streaming perf-metadata build build-unit-test package-d2000-unit-image build-d2000-unit-image run clean
