@@ -18,6 +18,7 @@
 #define RTFS_ITEST_ERR_IO_FILE "/err-io/data.bin"
 RTFS_TEST(IntegrationError_InvalidOperations_ShouldSurfaceVfsSemantics)
 {
+    RTFS_TEST_ANNOUNCE("IT-ERR-01");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     int fd = -1;
     char buffer[8];
@@ -68,6 +69,7 @@ RTFS_TEST(IntegrationError_InvalidOperations_ShouldSurfaceVfsSemantics)
 
 RTFS_TEST(IntegrationError_DeviceIoFailure_ShouldReturnEioAndKeepCommittedStateStable)
 {
+    RTFS_TEST_ANNOUNCE("IT-ERR-02");
     RtfsIntegrationFixture fixture;
     uint32_t ino = 0;
     uint32_t inode_lpa = INVALID_LPA;

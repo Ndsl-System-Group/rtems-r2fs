@@ -151,6 +151,7 @@ static void rtfsIntegrationWaitForCommittedJournal(void)
 
 RTFS_TEST(IntegrationMetadata_StatvfsCreateRemoveReclaim_ShouldTrackFreeFileSlots)
 {
+    RTFS_TEST_ANNOUNCE("IT-META-01");
     RtfsIntegrationFixture fixture;
     struct statvfs before_stvfs;
     struct statvfs after_create_stvfs;
@@ -207,6 +208,7 @@ RTFS_TEST(IntegrationMetadata_StatvfsCreateRemoveReclaim_ShouldTrackFreeFileSlot
 
 RTFS_TEST(IntegrationMetadata_SingleWriteNatSitSrmap_ShouldStayConsistent)
 {
+    RTFS_TEST_ANNOUNCE("IT-META-02");
     RtfsIntegrationFixture fixture;
     uint32_t ino = 0;
     uint32_t inode_lpa = INVALID_LPA;
@@ -260,6 +262,7 @@ RTFS_TEST(IntegrationMetadata_SingleWriteNatSitSrmap_ShouldStayConsistent)
 
 RTFS_TEST(IntegrationMetadata_CowOverwriteBeforeReclaim_ShouldKeepOldLpaValidUntilTxComplete)
 {
+    RTFS_TEST_ANNOUNCE("IT-META-03");
     RtfsIntegrationFixture fixture;
     uint32_t ino = 0;
     uint32_t old_inode_lpa = INVALID_LPA;

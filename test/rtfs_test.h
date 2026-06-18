@@ -1,6 +1,8 @@
 #ifndef _RTFS_TEST_H_
 #define _RTFS_TEST_H_
 
+#include <stdio.h>
+
 #include "unity/unity.h"
 
 
@@ -72,6 +74,13 @@ extern int rtfsTestCount;
 
 
 #define RTFS_TEST(rtfsTestName) RTFS_TEST_GROUP(NULL, rtfsTestName)
+
+#define RTFS_TEST_ANNOUNCE(rtfsTestId)                              \
+    do                                                              \
+    {                                                               \
+        printf("[ RTFS ] 当前正在运行测试用例 %s\n", (rtfsTestId)); \
+        fflush(stdout);                                             \
+    } while (0)
 
 
 void rtfsRunAllTests(void);

@@ -8,6 +8,7 @@
 
 RTFS_TEST(IntegrationLifecycle_CleanRemount_ShouldPreserveRootViewAndSuperblockState)
 {
+    RTFS_TEST_ANNOUNCE("IT-LIFECYCLE-01");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat before_st;
     struct stat after_st;

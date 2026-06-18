@@ -106,6 +106,7 @@ static void rtfsRtemsMountAssertDirContains(
 
 RTFS_TEST(IntegrationNamespace_MkdirReadDirRemount_ShouldExposeSmallTree)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-01");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct statvfs before_stvfs;
     struct statvfs after_stvfs;
@@ -153,6 +154,7 @@ RTFS_TEST(IntegrationNamespace_MkdirReadDirRemount_ShouldExposeSmallTree)
 
 RTFS_TEST(IntegrationNamespace_ReaddirManyEntries_ShouldEnumerateCompleteDirectoryAndGrowSize)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-02");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     RtfsRtemsMountDirEntries dir_entries;
     struct stat st_many;
@@ -200,6 +202,7 @@ RTFS_TEST(IntegrationNamespace_ReaddirManyEntries_ShouldEnumerateCompleteDirecto
 
 RTFS_TEST(IntegrationNamespace_NameLengthBoundaries_ShouldAcceptValidNamesAndRejectTooLong)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-03");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     RtfsRtemsMountDirEntries dir_entries;
     struct stat st;
@@ -259,6 +262,7 @@ RTFS_TEST(IntegrationNamespace_NameLengthBoundaries_ShouldAcceptValidNamesAndRej
 
 RTFS_TEST(IntegrationNamespace_RenameLongNames_ShouldReplaceOldPathWithNewPath)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-04");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st;
     char name_255[RTFS_NAME_LEN + 1];
@@ -309,6 +313,7 @@ RTFS_TEST(IntegrationNamespace_RenameLongNames_ShouldReplaceOldPathWithNewPath)
 
 RTFS_TEST(IntegrationNamespace_UnlinkAfterRename_ShouldRemoveEntriesFromDirectory)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-05");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     RtfsRtemsMountDirEntries dir_entries;
     struct stat st;
@@ -369,6 +374,7 @@ RTFS_TEST(IntegrationNamespace_UnlinkAfterRename_ShouldRemoveEntriesFromDirector
 
 RTFS_TEST(IntegrationNamespace_RenameSameParentRemount_ShouldPreserveInode)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-06");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat before_st;
     struct stat after_st;
@@ -403,6 +409,7 @@ RTFS_TEST(IntegrationNamespace_RenameSameParentRemount_ShouldPreserveInode)
 
 RTFS_TEST(IntegrationNamespace_RenameFileAcrossParents_ShouldMovePathAndPreserveFile)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-07");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st_moved;
 
@@ -428,6 +435,7 @@ RTFS_TEST(IntegrationNamespace_RenameFileAcrossParents_ShouldMovePathAndPreserve
 
 RTFS_TEST(IntegrationNamespace_RenameDirectoryAcrossParents_ShouldMovePathAndUpdateParentNlink)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-08");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st_p1_before;
     struct stat st_p2_before;
@@ -465,6 +473,7 @@ RTFS_TEST(IntegrationNamespace_RenameDirectoryAcrossParents_ShouldMovePathAndUpd
 
 RTFS_TEST(IntegrationNamespace_RemoveNonEmptyDirThenCleanup_ShouldHonorVfsRules)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-09");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st;
 
@@ -496,6 +505,7 @@ RTFS_TEST(IntegrationNamespace_RemoveNonEmptyDirThenCleanup_ShouldHonorVfsRules)
 
 RTFS_TEST(IntegrationNamespace_PathResolutionEdges_ShouldValidateMissingAndIntermediateTypes)
 {
+    RTFS_TEST_ANNOUNCE("IT-NS-10");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st;
 

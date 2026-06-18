@@ -32,6 +32,7 @@ static void rtfsFillPattern(
 
 RTFS_TEST(IntegrationFileIo_CreateWriteCloseReadCompare_ShouldSucceedViaVfs)
 {
+    RTFS_TEST_ANNOUNCE("IT-FIO-01");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st;
     int fd = -1;
@@ -78,6 +79,7 @@ RTFS_TEST(IntegrationFileIo_CreateWriteCloseReadCompare_ShouldSucceedViaVfs)
 
 RTFS_TEST(IntegrationFileIo_SparseWriteAndZeroRead_ShouldExposeHoleAsZeroes)
 {
+    RTFS_TEST_ANNOUNCE("IT-FIO-02");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st;
     int fd = -1;
@@ -130,6 +132,7 @@ RTFS_TEST(IntegrationFileIo_SparseWriteAndZeroRead_ShouldExposeHoleAsZeroes)
 
 RTFS_TEST(IntegrationFileIo_OverwritePartialBlock_ShouldPreserveUnwrittenBytes)
 {
+    RTFS_TEST_ANNOUNCE("IT-FIO-03");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     int fd = -1;
     ssize_t io_size;
@@ -181,6 +184,7 @@ RTFS_TEST(IntegrationFileIo_OverwritePartialBlock_ShouldPreserveUnwrittenBytes)
 
 RTFS_TEST(IntegrationFileIo_AppendSeekSemantics_ShouldHonorAppendAndRejectInvalidSeek)
 {
+    RTFS_TEST_ANNOUNCE("IT-FIO-04");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     int fd = -1;
     ssize_t io_size;
@@ -245,6 +249,7 @@ RTFS_TEST(IntegrationFileIo_AppendSeekSemantics_ShouldHonorAppendAndRejectInvali
 
 RTFS_TEST(IntegrationFileIo_TruncateShrinkAndExtend_ShouldAdjustSizeAndZeroFillGrowth)
 {
+    RTFS_TEST_ANNOUNCE("IT-FIO-05");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st;
     int fd = -1;
@@ -305,6 +310,7 @@ RTFS_TEST(IntegrationFileIo_TruncateShrinkAndExtend_ShouldAdjustSizeAndZeroFillG
 
 RTFS_TEST(IntegrationFileIo_WriteUnmountRemountRead_ShouldPersistContent)
 {
+    RTFS_TEST_ANNOUNCE("IT-FIO-06");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     ssize_t io_size;
     char actual[32];
@@ -342,6 +348,7 @@ RTFS_TEST(IntegrationFileIo_WriteUnmountRemountRead_ShouldPersistContent)
 
 RTFS_TEST(IntegrationFileIo_FdatasyncRemount_ShouldKeepCommittedContentVisible)
 {
+    RTFS_TEST_ANNOUNCE("IT-FIO-07");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st;
     int fd = -1;

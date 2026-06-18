@@ -6,6 +6,7 @@
 
 RTFS_TEST(IntegrationRtemsMount_FormatMountViaVfs_ShouldStatMountedRoot)
 {
+    RTFS_TEST_ANNOUNCE("IT-MNT-01");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     struct stat st;
     struct statvfs stvfs;

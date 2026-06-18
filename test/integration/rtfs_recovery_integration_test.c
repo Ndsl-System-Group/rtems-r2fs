@@ -65,6 +65,7 @@ static bool rtfsIntegrationRecoveryIsSitBitValid(
 
 RTFS_TEST(IntegrationRecovery_CreateCrashRemount_ShouldKeepCommittedFileVisible)
 {
+    RTFS_TEST_ANNOUNCE("IT-REC-01");
     RtfsIntegrationFixture fixture;
     struct stat st;
     char expected[] = "recovery-create";
@@ -113,6 +114,7 @@ RTFS_TEST(IntegrationRecovery_CreateCrashRemount_ShouldKeepCommittedFileVisible)
 
 RTFS_TEST(IntegrationRecovery_RenameCrashRemount_ShouldKeepCommittedResultVisible)
 {
+    RTFS_TEST_ANNOUNCE("IT-REC-02");
     RtfsIntegrationFixture fixture;
     struct stat before_st;
     struct stat after_st;
@@ -162,6 +164,7 @@ RTFS_TEST(IntegrationRecovery_RenameCrashRemount_ShouldKeepCommittedResultVisibl
 
 RTFS_TEST(IntegrationRecovery_IncompleteTransactionCrashRemount_ShouldHideUncommittedFile)
 {
+    RTFS_TEST_ANNOUNCE("IT-REC-03");
     RtfsIntegrationFixture fixture;
     struct stat st;
 
@@ -197,6 +200,7 @@ RTFS_TEST(IntegrationRecovery_IncompleteTransactionCrashRemount_ShouldHideUncomm
 
 RTFS_TEST(IntegrationRecovery_ReclaimAfterCrashRemount_ShouldReleaseOldCowLpas)
 {
+    RTFS_TEST_ANNOUNCE("IT-REC-04");
     RtfsIntegrationFixture fixture;
     uint32_t old_inode_lpa = INVALID_LPA;
     uint32_t old_data_lpa = INVALID_LPA;

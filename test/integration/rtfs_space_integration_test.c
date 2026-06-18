@@ -8,6 +8,7 @@
 
 RTFS_TEST(IntegrationError_WhenSpaceIsExhausted_ShouldReturnEnospcAndKeepExistingEntriesVisible)
 {
+    RTFS_TEST_ANNOUNCE("IT-SPACE-01");
     RtfsIntegrationFixture fixture;
     struct stat st;
     char path[RTFS_ITEST_MAX_PATH_LEN];

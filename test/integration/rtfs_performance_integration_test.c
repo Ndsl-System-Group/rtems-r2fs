@@ -803,6 +803,7 @@ RTFS_TEST_GROUP(
     "performance",
     PerformanceStreaming_SequentialReadWriteRandomAndMixed_ShouldReportMetrics)
 {
+    RTFS_TEST_ANNOUNCE("IT-PERF-01");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     RtfsPerfLogGuard log_guard = rtfsPerfBeginQuietLogging();
     unsigned char small_file_buffer[RTFS_PERF_SMALL_FILE_BYTES];
@@ -854,6 +855,7 @@ RTFS_TEST_GROUP(
     "performance",
     PerformanceMetadata_CreateDeleteAndSmallFiles_ShouldReportMetrics)
 {
+    RTFS_TEST_ANNOUNCE("IT-PERF-02");
     RtfsRtemsMountFixture fixture = RTFS_RTEMS_MOUNT_FIXTURE_INITIALIZER;
     RtfsPerfLogGuard log_guard = rtfsPerfBeginQuietLogging();
     unsigned char small_file_buffer[RTFS_PERF_SMALL_FILE_BYTES];

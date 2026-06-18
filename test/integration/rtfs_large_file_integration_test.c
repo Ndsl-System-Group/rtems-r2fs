@@ -33,6 +33,7 @@ static void rtfsLargeFileFill(
 
 RTFS_TEST(IntegrationFileIo_DirectIndirectDoubleIndirectBoundaries_ShouldRoundTripSparseWrites)
 {
+    RTFS_TEST_ANNOUNCE("IT-FIO-08");
     static const RtfsLargeFileBoundaryCase cases[] = {
         {DEF_ADDRS_PER_INODE - 1u, 'D'},
         {DEF_ADDRS_PER_INODE, 'E'},
