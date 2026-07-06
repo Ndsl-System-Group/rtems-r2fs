@@ -362,6 +362,19 @@ static void rtfsPerfRunIoProfile(
     TEST_ASSERT_EQUAL(
         0,
         rtfsRtemsMountFixtureOpen(RTFS_PERF_STREAM_FILE, O_RDWR, 0, &fd));
+
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFtruncate(fd, 0));
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
+
+    size_t remaining = stream_total_bytes;
+    while (remaining > 0u)
+    {
+        size_t to_write = remaining > stream_chunk_bytes ? stream_chunk_bytes : remaining;
+        rtfsPerfEnsureFullWrite(fd, stream_buffer, to_write);
+        remaining -= to_write;
+    }
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
+
     rtfsPerfSequentialWrite(
         fd,
         stream_buffer,
@@ -414,13 +427,14 @@ static void rtfsPerfSequentialWrite(
     size_t total_bytes)
 {
     size_t remaining;
-    uint64_t hot_begin;
-    uint64_t hot_end;
-    uint64_t hot_us;
+    uint64_t time_begin;
+    uint64_t time_end;
+    uint64_t time_us;
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFtruncate(fd, 0));
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
-    remaining = total_bytes;
+
+    // remaining = total_bytes;
     // while (remaining > 0u)
     // {
     //     size_t to_write = remaining > chunk_size ? chunk_size : remaining;
@@ -431,21 +445,21 @@ static void rtfsPerfSequentialWrite(
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
     remaining = total_bytes;
-    hot_begin = rtfsPerfCounterNow();
+    time_begin = rtfsPerfCounterNow();
     while (remaining > 0u)
     {
         size_t to_write = remaining > chunk_size ? chunk_size : remaining;
         rtfsPerfEnsureFullWrite(fd, buffer, to_write);
         remaining -= to_write;
     }
-    hot_end = rtfsPerfCounterNow();
+    time_end = rtfsPerfCounterNow();
 
-    hot_us = rtfsPerfCounterToUs(hot_end - hot_begin);
+    time_us = rtfsPerfCounterToUs(time_end - time_begin);
 
     rtfsPerfRecordThroughput(
         RTFS_PERF_METRIC_SEQUENTIAL_WRITE,
         total_bytes,
-        hot_us);
+        time_us);
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
 }
@@ -529,22 +543,22 @@ static void rtfsPerfRandomWriteIops(
     size_t file_size,
     uint32_t op_count)
 {
-    uint64_t hot_begin;
-    uint64_t hot_end;
-    uint64_t hot_us;
+    uint64_t time_begin;
+    uint64_t time_end;
+    uint64_t time_us;
 
     rtfsPerfRandomWritePass(fd, buffer, file_size, op_count, 0x13572468u);
 
-    hot_begin = rtfsPerfCounterNow();
+    time_begin = rtfsPerfCounterNow();
     rtfsPerfRandomWritePass(fd, buffer, file_size, op_count, 0x13572468u);
-    hot_end = rtfsPerfCounterNow();
+    time_end = rtfsPerfCounterNow();
 
-    hot_us = rtfsPerfCounterToUs(hot_end - hot_begin);
+    time_us = rtfsPerfCounterToUs(time_end - time_begin);
 
     rtfsPerfRecordIops(
         RTFS_PERF_METRIC_RANDOM_WRITE_IOPS,
         op_count,
-        hot_us);
+        time_us);
 }
 
 static void rtfsPerfMixedRwPass(
@@ -600,9 +614,9 @@ static void rtfsPerfMixedRwIops(
 {
     uint32_t hot_read_ops = 0;
     uint32_t hot_write_ops = 0;
-    uint64_t hot_begin;
-    uint64_t hot_end;
-    uint64_t hot_us;
+    uint64_t time_begin;
+    uint64_t time_end;
+    uint64_t time_us;
 
     rtfsPerfMixedRwPass(
         fd,
@@ -613,7 +627,7 @@ static void rtfsPerfMixedRwIops(
         NULL,
         NULL);
 
-    hot_begin = rtfsPerfCounterNow();
+    time_begin = rtfsPerfCounterNow();
     rtfsPerfMixedRwPass(
         fd,
         buffer,
@@ -622,17 +636,17 @@ static void rtfsPerfMixedRwIops(
         0x24681357u,
         &hot_read_ops,
         &hot_write_ops);
-    hot_end = rtfsPerfCounterNow();
+    time_end = rtfsPerfCounterNow();
 
     TEST_ASSERT_EQUAL_UINT32(op_count / 2u, hot_read_ops);
     TEST_ASSERT_EQUAL_UINT32(op_count / 2u, hot_write_ops);
 
-    hot_us = rtfsPerfCounterToUs(hot_end - hot_begin);
+    time_us = rtfsPerfCounterToUs(time_end - time_begin);
 
     rtfsPerfRecordIops(
         RTFS_PERF_METRIC_MIXED_RW_IOPS,
         op_count,
-        hot_us);
+        time_us);
 }
 
 static void rtfsPerfMetadataCreateDelete(void)
@@ -719,8 +733,8 @@ static void rtfsPerfSmallFileCreation(
     const unsigned char *buffer,
     size_t buffer_size)
 {
-    uint64_t hot_begin;
-    uint64_t hot_end;
+    uint64_t time_begin;
+    uint64_t time_end;
     uint32_t i;
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureMkdir(RTFS_PERF_SMALL_DIR, 0755));
@@ -749,7 +763,7 @@ static void rtfsPerfSmallFileCreation(
         TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureUnlink(path));
     }
 
-    hot_begin = rtfsPerfCounterNow();
+    time_begin = rtfsPerfCounterNow();
     for (i = 0; i < RTFS_PERF_SMALL_FILE_COUNT; ++i)
     {
         char path[64];
@@ -766,12 +780,12 @@ static void rtfsPerfSmallFileCreation(
         rtfsPerfEnsureFullWrite(fd, buffer, buffer_size);
         TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
     }
-    hot_end = rtfsPerfCounterNow();
+    time_end = rtfsPerfCounterNow();
 
     rtfsPerfRecordIops(
         RTFS_PERF_METRIC_SMALL_FILE_CREATION,
         RTFS_PERF_SMALL_FILE_COUNT,
-        rtfsPerfCounterToUs(hot_end - hot_begin));
+        rtfsPerfCounterToUs(time_end - time_begin));
 
     for (i = 0; i < RTFS_PERF_SMALL_FILE_COUNT; ++i)
     {
