@@ -38,6 +38,8 @@ qemu-system-arm -no-reboot -nographic -M realview-pbx-a9 -m 256M -kernel ./build
 - `--test-group=...` / `RTFS_TEST_GROUP`：按测试组精确筛选。组名默认从 `test/<group>/...` 路径推导，例如 `test/fs/*.c` 属于 `fs` 组，`test/integration/*.c` 属于 `integration` 组。
 - `--test-filter=...` / `RTFS_TEST_FILTER`：按测试名子串筛选。
 - `--list-tests` / `RTFS_TEST_LIST=1`：只列出已注册测试，不执行。
+- `--itest-device-mode=ramdisk|external` / `RTFS_ITEST_DEVICE_MODE`：RTEMS 挂载类集成测试使用内存盘或真实块设备。默认 `ramdisk`。
+- `--itest-device-path=/dev/...` / `RTFS_ITEST_DEVICE_PATH`：外部块设备路径。未指定时，`external` 模式会在运行时扫描 `/dev`，若只找到一个可用块设备则自动使用；若找到多个，则打印候选列表并退出，避免误格式化错误磁盘。
 
 示例：
 
@@ -69,3 +71,15 @@ make test-list
 ```
 
 其中 `make test-list` 仍然会启动 RTEMS/QEMU，只是测试程序进入“列出后退出”模式，不执行测试体。
+
+真实板子上跑 RTEMS 挂载类集成测试时，可以先不提供设备路径，先让程序探测：
+
+```bash
+make integration-test ITEST_DEVICE_MODE=external
+```
+
+如果日志里发现多个可用块设备，再明确指定其中一个：
+
+```bash
+make integration-test ITEST_DEVICE_MODE=external ITEST_DEVICE_PATH=/dev/sdX
+```

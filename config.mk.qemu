@@ -43,6 +43,8 @@ QEMU_KERNEL ?= ./build/aarch64-rtems6-xilinx_zynqmp_lp64_qemu/$(TARGET)
 TEST_GROUP ?=
 TEST_FILTER ?=
 LIST_TESTS ?=
+ITEST_DEVICE_MODE ?=
+ITEST_DEVICE_PATH ?=
 ENABLE_COVERAGE ?= 0
 COVERAGE_SOURCE ?= src/main.c
 COVERAGE_SOURCE_PREFIXES ?= src
@@ -72,4 +74,12 @@ endif
 
 ifeq ($(strip $(LIST_TESTS)),1)
 WAF_UNIT_TEST_ARGS += --list-tests
+endif
+
+ifneq ($(strip $(ITEST_DEVICE_MODE)),)
+WAF_UNIT_TEST_ARGS += --itest-device-mode=$(ITEST_DEVICE_MODE)
+endif
+
+ifneq ($(strip $(ITEST_DEVICE_PATH)),)
+WAF_UNIT_TEST_ARGS += --itest-device-path=$(ITEST_DEVICE_PATH)
 endif

@@ -1,5 +1,6 @@
 #include "integration/rtfs_rtems_mount_fixture.h"
 
+#include "rtfs_config.h"
 #include "rtfs_test.h"
 
 #include "fs/fs.h"
@@ -16,12 +17,21 @@
 #include <unistd.h>
 
 #define RTFS_RTEMS_ITEST_BLOCK_SIZE 4096U
+#define RTFS_RTEMS_ITEST_DEVICE_DIR "/dev"
+
+typedef enum RtfsRtemsItestDeviceMode
+{
+    RTFS_RTEMS_ITEST_DEVICE_MODE_RAMDISK = 0,
+    RTFS_RTEMS_ITEST_DEVICE_MODE_EXTERNAL = 1
+} RtfsRtemsItestDeviceMode;
 
 typedef struct RtfsRtemsMountFixtureState
 {
     ramdisk *ramdisk;
     comm_dev dev;
     RtfsMkfsLayout layout;
+    RtfsRtemsItestDeviceMode device_mode;
+    char device_path[RTFS_RTEMS_ITEST_PATH_MAX];
     bool device_registered;
     bool mounted;
 } RtfsRtemsMountFixtureState;
@@ -41,6 +51,315 @@ static int rtfsRtemsMountFixturePathStat(
 static int rtfsRtemsMountFixturePathStatvfs(
     const char *path,
     struct statvfs *stvfs);
+
+static const char *rtfsRtemsMountFixtureConfiguredDeviceMode(void);
+
+static const char *rtfsRtemsMountFixtureConfiguredDevicePath(void);
+
+static int rtfsRtemsMountFixtureResolveDeviceMode(
+    RtfsRtemsItestDeviceMode *out_mode);
+
+static const char *rtfsRtemsMountFixtureDevicePath(
+    const RtfsRtemsMountFixtureState *state);
+
+static bool rtfsRtemsMountFixtureProbeDiskPath(
+    const char *path,
+    uint32_t *out_media_block_size,
+    rtems_blkdev_bnum *out_media_block_count);
+
+static int rtfsRtemsMountFixtureResolveExternalDevicePath(
+    char *buffer,
+    size_t buffer_size,
+    uint64_t required_lpa_count);
+
+static const char *rtfsRtemsMountFixtureConfiguredDeviceMode(void)
+{
+    const char *mode = getenv(RTFS_RTEMS_ITEST_DEVICE_MODE_ENV);
+
+    if (mode != NULL && mode[0] != '\0')
+    {
+        return mode;
+    }
+
+#ifdef RTFS_CONFIG_ITEST_DEVICE_MODE
+    return RTFS_CONFIG_ITEST_DEVICE_MODE;
+#else
+    return NULL;
+#endif
+}
+
+static const char *rtfsRtemsMountFixtureConfiguredDevicePath(void)
+{
+    const char *path = getenv(RTFS_RTEMS_ITEST_DEVICE_PATH_ENV);
+
+    if (path != NULL && path[0] != '\0')
+    {
+        return path;
+    }
+
+#ifdef RTFS_CONFIG_ITEST_DEVICE_PATH
+    return RTFS_CONFIG_ITEST_DEVICE_PATH;
+#else
+    return NULL;
+#endif
+}
+
+static int rtfsRtemsMountFixtureResolveDeviceMode(
+    RtfsRtemsItestDeviceMode *out_mode)
+{
+    const char *configured_mode;
+
+    if (out_mode == NULL)
+    {
+        return EINVAL;
+    }
+
+    configured_mode = rtfsRtemsMountFixtureConfiguredDeviceMode();
+    if (configured_mode == NULL || configured_mode[0] == '\0' ||
+        strcmp(configured_mode, "ramdisk") == 0)
+    {
+        *out_mode = RTFS_RTEMS_ITEST_DEVICE_MODE_RAMDISK;
+        return 0;
+    }
+
+    if (strcmp(configured_mode, "external") == 0)
+    {
+        *out_mode = RTFS_RTEMS_ITEST_DEVICE_MODE_EXTERNAL;
+        return 0;
+    }
+
+    printf(
+        "[ RTFS ] invalid itest device mode '%s', expected 'ramdisk' or 'external'\n",
+        configured_mode);
+    return EINVAL;
+}
+
+static const char *rtfsRtemsMountFixtureDevicePath(
+    const RtfsRtemsMountFixtureState *state)
+{
+    if (state == NULL || state->device_path[0] == '\0')
+    {
+        return RTFS_RTEMS_ITEST_RAMDISK_DEVICE_PATH;
+    }
+
+    return state->device_path;
+}
+
+static bool rtfsRtemsMountFixtureProbeDiskPath(
+    const char *path,
+    uint32_t *out_media_block_size,
+    rtems_blkdev_bnum *out_media_block_count)
+{
+    int fd;
+    rtems_disk_device *disk_device = NULL;
+    uint32_t media_block_size = 0;
+    rtems_blkdev_bnum media_block_count = 0;
+    bool ok = false;
+
+    if (path == NULL || path[0] == '\0')
+    {
+        return false;
+    }
+
+    fd = open(path, O_RDWR);
+    if (fd < 0)
+    {
+        return false;
+    }
+
+    if (rtems_disk_fd_get_disk_device(fd, &disk_device) != 0)
+    {
+        goto out;
+    }
+
+    if (rtems_disk_fd_get_media_block_size(fd, &media_block_size) != 0)
+    {
+        goto out;
+    }
+
+    if (rtems_disk_fd_get_block_count(fd, &media_block_count) != 0)
+    {
+        goto out;
+    }
+
+    if (disk_device == NULL)
+    {
+        goto out;
+    }
+
+    if (out_media_block_size != NULL)
+    {
+        *out_media_block_size = media_block_size;
+    }
+
+    if (out_media_block_count != NULL)
+    {
+        *out_media_block_count = media_block_count;
+    }
+
+    ok = true;
+
+out:
+    close(fd);
+    return ok;
+}
+
+static int rtfsRtemsMountFixtureResolveExternalDevicePath(
+    char *buffer,
+    size_t buffer_size,
+    uint64_t required_lpa_count)
+{
+    const char *configured_path;
+    DIR *dir;
+    struct dirent *entry;
+    uint64_t required_block_count;
+    char first_match[RTFS_RTEMS_ITEST_PATH_MAX];
+    size_t match_count = 0;
+
+    if (buffer == NULL || buffer_size == 0)
+    {
+        return EINVAL;
+    }
+
+    required_block_count = required_lpa_count * LBA_PER_LPA;
+    configured_path = rtfsRtemsMountFixtureConfiguredDevicePath();
+    if (configured_path != NULL && configured_path[0] != '\0')
+    {
+        uint32_t media_block_size = 0;
+        rtems_blkdev_bnum media_block_count = 0;
+
+        if (!rtfsRtemsMountFixtureProbeDiskPath(
+                configured_path,
+                &media_block_size,
+                &media_block_count))
+        {
+            printf(
+                "[ RTFS ] configured external device '%s' is not an RTEMS block device\n",
+                configured_path);
+            return ENODEV;
+        }
+
+        if (media_block_size != 512U ||
+            media_block_count < required_block_count)
+        {
+            printf(
+                "[ RTFS ] configured external device '%s' is not usable: block_size=%lu block_count=%llu required_blocks=%llu\n",
+                configured_path,
+                (unsigned long)media_block_size,
+                (unsigned long long)media_block_count,
+                (unsigned long long)required_block_count);
+            return EINVAL;
+        }
+
+        if (strlen(configured_path) >= buffer_size)
+        {
+            return ENAMETOOLONG;
+        }
+
+        strcpy(buffer, configured_path);
+        printf(
+            "[ RTFS ] selected external device %s block_size=%lu block_count=%llu\n",
+            buffer,
+            (unsigned long)media_block_size,
+            (unsigned long long)media_block_count);
+        return 0;
+    }
+
+    dir = opendir(RTFS_RTEMS_ITEST_DEVICE_DIR);
+    if (dir == NULL)
+    {
+        return errno != 0 ? errno : EIO;
+    }
+
+    first_match[0] = '\0';
+    printf("[ RTFS ] scanning %s for RTEMS block devices\n", RTFS_RTEMS_ITEST_DEVICE_DIR);
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        char candidate_path[RTFS_RTEMS_ITEST_PATH_MAX];
+        uint32_t media_block_size = 0;
+        rtems_blkdev_bnum media_block_count = 0;
+        bool usable;
+        int written;
+
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        {
+            continue;
+        }
+
+        written = snprintf(
+            candidate_path,
+            sizeof(candidate_path),
+            "%s/%s",
+            RTFS_RTEMS_ITEST_DEVICE_DIR,
+            entry->d_name);
+        if (written < 0 || (size_t)written >= sizeof(candidate_path))
+        {
+            continue;
+        }
+
+        if (!rtfsRtemsMountFixtureProbeDiskPath(
+                candidate_path,
+                &media_block_size,
+                &media_block_count))
+        {
+            continue;
+        }
+
+        usable = media_block_size == 512U &&
+                 media_block_count >= required_block_count;
+
+        printf(
+            "[ RTFS ] block device candidate %s block_size=%lu block_count=%llu usable=%s\n",
+            candidate_path,
+            (unsigned long)media_block_size,
+            (unsigned long long)media_block_count,
+            usable ? "yes" : "no");
+
+        if (!usable)
+        {
+            continue;
+        }
+
+        if (match_count == 0)
+        {
+            strcpy(first_match, candidate_path);
+        }
+        ++match_count;
+    }
+
+    if (closedir(dir) != 0)
+    {
+        return errno != 0 ? errno : EIO;
+    }
+
+    if (match_count == 0)
+    {
+        printf(
+            "[ RTFS ] no usable external block device found under %s, required_blocks=%llu\n",
+            RTFS_RTEMS_ITEST_DEVICE_DIR,
+            (unsigned long long)required_block_count);
+        return ENODEV;
+    }
+
+    if (match_count > 1)
+    {
+        printf(
+            "[ RTFS ] multiple usable external block devices found (%lu); set %s to choose one explicitly\n",
+            (unsigned long)match_count,
+            RTFS_RTEMS_ITEST_DEVICE_PATH_ENV);
+        return EEXIST;
+    }
+
+    if (strlen(first_match) >= buffer_size)
+    {
+        return ENAMETOOLONG;
+    }
+
+    strcpy(buffer, first_match);
+    printf("[ RTFS ] selected external device %s\n", buffer);
+    return 0;
+}
 
 static int rtfsRtemsMountFixtureMkdirParents(void)
 {
@@ -113,7 +432,7 @@ static int rtfsRtemsMountFixtureMount(
     }
 
     ret = mount_and_make_target_path(
-        RTFS_RTEMS_ITEST_DEVICE_PATH,
+        rtfsRtemsMountFixtureDevicePath(fixture->state),
         RTFS_RTEMS_ITEST_MOUNT_PATH,
         "rtfs-itest",
         RTEMS_FILESYSTEM_READ_WRITE,
@@ -162,7 +481,7 @@ static int rtfsRtemsMountFixtureBuildCommDev(
         return EINVAL;
     }
 
-    fd = open(RTFS_RTEMS_ITEST_DEVICE_PATH, O_RDWR);
+    fd = open(rtfsRtemsMountFixtureDevicePath(fixture->state), O_RDWR);
     if (fd < 0)
     {
         return errno != 0 ? errno : EIO;
@@ -187,7 +506,7 @@ static int rtfsRtemsMountFixtureBuildCommDev(
     }
 
     if (media_block_size != 512U ||
-        media_block_count != lpa_count * LBA_PER_LPA)
+        media_block_count < lpa_count * LBA_PER_LPA)
     {
         ret = EINVAL;
         goto out;
@@ -197,7 +516,7 @@ static int rtfsRtemsMountFixtureBuildCommDev(
         &fixture->state->dev,
         disk_device,
         512U,
-        media_block_count,
+        lpa_count * LBA_PER_LPA,
         fixture->state->layout.meta_journal_start_lpa,
         fixture->state->layout.meta_journal_start_lpa +
             (uint64_t)fixture->state->layout.meta_journal_segment_count *
@@ -232,7 +551,7 @@ static void rtfsRtemsMountFixtureDestroyState(
 
     if (state->device_registered)
     {
-        (void)unlink(RTFS_RTEMS_ITEST_DEVICE_PATH);
+        (void)unlink(rtfsRtemsMountFixtureDevicePath(state));
         state->device_registered = false;
     }
 
@@ -336,7 +655,6 @@ int rtfsRtemsMountFixtureFormatAndMount(
 {
     RtfsMkfsOptions options;
     RtfsRtemsMountFixtureState *state;
-    rtems_status_code sc;
     int ret;
 
     if (fixture == NULL)
@@ -356,40 +674,75 @@ int rtfsRtemsMountFixtureFormatAndMount(
     fixture->state = state;
     rtfsRtemsMountFixtureSetActive(fixture);
 
-    state->ramdisk = ramdisk_allocate(NULL, 512U, lpa_count * LBA_PER_LPA, false);
-    if (state->ramdisk == NULL)
+    ret = rtfsRtemsMountFixtureResolveDeviceMode(&state->device_mode);
+    if (ret != 0)
     {
         rtfsRtemsMountFixtureDestroy(fixture);
-        return ENOMEM;
+        return ret;
     }
-
-    sc = rtems_blkdev_create(
-        RTFS_RTEMS_ITEST_DEVICE_PATH,
-        512U,
-        lpa_count * LBA_PER_LPA,
-        ramdisk_ioctl,
-        state->ramdisk);
-    if (sc != RTEMS_SUCCESSFUL)
-    {
-        rtfsRtemsMountFixtureDestroy(fixture);
-        return EIO;
-    }
-    state->device_registered = true;
 
     memset(&options, 0, sizeof(options));
     options.lpa_count = lpa_count;
     options.root_ino = 1;
     options.meta_journal_segment_count = 1;
 
-    ret = rtfsMkfsFormat(
-        &options,
-        rtfsRtemsMountFixtureWriteBlock,
-        state->ramdisk,
-        &state->layout);
-    if (ret != 0)
+    if (state->device_mode == RTFS_RTEMS_ITEST_DEVICE_MODE_RAMDISK)
     {
-        rtfsRtemsMountFixtureDestroy(fixture);
-        return ret;
+        rtems_status_code sc;
+
+        strcpy(state->device_path, RTFS_RTEMS_ITEST_RAMDISK_DEVICE_PATH);
+        state->ramdisk = ramdisk_allocate(NULL, 512U, lpa_count * LBA_PER_LPA, false);
+        if (state->ramdisk == NULL)
+        {
+            rtfsRtemsMountFixtureDestroy(fixture);
+            return ENOMEM;
+        }
+
+        sc = rtems_blkdev_create(
+            state->device_path,
+            512U,
+            lpa_count * LBA_PER_LPA,
+            ramdisk_ioctl,
+            state->ramdisk);
+        if (sc != RTEMS_SUCCESSFUL)
+        {
+            rtfsRtemsMountFixtureDestroy(fixture);
+            return EIO;
+        }
+        state->device_registered = true;
+
+        ret = rtfsMkfsFormat(
+            &options,
+            rtfsRtemsMountFixtureWriteBlock,
+            state->ramdisk,
+            &state->layout);
+        if (ret != 0)
+        {
+            rtfsRtemsMountFixtureDestroy(fixture);
+            return ret;
+        }
+    }
+    else
+    {
+        ret = rtfsRtemsMountFixtureResolveExternalDevicePath(
+            state->device_path,
+            sizeof(state->device_path),
+            lpa_count);
+        if (ret != 0)
+        {
+            rtfsRtemsMountFixtureDestroy(fixture);
+            return ret;
+        }
+
+        ret = rtfsMkfsCalculateLayout(
+            lpa_count,
+            options.meta_journal_segment_count,
+            &state->layout);
+        if (ret != 0)
+        {
+            rtfsRtemsMountFixtureDestroy(fixture);
+            return ret;
+        }
     }
 
     ret = rtfsRtemsMountFixtureBuildCommDev(fixture, lpa_count);
@@ -397,6 +750,16 @@ int rtfsRtemsMountFixtureFormatAndMount(
     {
         rtfsRtemsMountFixtureDestroy(fixture);
         return ret;
+    }
+
+    if (state->device_mode == RTFS_RTEMS_ITEST_DEVICE_MODE_EXTERNAL)
+    {
+        ret = rtfsMkfsFormatCommDev(&options, &state->dev, &state->layout);
+        if (ret != 0)
+        {
+            rtfsRtemsMountFixtureDestroy(fixture);
+            return ret;
+        }
     }
 
     ret = rtfsRtemsMountFixtureMount(fixture);
@@ -413,7 +776,6 @@ int rtfsRtemsMountFixtureRemount(
     RtfsRtemsMountFixture *fixture)
 {
     if (fixture == NULL || fixture->state == NULL ||
-        !fixture->state->device_registered ||
         fixture->state->dev.diskDevice == NULL)
     {
         return EINVAL;

@@ -58,6 +58,20 @@ def options(opt):
         help='List registered unit tests instead of executing them'
     )
 
+    opt.add_option(
+        '--itest-device-mode',
+        action='store',
+        default='',
+        help='Integration-test device mode: ramdisk or external'
+    )
+
+    opt.add_option(
+        '--itest-device-path',
+        action='store',
+        default='',
+        help='Integration-test external block device path'
+    )
+
 def configure(conf):
     rtems.configure(conf, bsp_configure=bsp_configure)
 
@@ -90,6 +104,18 @@ def configure(conf):
         conf.msg('Checking for Test Listing Mode', 'Enabled')
     else:
         conf.msg('Checking for Test Listing Mode', 'Disabled')
+
+    if conf.options.itest_device_mode:
+        conf.define('RTFS_CONFIG_ITEST_DEVICE_MODE', conf.options.itest_device_mode)
+        conf.msg('Checking for ITest Device Mode', conf.options.itest_device_mode)
+    else:
+        conf.msg('Checking for ITest Device Mode', 'Default (ramdisk)')
+
+    if conf.options.itest_device_path:
+        conf.define('RTFS_CONFIG_ITEST_DEVICE_PATH', conf.options.itest_device_path)
+        conf.msg('Checking for ITest Device Path', conf.options.itest_device_path)
+    else:
+        conf.msg('Checking for ITest Device Path', 'Auto')
 
     conf.write_config_header('rtfs_config.h')
 

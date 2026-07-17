@@ -11,5 +11,6 @@ build/
 waf
 .codegraph/
 tools/__pycache__/
+__pycache__/
 
 config.mk
