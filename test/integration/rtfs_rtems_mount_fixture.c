@@ -210,11 +210,7 @@ static int rtfsRtemsMountFixtureResolveExternalDevicePath(
     uint64_t required_lpa_count)
 {
     const char *configured_path;
-    DIR *dir;
-    struct dirent *entry;
     uint64_t required_block_count;
-    char first_match[RTFS_RTEMS_ITEST_PATH_MAX];
-    size_t match_count = 0;
 
     if (buffer == NULL || buffer_size == 0)
     {
@@ -265,100 +261,10 @@ static int rtfsRtemsMountFixtureResolveExternalDevicePath(
         return 0;
     }
 
-    dir = opendir(RTFS_RTEMS_ITEST_DEVICE_DIR);
-    if (dir == NULL)
-    {
-        return errno != 0 ? errno : EIO;
-    }
-
-    first_match[0] = '\0';
-    printf("[ RTFS ] scanning %s for RTEMS block devices\n", RTFS_RTEMS_ITEST_DEVICE_DIR);
-
-    while ((entry = readdir(dir)) != NULL)
-    {
-        char candidate_path[RTFS_RTEMS_ITEST_PATH_MAX];
-        uint32_t media_block_size = 0;
-        rtems_blkdev_bnum media_block_count = 0;
-        bool usable;
-        int written;
-
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-        {
-            continue;
-        }
-
-        written = snprintf(
-            candidate_path,
-            sizeof(candidate_path),
-            "%s/%s",
-            RTFS_RTEMS_ITEST_DEVICE_DIR,
-            entry->d_name);
-        if (written < 0 || (size_t)written >= sizeof(candidate_path))
-        {
-            continue;
-        }
-
-        if (!rtfsRtemsMountFixtureProbeDiskPath(
-                candidate_path,
-                &media_block_size,
-                &media_block_count))
-        {
-            continue;
-        }
-
-        usable = media_block_size == 512U &&
-                 media_block_count >= required_block_count;
-
-        printf(
-            "[ RTFS ] block device candidate %s block_size=%lu block_count=%llu usable=%s\n",
-            candidate_path,
-            (unsigned long)media_block_size,
-            (unsigned long long)media_block_count,
-            usable ? "yes" : "no");
-
-        if (!usable)
-        {
-            continue;
-        }
-
-        if (match_count == 0)
-        {
-            strcpy(first_match, candidate_path);
-        }
-        ++match_count;
-    }
-
-    if (closedir(dir) != 0)
-    {
-        return errno != 0 ? errno : EIO;
-    }
-
-    if (match_count == 0)
-    {
-        printf(
-            "[ RTFS ] no usable external block device found under %s, required_blocks=%llu\n",
-            RTFS_RTEMS_ITEST_DEVICE_DIR,
-            (unsigned long long)required_block_count);
-        return ENODEV;
-    }
-
-    if (match_count > 1)
-    {
-        printf(
-            "[ RTFS ] multiple usable external block devices found (%lu); set %s to choose one explicitly\n",
-            (unsigned long)match_count,
-            RTFS_RTEMS_ITEST_DEVICE_PATH_ENV);
-        return EEXIST;
-    }
-
-    if (strlen(first_match) >= buffer_size)
-    {
-        return ENAMETOOLONG;
-    }
-
-    strcpy(buffer, first_match);
-    printf("[ RTFS ] selected external device %s\n", buffer);
-    return 0;
+    printf(
+        "[ RTFS ] external device path is required; set %s or RTFS_CONFIG_ITEST_DEVICE_PATH\n",
+        RTFS_RTEMS_ITEST_DEVICE_PATH_ENV);
+    return ENODEV;
 }
 
 static int rtfsRtemsMountFixtureMkdirParents(void)
