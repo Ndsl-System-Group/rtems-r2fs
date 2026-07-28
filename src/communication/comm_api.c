@@ -11,12 +11,14 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <memory.h>
+#include <stdatomic.h>
 
 
 typedef struct comm_sync_rw_ctx
 {
     rtems_id sem;
     rtems_status_code status;
+    atomic_bool timed_out;
 } comm_sync_rw_ctx;
 
 typedef struct comm_async_ctx
@@ -167,22 +169,62 @@ int comm_submit_sync_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba
         return g_comm_test_sync_rw_hook(dev, buffer, lba, lbaCount, dir);
     }
 
-    comm_sync_rw_ctx syncCtx;
-    int res = comm_submit_rw_request_common(dev, buffer, lba, lbaCount, dir, &syncCtx, NULL);
-    RTFS_LOG(RTFS_LOG_DEBUG, "comm_submit_sync_rw_request res: %d", res);
-    if (0 != res) return res;
+    if (0 == lbaCount) return 0;
 
-    rtems_semaphore_obtain(syncCtx.sem, RTEMS_WAIT, RTEMS_MILLISECONDS_TO_TICKS(5000));
-    rtems_semaphore_delete(syncCtx.sem);
+    comm_sync_rw_ctx *syncCtx = (comm_sync_rw_ctx *)calloc(1, sizeof(*syncCtx));
+    if (NULL == syncCtx) return ENOMEM;
 
+    int res = comm_submit_rw_request_common(dev, buffer, lba, lbaCount, dir, syncCtx, NULL);
+    // RTFS_LOG(RTFS_LOG_DEBUG, "comm_submit_sync_rw_request res: %d", res);
+    if (0 != res)
+    {
+        free(syncCtx);
+        return res;
+    }
 
-    return (RTEMS_SUCCESSFUL == syncCtx.status) ? 0 : EIO;
+    rtems_status_code wait_status = rtems_semaphore_obtain(
+        syncCtx->sem,
+        RTEMS_WAIT,
+        RTEMS_MILLISECONDS_TO_TICKS(5000));
+    if (RTEMS_SUCCESSFUL != wait_status)
+    {
+        atomic_store_explicit(&syncCtx->timed_out, true, memory_order_release);
+        if (RTEMS_SUCCESSFUL == rtems_semaphore_obtain(syncCtx->sem, RTEMS_NO_WAIT, 0))
+        {
+            res = (RTEMS_SUCCESSFUL == syncCtx->status) ? 0 : EIO;
+            rtems_semaphore_delete(syncCtx->sem);
+            free(syncCtx);
+            return res;
+        }
+
+        RTFS_LOG(
+            RTFS_LOG_WARNING,
+            "sync rw timed out dev=%p disk=%p lba=%llu lbaCount=%u dir=%d",
+            (void *)dev,
+            dev != NULL ? (void *)dev->diskDevice : NULL,
+            (unsigned long long)lba,
+            (unsigned int)lbaCount,
+            (int)dir);
+        return ETIMEDOUT;
+    }
+
+    res = (RTEMS_SUCCESSFUL == syncCtx->status) ? 0 : EIO;
+    rtems_semaphore_delete(syncCtx->sem);
+    free(syncCtx);
+
+    return res;
 }
 
 int comm_submit_async_rw_request(struct comm_dev *dev, void *buffer, uint64_t lba, uint32_t lbaCount, comm_async_cb_func cbFunc, void *cbArg, comm_io_direction dir)
 {
     if (g_comm_test_async_rw_hook != NULL) {
         return g_comm_test_async_rw_hook(dev, buffer, lba, lbaCount, cbFunc, cbArg, dir);
+    }
+
+    if (0 == lbaCount)
+    {
+        if (NULL != cbFunc) cbFunc(COMM_CMD_SUCCESS, cbArg);
+        return 0;
     }
 
     comm_async_ctx *ctx = (comm_async_ctx *)malloc(sizeof(comm_async_ctx));
@@ -1202,7 +1244,15 @@ void comm_sync_rw_done(rtems_blkdev_request *req, rtems_status_code status)
     if (NULL != ctx)
     {
         ctx->status = status;
-        rtems_semaphore_release(ctx->sem);
+        if (atomic_load_explicit(&ctx->timed_out, memory_order_acquire))
+        {
+            rtems_semaphore_delete(ctx->sem);
+            free(ctx);
+        }
+        else
+        {
+            rtems_semaphore_release(ctx->sem);
+        }
     }
 
     // request 已完成，释放申请的内存。
@@ -1236,8 +1286,8 @@ int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uint64_t l
 {
     if (NULL == dev || NULL == buffer) return EINVAL;
     if (NULL == dev->diskDevice) return ENODEV;
-    if (NULL == dev->diskDevice->ioctl) return ENODEV;
     if (NULL == dev->diskDevice->phys_dev) return ENODEV;
+    if (NULL == dev->diskDevice->phys_dev->ioctl) return ENODEV;
     if (0 == dev->blockSize || 0 == dev->blockCount) return EINVAL;
     if (COMM_IO_READ != dir && COMM_IO_WRITE != dir) return EINVAL;
     if (0 == lbaCount) return 0;
@@ -1251,6 +1301,9 @@ int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uint64_t l
     if (0 != dev->blockSize && totalBytes64 / (uint64_t)dev->blockSize != (uint64_t)lbaCount) return EOVERFLOW;
 
     if (totalBytes64 > UINT32_MAX) return EOVERFLOW;
+    if ((uint64_t)dev->diskDevice->start > UINT64_MAX - lba) return EOVERFLOW;
+
+    uint64_t physicalLba = lba + (uint64_t)dev->diskDevice->start;
 
     size_t reqSize = sizeof(rtems_blkdev_request) + sizeof(rtems_blkdev_sg_buffer);
 
@@ -1292,13 +1345,13 @@ int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uint64_t l
     req->bufnum = 1;
     req->req = (dir == COMM_IO_READ) ? RTEMS_BLKDEV_REQ_READ : RTEMS_BLKDEV_REQ_WRITE;
 
-    req->bufs[0].block = (rtems_blkdev_bnum)lba;
+    req->bufs[0].block = (rtems_blkdev_bnum)physicalLba;
     req->bufs[0].length = (uint32_t)totalBytes64;
     req->bufs[0].buffer = buffer;
     req->bufs[0].user = NULL;
 
-    // 向 RTEMS 块设备提交请求。这里返回值主要看“是否成功把请求送出去”，真正的传输结果在 done callback 里拿。
-    int res = dev->diskDevice->ioctl(
+    // 在通过 diskDevice->start 转换逻辑磁盘 LBA 后，再提交给物理驱动器。否则，/dev/nvdX-Y 的 LBA 0 可能会变成整个磁盘的 LBA 0，并覆盖分区元数据。
+    int res = dev->diskDevice->phys_dev->ioctl(
         dev->diskDevice->phys_dev,
         RTEMS_BLKIO_REQUEST,
         req
@@ -1306,6 +1359,10 @@ int comm_submit_rw_request_common(struct comm_dev *dev, void *buffer, uint64_t l
     if (0 != res)
     {
         int saved_errno = errno;
+        if (NULL != syncCtx)
+        {
+            rtems_semaphore_delete(syncCtx->sem);
+        }
         free(req);
 
         return saved_errno != 0 ? saved_errno : EIO;

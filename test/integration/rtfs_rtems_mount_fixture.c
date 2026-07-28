@@ -65,6 +65,7 @@ static const char *rtfsRtemsMountFixtureDevicePath(
 static bool rtfsRtemsMountFixtureProbeDiskPath(
     const char *path,
     uint32_t *out_media_block_size,
+    rtems_blkdev_bnum *out_media_block_start,
     rtems_blkdev_bnum *out_media_block_count);
 
 static int rtfsRtemsMountFixtureResolveExternalDevicePath(
@@ -148,11 +149,13 @@ static const char *rtfsRtemsMountFixtureDevicePath(
 static bool rtfsRtemsMountFixtureProbeDiskPath(
     const char *path,
     uint32_t *out_media_block_size,
+    rtems_blkdev_bnum *out_media_block_start,
     rtems_blkdev_bnum *out_media_block_count)
 {
     int fd;
     rtems_disk_device *disk_device = NULL;
     uint32_t media_block_size = 0;
+    rtems_blkdev_bnum media_block_start = 0;
     rtems_blkdev_bnum media_block_count = 0;
     bool ok = false;
 
@@ -187,9 +190,16 @@ static bool rtfsRtemsMountFixtureProbeDiskPath(
         goto out;
     }
 
+    media_block_start = disk_device->start;
+
     if (out_media_block_size != NULL)
     {
         *out_media_block_size = media_block_size;
+    }
+
+    if (out_media_block_start != NULL)
+    {
+        *out_media_block_start = media_block_start;
     }
 
     if (out_media_block_count != NULL)
@@ -222,11 +232,13 @@ static int rtfsRtemsMountFixtureResolveExternalDevicePath(
     if (configured_path != NULL && configured_path[0] != '\0')
     {
         uint32_t media_block_size = 0;
+        rtems_blkdev_bnum media_block_start = 0;
         rtems_blkdev_bnum media_block_count = 0;
 
         if (!rtfsRtemsMountFixtureProbeDiskPath(
                 configured_path,
                 &media_block_size,
+                &media_block_start,
                 &media_block_count))
         {
             printf(
@@ -247,6 +259,15 @@ static int rtfsRtemsMountFixtureResolveExternalDevicePath(
             return EINVAL;
         }
 
+        if (media_block_start == 0)
+        {
+            printf(
+                "[ RTFS ] configured external device '%s' looks like a raw disk: start=%llu; refusing to format it\n",
+                configured_path,
+                (unsigned long long)media_block_start);
+            return EINVAL;
+        }
+
         if (strlen(configured_path) >= buffer_size)
         {
             return ENAMETOOLONG;
@@ -254,9 +275,10 @@ static int rtfsRtemsMountFixtureResolveExternalDevicePath(
 
         strcpy(buffer, configured_path);
         printf(
-            "[ RTFS ] selected external device %s block_size=%lu block_count=%llu\n",
+            "[ RTFS ] selected external device %s block_size=%lu start=%llu block_count=%llu\n",
             buffer,
             (unsigned long)media_block_size,
+            (unsigned long long)media_block_start,
             (unsigned long long)media_block_count);
         return 0;
     }
@@ -414,6 +436,16 @@ static int rtfsRtemsMountFixtureBuildCommDev(
     if (media_block_size != 512U ||
         media_block_count < lpa_count * LBA_PER_LPA)
     {
+        ret = EINVAL;
+        goto out;
+    }
+
+    if (fixture->state->device_mode == RTFS_RTEMS_ITEST_DEVICE_MODE_EXTERNAL &&
+        disk_device->start == 0)
+    {
+        printf(
+            "[ RTFS ] configured device '%s' has start=0; refusing to mount raw disk as a test target\n",
+            rtfsRtemsMountFixtureDevicePath(fixture->state));
         ret = EINVAL;
         goto out;
     }
