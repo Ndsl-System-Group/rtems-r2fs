@@ -100,6 +100,15 @@ static void rtfsPerfMixedRwIops(
     unsigned char *buffer,
     size_t file_size,
     uint32_t op_count);
+static void rtfsPerfRunIoProfile(
+    RtfsRtemsMountFixture *fixture,
+    size_t stream_total_bytes,
+    size_t stream_chunk_bytes,
+    size_t random_total_bytes,
+    uint32_t random_ops,
+    uint32_t mixed_ops,
+    uint32_t stream_seed,
+    uint32_t io_seed);
 
 static uint64_t rtfsPerfCounterFreq(void)
 {
@@ -265,12 +274,12 @@ static void rtfsPerfPrintBenchmarkTable(const char *title)
 
     rtfsPerfPrintTableHeader(title);
     rtfsPerfPrintTableRow(
-        "Sequential Write",
+        "Seq Write (Cold)",
         g_rtfs_perf_summary.valid[RTFS_PERF_METRIC_SEQUENTIAL_WRITE],
         g_rtfs_perf_summary.value[RTFS_PERF_METRIC_SEQUENTIAL_WRITE],
         "MB/s");
     rtfsPerfPrintTableRow(
-        "Sequential Read",
+        "Seq Read (Cold)",
         g_rtfs_perf_summary.valid[RTFS_PERF_METRIC_SEQUENTIAL_READ],
         g_rtfs_perf_summary.value[RTFS_PERF_METRIC_SEQUENTIAL_READ],
         "MB/s");
@@ -341,6 +350,7 @@ static void rtfsPerfEnsureFullRead(
 }
 
 static void rtfsPerfRunIoProfile(
+    RtfsRtemsMountFixture *fixture,
     size_t stream_total_bytes,
     size_t stream_chunk_bytes,
     size_t random_total_bytes,
@@ -353,6 +363,7 @@ static void rtfsPerfRunIoProfile(
     unsigned char stream_buffer[RTFS_PERF_STREAM_CHUNK_BYTES];
     unsigned char io_buffer[RTFS_PERF_RANDOM_BLOCK_BYTES];
 
+    TEST_ASSERT_NOT_NULL(fixture);
     TEST_ASSERT_TRUE(stream_chunk_bytes <= sizeof(stream_buffer));
 
     rtfsPerfFillPattern(stream_buffer, stream_chunk_bytes, stream_seed);
@@ -362,24 +373,27 @@ static void rtfsPerfRunIoProfile(
     TEST_ASSERT_EQUAL(
         0,
         rtfsRtemsMountFixtureOpen(RTFS_PERF_STREAM_FILE, O_RDWR, 0, &fd));
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
+    fd = -1;
 
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFtruncate(fd, 0));
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
-
-    size_t remaining = stream_total_bytes;
-    while (remaining > 0u)
-    {
-        size_t to_write = remaining > stream_chunk_bytes ? stream_chunk_bytes : remaining;
-        rtfsPerfEnsureFullWrite(fd, stream_buffer, to_write);
-        remaining -= to_write;
-    }
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
-
+    /* Force a cold write path by rebuilding runtime state before timing writes. */
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureRemount(fixture));
+    TEST_ASSERT_EQUAL(
+        0,
+        rtfsRtemsMountFixtureOpen(RTFS_PERF_STREAM_FILE, O_RDWR, 0, &fd));
     rtfsPerfSequentialWrite(
         fd,
         stream_buffer,
         stream_chunk_bytes,
         stream_total_bytes);
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureClose(fd));
+    fd = -1;
+
+    /* Force a cold read path by rebuilding runtime state before timing reads. */
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureRemount(fixture));
+    TEST_ASSERT_EQUAL(
+        0,
+        rtfsRtemsMountFixtureOpen(RTFS_PERF_STREAM_FILE, O_RDONLY, 0, &fd));
     rtfsPerfSequentialRead(
         fd,
         stream_buffer,
@@ -433,17 +447,6 @@ static void rtfsPerfSequentialWrite(
 
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFtruncate(fd, 0));
     TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
-
-    // remaining = total_bytes;
-    // while (remaining > 0u)
-    // {
-    //     size_t to_write = remaining > chunk_size ? chunk_size : remaining;
-    //     rtfsPerfEnsureFullWrite(fd, buffer, to_write);
-    //     remaining -= to_write;
-    // }
-    // TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
-
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureLseek(fd, 0, SEEK_SET));
     remaining = total_bytes;
     time_begin = rtfsPerfCounterNow();
     while (remaining > 0u)
@@ -452,6 +455,7 @@ static void rtfsPerfSequentialWrite(
         rtfsPerfEnsureFullWrite(fd, buffer, to_write);
         remaining -= to_write;
     }
+    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
     time_end = rtfsPerfCounterNow();
 
     time_us = rtfsPerfCounterToUs(time_end - time_begin);
@@ -460,8 +464,6 @@ static void rtfsPerfSequentialWrite(
         RTFS_PERF_METRIC_SEQUENTIAL_WRITE,
         total_bytes,
         time_us);
-
-    TEST_ASSERT_EQUAL(0, rtfsRtemsMountFixtureFdatasync(fd));
 }
 
 static void rtfsPerfSequentialRead(
@@ -811,8 +813,9 @@ RTFS_TEST_GROUP(
 
     /*
      * 大文件流式场景：
-     * 1. Sequential Write:      8 MiB 文件整文件覆盖写, 64 KiB chunk
-     * 2. Sequential Read:       顺序读 8 MiB, 64 KiB chunk
+     * 1. Seq Write (Cold):
+     *    remount 后整文件覆盖写 8 MiB, 64 KiB chunk
+     * 2. Seq Read (Cold):       remount 后顺序读 8 MiB, 64 KiB chunk
      * 3. Random/Mixed R/W:      8 MiB 工作集访问, 4 KiB 访问粒度
      * 4. Metadata Create/Delete 与 Small File Creation
      */
@@ -827,6 +830,7 @@ RTFS_TEST_GROUP(
         rtfsRtemsMountFixtureFormatAndMount(&fixture, RTFS_PERF_LPA_COUNT));
 
     rtfsPerfRunIoProfile(
+        &fixture,
         RTFS_PERF_STREAM_TOTAL_BYTES,
         RTFS_PERF_STREAM_CHUNK_BYTES,
         RTFS_PERF_RANDOM_TOTAL_BYTES,
@@ -862,8 +866,9 @@ RTFS_TEST_GROUP(
 
     /*
      * 小文件 / 高元数据场景：
-     * 1. Sequential Write:      1 MiB 文件整文件覆盖写, 4 KiB chunk
-     * 2. Sequential Read:       顺序读 1 MiB, 4 KiB chunk
+     * 1. Seq Write (Cold):
+     *    remount 后整文件覆盖写 1 MiB, 4 KiB chunk
+     * 2. Seq Read (Cold):       remount 后顺序读 1 MiB, 4 KiB chunk
      * 3. Random/Mixed R/W:      1 MiB 工作集, 4 KiB 访问粒度
      * 4. Metadata Create/Delete: 目录项创建/删除
      * 5. Small File Creation:    128 个 1 KiB 文件创建
@@ -879,6 +884,7 @@ RTFS_TEST_GROUP(
         rtfsRtemsMountFixtureFormatAndMount(&fixture, RTFS_PERF_LPA_COUNT));
 
     rtfsPerfRunIoProfile(
+        &fixture,
         RTFS_PERF_META_STREAM_TOTAL_BYTES,
         RTFS_PERF_META_STREAM_CHUNK_BYTES,
         RTFS_PERF_META_RANDOM_TOTAL_BYTES,
