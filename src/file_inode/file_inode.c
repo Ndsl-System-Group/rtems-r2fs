@@ -22,7 +22,7 @@
 #include <string.h>
 
 #define RTFS_FILE_PAGE_CACHE_EXPECT_SIZE 64
-#define RTFS_FILE_WRITEBACK_BATCH_PAGES 64
+#define RTFS_FILE_WRITEBACK_BATCH_PAGES 32 // 64 个页合并会在甲方的测试机器上炸掉，32 可以。
 #define RTFS_FILE_DIRTY_PAGES_NODE_CMP(a, b) \
     ((a).blkoff < (b).blkoff ? -1 : ((a).blkoff > (b).blkoff ? 1 : 0))
 
@@ -2243,13 +2243,14 @@ static int rtfsFileInodeWriteDirtyPagesCow(
 
         while (remaining_pages > 0) {
             uint32_t allocated_pages = 0;
-            uint32_t first_lpa = superManagerAllocDataLpaRange(
+            uint32_t first_lpa;
+            uint32_t j;
+
+            first_lpa = superManagerAllocDataLpaRange(
                 sp_manager,
                 remaining_pages,
                 &allocated_pages
             );
-            uint32_t j;
-
             if (first_lpa == INVALID_LPA || allocated_pages == 0) {
                 ret = ENOSPC;
                 goto cleanup;
